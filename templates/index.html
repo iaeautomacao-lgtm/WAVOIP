@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CallOps — DDM</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:       #060608;
+      --s1:       #0d0d12;
+      --s2:       #13131a;
+      --s3:       #1a1a24;
+      --border:   rgba(255,255,255,.06);
+      --border2:  rgba(255,255,255,.1);
+      --cyan:     #00d4ff;
+      --green:    #00ff88;
+      --red:      #ff3d5a;
+      --amber:    #ffb800;
+      --text:     #f0f0f8;
+      --muted:    #555570;
+      --muted2:   #888899;
+      --syne:     'Syne', sans-serif;
+      --mono:     'JetBrains Mono', monospace;
+    }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { background: var(--bg); color: var(--text); font-family: var(--syne); min-height: 100vh; overflow-x: hidden; }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: linear-gradient(rgba(0,212,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,255,.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none; z-index: 0;
+    }
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: radial-gradient(ellipse 60% 40% at 0% 0%, rgba(0,212,255,.07) 0%, transparent 60%), radial-gradient(ellipse 40% 30% at 100% 100%, rgba(0,255,136,.05) 0%, transparent 60%);
+      pointer-events: none; z-index: 0;
+    }
+    .shell { position: relative; z-index: 1; display: grid; grid-template-rows: auto auto 1fr; min-height: 100vh; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 0 40px; height: 60px; border-bottom: 1px solid var(--border); background: rgba(6,6,8,.9); backdrop-filter: blur(20px); position: sticky; top: 0; z-index: 100; }
+    .logo-wrap { display: flex; align-items: center; gap: 12px; }
+    .logo-icon { width: 28px; height: 28px; border: 1.5px solid var(--cyan); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: .6rem; color: var(--cyan); letter-spacing: .05em; }
+    .logo-text { font-family: var(--syne); font-size: .9rem; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: var(--text); }
+    .logo-text span { color: var(--muted2); font-weight: 400; }
+    .header-right { display: flex; align-items: center; gap: 24px; }
+    .status-pill { display: flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 100px; background: rgba(0,255,136,.06); border: 1px solid rgba(0,255,136,.15); font-family: var(--mono); font-size: .65rem; color: var(--green); letter-spacing: .08em; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); animation: blink 2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .clock { font-family: var(--mono); font-size: .72rem; color: var(--muted2); letter-spacing: .1em; }
+    nav { display: flex; align-items: center; padding: 0 40px; background: var(--s1); border-bottom: 1px solid var(--border); overflow-x: auto; }
+    .tab { position: relative; padding: 0 20px; height: 46px; display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: .65rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); cursor: pointer; white-space: nowrap; transition: color .2s; border-bottom: 2px solid transparent; }
+    .tab:hover { color: var(--muted2); }
+    .tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+    main { padding: 32px 40px; }
+    .section { display: none; animation: rise .2s ease; }
+    .section.active { display: block; }
+    @keyframes rise { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+    .sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+    .sec-title { font-size: .65rem; font-family: var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--muted2); }
+    .kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+    @media(max-width:900px){ .kpi-strip{ grid-template-columns: repeat(2,1fr); } }
+    .kpi { background: var(--s2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; position: relative; overflow: hidden; transition: border-color .2s; }
+    .kpi:hover { border-color: var(--border2); }
+    .kpi::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; }
+    .kpi.c::before { background: linear-gradient(90deg, var(--cyan), transparent); }
+    .kpi.g::before { background: linear-gradient(90deg, var(--green), transparent); }
+    .kpi.r::before { background: linear-gradient(90deg, var(--red), transparent); }
+    .kpi.a::before { background: linear-gradient(90deg, var(--amber), transparent); }
+    .kpi-label { font-family: var(--mono); font-size: .58rem; letter-spacing: .15em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+    .kpi-val { font-family: var(--mono); font-size: 1.8rem; font-weight: 500; line-height: 1; }
+    .kpi.c .kpi-val { color: var(--cyan); }
+    .kpi.g .kpi-val { color: var(--green); }
+    .kpi.r .kpi-val { color: var(--red); }
+    .kpi.a .kpi-val { color: var(--amber); }
+    .lines-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 28px; }
+    .line-card { background: var(--s2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; position: relative; overflow: hidden; transition: border-color .2s, transform .2s; }
+    .line-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+    .line-card .top-bar { position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+    .line-card.healthy .top-bar { background: var(--green); box-shadow: 0 0 8px rgba(0,255,136,.4); }
+    .line-card.down .top-bar { background: var(--red); }
+    .line-card.warn .top-bar { background: var(--amber); }
+    .line-name { font-family: var(--mono); font-size: .6rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+    .line-number { font-family: var(--mono); font-size: .88rem; color: var(--text); margin-bottom: 14px; letter-spacing: .04em; }
+    .line-number.empty { color: var(--muted); font-size: .75rem; font-style: italic; }
+    .line-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 12px; }
+    .tag { font-family: var(--mono); font-size: .55rem; letter-spacing: .08em; padding: 2px 7px; border-radius: 3px; text-transform: uppercase; }
+    .tag-green { background: rgba(0,255,136,.1); color: var(--green); border: 1px solid rgba(0,255,136,.2); }
+    .tag-red   { background: rgba(255,61,90,.1); color: var(--red); border: 1px solid rgba(255,61,90,.2); }
+    .tag-cyan  { background: rgba(0,212,255,.1); color: var(--cyan); border: 1px solid rgba(0,212,255,.2); }
+    .tag-gray  { background: rgba(85,85,112,.15); color: var(--muted2); border: 1px solid rgba(85,85,112,.25); }
+    .tag-amber { background: rgba(255,184,0,.1); color: var(--amber); border: 1px solid rgba(255,184,0,.2); }
+    .line-meta { font-family: var(--mono); font-size: .58rem; color: var(--muted); letter-spacing: .06em; }
+    .line-meta b { color: var(--muted2); }
+    .btn { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: .62rem; letter-spacing: .1em; text-transform: uppercase; padding: 7px 14px; border-radius: 6px; cursor: pointer; transition: all .2s; border: none; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border2); color: var(--muted2); }
+    .btn-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+    .btn-primary { background: var(--cyan); color: #000; font-weight: 600; }
+    .btn-primary:hover { opacity: .85; }
+    .btn-success { background: var(--green); color: #000; font-weight: 600; }
+    .btn-success:hover { opacity: .85; }
+    .btn-success:disabled { opacity: .3; cursor: not-allowed; }
+    .btn-danger { background: transparent; border: 1px solid rgba(255,61,90,.3); color: var(--red); }
+    .btn-danger:hover { background: rgba(255,61,90,.08); }
+    .table-card { background: var(--s2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { border-bottom: 1px solid var(--border); background: rgba(255,255,255,.02); }
+    thead th { padding: 11px 16px; text-align: left; font-family: var(--mono); font-size: .58rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 400; }
+    tbody tr { border-bottom: 1px solid rgba(255,255,255,.03); transition: background .12s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(0,212,255,.03); }
+    tbody td { padding: 11px 16px; font-size: .82rem; color: var(--text); vertical-align: middle; }
+    .td-mono { font-family: var(--mono); font-size: .7rem; color: var(--muted2); }
+    .td-dim  { color: var(--muted2); font-size: .75rem; }
+    .call-btn { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: .6rem; letter-spacing: .08em; text-transform: uppercase; padding: 5px 11px; border-radius: 5px; background: rgba(0,212,255,.08); border: 1px solid rgba(0,212,255,.2); color: var(--cyan); cursor: pointer; transition: all .2s; }
+    .call-btn:hover { background: rgba(0,212,255,.15); border-color: var(--cyan); box-shadow: 0 0 10px rgba(0,212,255,.15); }
+    .call-btn:disabled { opacity: .25; cursor: not-allowed; }
+    .del-btn { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: .6rem; letter-spacing: .08em; text-transform: uppercase; padding: 5px 9px; border-radius: 5px; background: rgba(255,61,90,.06); border: 1px solid rgba(255,61,90,.2); color: var(--red); cursor: pointer; transition: all .2s; }
+    .del-btn:hover { background: rgba(255,61,90,.14); border-color: var(--red); }
+    .cs { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: .58rem; letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; }
+    .cs::before { content:''; width:5px; height:5px; border-radius:50%; }
+    .cs-ended { background: rgba(0,255,136,.08); color: var(--green); }
+    .cs-ended::before { background: var(--green); }
+    .cs-failed { background: rgba(255,61,90,.08); color: var(--red); }
+    .cs-failed::before { background: var(--red); }
+    .cs-in-progress { background: rgba(0,212,255,.08); color: var(--cyan); }
+    .cs-in-progress::before { background: var(--cyan); box-shadow: 0 0 4px var(--cyan); animation: blink 1s infinite; }
+    .cs-queued { background: rgba(85,85,112,.15); color: var(--muted2); }
+    .cs-queued::before { background: var(--muted2); }
+    .pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    .page-info { font-family: var(--mono); font-size: .62rem; color: var(--muted); letter-spacing: .08em; }
+    .search-wrap { position: relative; display: inline-flex; align-items: center; }
+    .search-icon { position: absolute; left: 11px; font-size: .75rem; color: var(--muted); pointer-events: none; }
+    .search-input { background: var(--s3); border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: .72rem; padding: 7px 12px; border-radius: 6px; outline: none; width: 220px; transition: border-color .2s; letter-spacing: .04em; }
+    .search-input:focus { border-color: var(--cyan); }
+    .search-input::placeholder { color: var(--muted); }
+
+    /* ── DROP ZONE ── */
+    .drop-zone { border: 1px dashed rgba(0,212,255,.2); border-radius: 12px; padding: 56px 32px; text-align: center; cursor: pointer; background: var(--s2); transition: all .2s; margin-bottom: 24px; position: relative; overflow: hidden; }
+    .drop-zone::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 60% at 50% 50%, rgba(0,212,255,.03), transparent); pointer-events: none; }
+    .drop-zone:hover, .drop-zone.drag { border-color: var(--cyan); background: rgba(0,212,255,.04); }
+    .drop-zone.uploading { border-color: var(--amber); cursor: default; }
+    .drop-zone.done     { border-color: rgba(0,255,136,.4); }
+    .drop-icon { font-size: 2rem; margin-bottom: 14px; opacity: .6; }
+    .drop-title { font-size: .85rem; font-weight: 600; color: var(--text); letter-spacing: .06em; margin-bottom: 6px; }
+    .drop-sub { font-family: var(--mono); font-size: .62rem; color: var(--muted); letter-spacing: .08em; }
+
+    /* ── PROGRESS BAR ── */
+    .upload-progress-wrap {
+      display: none;
+      margin: -12px 0 24px;
+      background: var(--s2);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      padding: 14px 20px;
+    }
+    .upload-progress-wrap.visible { display: block; }
+    .upload-progress-bar-bg {
+      height: 3px;
+      background: var(--s3);
+      border-radius: 2px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .upload-progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 2px;
+      background: var(--cyan);
+      box-shadow: 0 0 8px rgba(0,212,255,.5);
+      transition: width .3s ease;
+    }
+    .upload-progress-bar-fill.amber { background: var(--amber); box-shadow: 0 0 8px rgba(255,184,0,.5); }
+    .upload-progress-bar-fill.green { background: var(--green); box-shadow: 0 0 8px rgba(0,255,136,.5); }
+    .upload-progress-bar-fill.red   { background: var(--red);   box-shadow: none; }
+    .upload-progress-label {
+      font-family: var(--mono);
+      font-size: .62rem;
+      color: var(--muted2);
+      letter-spacing: .06em;
+      display: flex;
+      justify-content: space-between;
+    }
+    .upload-progress-label span { color: var(--cyan); }
+    .upload-progress-label span.amber { color: var(--amber); }
+    .upload-progress-label span.green { color: var(--green); }
+    .upload-progress-label span.red   { color: var(--red); }
+
+    .import-actions { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
+    .debt-yes { font-family: var(--mono); font-size: .62rem; color: var(--green); letter-spacing: .06em; }
+    .debt-no  { font-family: var(--mono); font-size: .62rem; color: var(--muted); letter-spacing: .06em; }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.75); backdrop-filter: blur(8px); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; }
+    .overlay.open { opacity: 1; pointer-events: all; }
+    .modal { background: var(--s1); border: 1px solid var(--border2); border-radius: 14px; padding: 32px; width: 400px; transform: translateY(12px) scale(.98); transition: transform .25s cubic-bezier(.34,1.56,.64,1); position: relative; overflow: hidden; }
+    .modal::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--cyan), transparent); }
+    .overlay.open .modal { transform: none; }
+    .modal-title { font-size: .7rem; font-family: var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--cyan); margin-bottom: 24px; }
+    .modal-field { margin-bottom: 16px; }
+    .modal-label { display: block; font-family: var(--mono); font-size: .58rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; }
+    .modal-val { font-family: var(--mono); font-size: .82rem; color: var(--text); letter-spacing: .04em; }
+    .modal-select { width: 100%; background: var(--s3); border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: .72rem; padding: 9px 12px; border-radius: 7px; outline: none; transition: border-color .2s; letter-spacing: .04em; }
+    .modal-select:focus { border-color: var(--cyan); }
+    .modal-footer { display: flex; gap: 10px; margin-top: 28px; }
+    .modal-footer .btn { flex: 1; justify-content: center; padding: 11px; }
+    .loader { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 52px; font-family: var(--mono); font-size: .65rem; color: var(--muted); letter-spacing: .1em; }
+    .spin { width: 14px; height: 14px; border: 1.5px solid var(--border2); border-top-color: var(--cyan); border-radius: 50%; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #toast { position: fixed; bottom: 24px; right: 24px; display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 8px; background: var(--s2); border: 1px solid var(--border2); font-family: var(--mono); font-size: .68rem; letter-spacing: .06em; color: var(--text); z-index: 999; transform: translateY(16px); opacity: 0; transition: all .3s cubic-bezier(.34,1.56,.64,1); max-width: 340px; pointer-events: none; }
+    #toast.show { transform: none; opacity: 1; }
+    #toast.ok  { border-color: rgba(0,255,136,.3); color: var(--green); }
+    #toast.err { border-color: rgba(255,61,90,.3); color: var(--red); }
+    #toast.warn { border-color: rgba(255,184,0,.3); color: var(--amber); }
+    .import-summary { display: none; }
+    .import-summary.visible { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 24px; }
+    .campaign-name-input { background: var(--s3); border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: .72rem; padding: 7px 12px; border-radius: 6px; outline: none; width: 280px; transition: border-color .2s; letter-spacing: .04em; }
+    .campaign-name-input:focus { border-color: var(--cyan); }
+    .campaign-name-input::placeholder { color: var(--muted); }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="logo-wrap">
+      <div class="logo-icon">CO</div>
+      <div class="logo-text">CallOps <span>/ DDM</span></div>
+    </div>
+    <div class="header-right">
+      <div class="status-pill">
+        <div class="status-dot"></div>
+        <span id="healthy-count">— linhas</span>
+      </div>
+      <div class="clock" id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <nav>
+    <div class="tab active" data-tab="lines"><span>◈</span> Linhas</div>
+    <div class="tab" data-tab="contacts"><span>◎</span> Contatos</div>
+    <div class="tab" data-tab="calls"><span>◷</span> Histórico</div>
+    <div class="tab" data-tab="monitor"><span>◉</span> Monitor</div>
+    <div class="tab" data-tab="campaigns"><span>◑</span> Campanhas</div>
+    <div class="tab" data-tab="import"><span>↑</span> Importar</div>
+  </nav>
+
+  <main>
+
+    <!-- LINHAS -->
+    <div class="section active" id="tab-lines">
+      <div class="sec-head">
+        <span class="sec-title">Status das linhas Wavoip</span>
+        <button class="btn btn-ghost" onclick="loadLines()">↻ &nbsp;Atualizar</button>
+      </div>
+      <div class="kpi-strip" id="lines-stats" style="display:none">
+        <div class="kpi c"><div class="kpi-label">Total</div><div class="kpi-val" id="stat-total">0</div></div>
+        <div class="kpi g"><div class="kpi-label">Ativas</div><div class="kpi-val" id="stat-healthy">0</div></div>
+        <div class="kpi r"><div class="kpi-label">Inativas</div><div class="kpi-val" id="stat-down">0</div></div>
+        <div class="kpi a"><div class="kpi-label">Chamadas</div><div class="kpi-val" id="stat-calls">0</div></div>
+      </div>
+      <div class="lines-grid" id="lines-grid">
+        <div class="loader"><div class="spin"></div>Carregando linhas...</div>
+      </div>
+    </div>
+
+    <!-- CONTATOS -->
+    <div class="section" id="tab-contacts">
+      <div class="sec-head">
+        <span class="sec-title">Contatos com débito</span>
+        <div class="search-wrap">
+          <span class="search-icon">⌕</span>
+          <input class="search-input" type="text" id="contacts-search" placeholder="Buscar por nome..." />
+        </div>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr><th>Nome</th><th>CPF</th><th>Instituição</th><th>Telefones</th><th>Ações</th></tr>
+          </thead>
+          <tbody id="contacts-body">
+            <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button class="btn btn-ghost" id="contacts-prev" onclick="contactsPage(-1)">← Anterior</button>
+        <span class="page-info" id="contacts-page-info">—</span>
+        <button class="btn btn-ghost" id="contacts-next" onclick="contactsPage(1)">Próxima →</button>
+      </div>
+    </div>
+
+    <!-- HISTÓRICO -->
+    <div class="section" id="tab-calls">
+      <div class="sec-head">
+        <span class="sec-title">Histórico de chamadas</span>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Contato</th><th>Status</th><th>Duração</th><th>Data</th></tr>
+          </thead>
+          <tbody id="calls-body">
+            <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button class="btn btn-ghost" id="calls-prev" onclick="callsPage(-1)">← Anterior</button>
+        <span class="page-info" id="calls-page-info">—</span>
+        <button class="btn btn-ghost" id="calls-next" onclick="callsPage(1)">Próxima →</button>
+      </div>
+    </div>
+
+    <!-- MONITOR -->
+    <div class="section" id="tab-monitor">
+      <div class="sec-head">
+        <span class="sec-title">Monitor de chamadas ativas</span>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span class="td-dim" id="monitor-updated">—</span>
+          <button class="btn btn-ghost" onclick="loadMonitor()">↻ &nbsp;Atualizar</button>
+        </div>
+      </div>
+      <div class="kpi-strip" id="monitor-stats" style="display:none">
+        <div class="kpi c"><div class="kpi-label">Em andamento</div><div class="kpi-val" id="mon-andamento">0</div></div>
+        <div class="kpi g"><div class="kpi-label">Atendidas</div><div class="kpi-val" id="mon-atendido">0</div></div>
+        <div class="kpi r"><div class="kpi-label">Erro</div><div class="kpi-val" id="mon-erro">0</div></div>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr><th>CPF</th><th>Telefone</th><th>Status</th><th>Campanhas</th><th>Iniciada</th></tr>
+          </thead>
+          <tbody id="monitor-body">
+            <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- CAMPANHAS -->
+    <div class="section" id="tab-campaigns">
+      <div class="sec-head">
+        <span class="sec-title">Campanhas de discagem</span>
+        <button class="btn btn-ghost" onclick="loadCampaigns()">↻ &nbsp;Atualizar</button>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr><th>Nome</th><th>Status</th><th>Total</th><th>Finalizadas</th><th>Criada em</th><th>Ações</th></tr>
+          </thead>
+          <tbody id="campaigns-body">
+            <tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- IMPORTAR -->
+    <div class="section" id="tab-import">
+      <div class="sec-head">
+        <span class="sec-title">Nova campanha</span>
+      </div>
+
+      <!-- Drop Zone -->
+      <div class="drop-zone" id="import-zone" onclick="onDropZoneClick()">
+        <div class="drop-icon" id="drop-icon">⬆</div>
+        <div class="drop-title" id="drop-title">Arraste ou clique para selecionar</div>
+        <div class="drop-sub" id="drop-sub">Aceita .xlsx e .csv &nbsp;·&nbsp; Planilha DDM ou genérica (CPF, Nome)</div>
+        <input type="file" id="file-input" accept=".xlsx,.csv,.xls" style="display:none" />
+      </div>
+
+      <!-- Barra de progresso de upload e processamento -->
+      <div class="upload-progress-wrap" id="upload-progress-wrap">
+        <div class="upload-progress-bar-bg">
+          <div class="upload-progress-bar-fill" id="upload-progress-fill"></div>
+        </div>
+        <div class="upload-progress-label">
+          <span id="upload-progress-stage">—</span>
+          <span id="upload-progress-pct">0%</span>
+        </div>
+      </div>
+
+      <!-- KPIs pós-import -->
+      <div class="import-summary" id="import-summary">
+        <div class="kpi c"><div class="kpi-label">Total importados</div><div class="kpi-val" id="imp-total">0</div></div>
+        <div class="kpi g"><div class="kpi-label">Com débito</div><div class="kpi-val" id="imp-debt">0</div></div>
+        <div class="kpi r"><div class="kpi-label">Sem débito / sem tel</div><div class="kpi-val" id="imp-no-debt">0</div></div>
+      </div>
+
+      <!-- Ações: nome da campanha + salvar -->
+      <div class="import-actions" id="import-actions" style="display:none">
+        <input class="campaign-name-input" type="text" id="campaign-name-input" placeholder="Nome da campanha..." />
+        <button class="btn btn-success" id="btn-save-campaign" onclick="saveCampaign()">💾 &nbsp;Salvar campanha</button>
+        <button class="btn btn-danger" onclick="resetImport()">✕ &nbsp;Limpar</button>
+      </div>
+
+      <!-- Preview da tabela -->
+      <div id="import-table-wrap" style="display:none">
+        <div class="sec-head" style="margin-bottom:14px">
+          <span class="sec-title" id="import-table-title">Preview</span>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Débito?</th></tr></thead>
+            <tbody id="import-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Modal chamada manual -->
+<div class="overlay" id="call-modal">
+  <div class="modal">
+    <div class="modal-title">↗ &nbsp;Iniciar chamada</div>
+    <div class="modal-field">
+      <span class="modal-label">Contato</span>
+      <div class="modal-val" id="modal-contact-name">—</div>
+    </div>
+    <div class="modal-field">
+      <span class="modal-label">Telefone</span>
+      <select class="modal-select" id="modal-phone-select"></select>
+    </div>
+    <div class="modal-field">
+      <span class="modal-label">Linha SIP</span>
+      <select class="modal-select" id="modal-line-select">
+        <option value="">Carregando linhas...</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmCall()">Ligar agora</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '';
+
+// ── CLOCK ────────────────────────────────────────────────────
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('pt-BR');
+}, 1000);
+
+// ── TABS ─────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'contacts'  && !contactsLoaded)  loadContacts();
+    if (tab.dataset.tab === 'calls'     && !callsLoaded)     loadCalls();
+    if (tab.dataset.tab === 'campaigns' && !campaignsLoaded) loadCampaigns();
+    if (tab.dataset.tab === 'monitor')  { loadMonitor(); startMonitor(); }
+  });
+});
+
+// ── TOAST ────────────────────────────────────────────────────
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show ${type}`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.className = '', 4000);
+}
+
+// ── LINHAS ───────────────────────────────────────────────────
+let linesData = [];
+
+async function loadLines() {
+  document.getElementById('lines-grid').innerHTML = '<div class="loader"><div class="spin"></div>Carregando linhas...</div>';
+  try {
+    const res  = await fetch(`${API}/api/lines`);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    linesData = json.data;
+    renderLines(linesData);
+  } catch(e) {
+    document.getElementById('lines-grid').innerHTML = `<div class="loader">Erro: ${e.message}</div>`;
+  }
+}
+
+function renderLines(lines) {
+  const grid = document.getElementById('lines-grid');
+  if (!lines.length) { grid.innerHTML = '<div class="loader">Nenhuma linha encontrada.</div>'; return; }
+  grid.innerHTML = lines.map(l => `
+    <div class="line-card ${l.healthy ? 'healthy' : l.status === 'connecting' ? 'warn' : 'down'}">
+      <div class="top-bar"></div>
+      <div class="line-name">${l.name || 'Dispositivo'}</div>
+      <div class="line-number ${!l.phone ? 'empty' : ''}">${l.phone ? l.phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3') : 'Sem número'}</div>
+      <div class="line-tags">
+        <span class="tag ${l.status==='open'?'tag-green':l.status==='connecting'?'tag-amber':'tag-red'}">${l.status}</span>
+        ${l.disabled ? '<span class="tag tag-red">off</span>' : '<span class="tag tag-cyan">on</span>'}
+        ${l.needs_restart ? '<span class="tag tag-amber">restart</span>' : ''}
+      </div>
+      <div class="line-meta">Chamadas: <b>${l.calls_made ?? 0}</b></div>
+    </div>
+  `).join('');
+  const stats = document.getElementById('lines-stats');
+  stats.style.display = 'grid';
+  document.getElementById('stat-total').textContent   = lines.length;
+  document.getElementById('stat-healthy').textContent = lines.filter(l => l.healthy).length;
+  document.getElementById('stat-down').textContent    = lines.filter(l => !l.healthy).length;
+  document.getElementById('stat-calls').textContent   = lines.reduce((a,l) => a + (l.calls_made||0), 0);
+  const ok = lines.filter(l => l.healthy).length;
+  document.getElementById('healthy-count').textContent = `${ok}/${lines.length} linhas ok`;
+}
+
+function populateModalLines(lines) {
+  const sel     = document.getElementById('modal-line-select');
+  const healthy = lines.filter(l => l.healthy);
+  sel.innerHTML = healthy.length
+    ? healthy.map(l => `<option value="${l.id}">${l.name} — ${l.phone}</option>`).join('')
+    : '<option value="">Nenhuma linha disponível</option>';
+}
+
+// ── CONTATOS ─────────────────────────────────────────────────
+let contactsLoaded = false, contactsPage_ = 1, contactsSearch = '', searchTimer;
+
+async function loadContacts() {
+  contactsLoaded = true;
+  document.getElementById('contacts-body').innerHTML =
+    '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+  try {
+    const params = new URLSearchParams({ page: contactsPage_, per_page: 50, search: contactsSearch });
+    const res  = await fetch(`${API}/api/contacts?${params}`);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    renderContacts(json.data, json.page, json.pages, json.total);
+  } catch(e) {
+    document.getElementById('contacts-body').innerHTML =
+      `<tr><td colspan="5"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+  }
+}
+
+function renderContacts(rows, page, pages, total) {
+  const tbody = document.getElementById('contacts-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Nenhum contato encontrado.</div></td></tr>';
+  } else {
+    tbody.innerHTML = rows.map(c => {
+      const phones = Array.isArray(c.phones) ? c.phones : (c.phones ? [c.phones] : []);
+      return `<tr>
+        <td>${c.name || '—'}</td>
+        <td class="td-mono">${c.cpf || c.cpf_norm || '—'}</td>
+        <td class="td-dim">${c.institution || '—'}</td>
+        <td class="td-mono">${phones.slice(0,2).join(', ') || '—'}</td>
+        <td>
+          <div style="display:flex;gap:6px">
+            <button class="call-btn" ${!phones.length?'disabled':''}
+              onclick='openModal(${JSON.stringify({id:c.id,name:c.name,phones})})'>
+              ↗ Ligar
+            </button>
+            <button class="del-btn" onclick='deleteContact("${c.id}","${c.name}")'>✕</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+  document.getElementById('contacts-page-info').textContent = `${page} / ${pages} — ${total} contatos`;
+  document.getElementById('contacts-prev').disabled = page <= 1;
+  document.getElementById('contacts-next').disabled = page >= pages;
+}
+
+function contactsPage(dir) { contactsPage_ += dir; loadContacts(); }
+
+document.getElementById('contacts-search').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { contactsSearch = e.target.value; contactsPage_ = 1; loadContacts(); }, 400);
+});
+
+async function deleteContact(id, name) {
+  if (!confirm(`Excluir "${name}"?`)) return;
+  try {
+    const res  = await fetch(`${API}/api/contacts/${id}`, { method: 'DELETE' });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    toast(`✓ ${name} excluído`, 'ok');
+    loadContacts();
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+  }
+}
+
+// ── CHAMADAS ─────────────────────────────────────────────────
+let callsLoaded = false, callsPage_ = 1;
+
+async function loadCalls() {
+  callsLoaded = true;
+  document.getElementById('calls-body').innerHTML =
+    '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+  try {
+    const res  = await fetch(`${API}/api/calls?page=${callsPage_}&per_page=50`);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    renderCalls(json.data, json.page, json.pages, json.total);
+  } catch(e) {
+    document.getElementById('calls-body').innerHTML =
+      `<tr><td colspan="5"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+  }
+}
+
+function renderCalls(rows, page, pages, total) {
+  const tbody = document.getElementById('calls-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Sem histórico.</div></td></tr>';
+  } else {
+    tbody.innerHTML = rows.map(c => {
+      const statusMap = {
+        finalizado:   'cs-ended',
+        atendido:     'cs-ended',
+        em_andamento: 'cs-in-progress',
+        erro:         'cs-failed',
+        pendente:     'cs-queued',
+        enfileirado:  'cs-queued',
+        sem_debito:   'cs-queued',
+      };
+      const cls  = statusMap[c.status] || 'cs-queued';
+      const dur  = c.duration ? `${Math.floor(c.duration/60)}m ${c.duration%60}s` : '—';
+      const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
+      const camp = c.campaigns?.name || '—';
+      return `<tr>
+        <td class="td-mono" style="color:var(--muted)">${(c.id||'').slice(0,8)}…</td>
+        <td>${c.cpf || '—'}<br><span class="td-dim">${camp}</span></td>
+        <td><span class="cs ${cls}">${c.status||'—'}</span></td>
+        <td class="td-mono">${dur}</td>
+        <td class="td-dim">${date}</td>
+      </tr>`;
+    }).join('');
+  }
+  document.getElementById('calls-page-info').textContent = `${page} / ${pages} — ${total} chamadas`;
+  document.getElementById('calls-prev').disabled = page <= 1;
+  document.getElementById('calls-next').disabled = page >= pages;
+}
+
+function callsPage(dir) { callsPage_ += dir; loadCalls(); }
+
+// ── MONITOR ──────────────────────────────────────────────────
+let monitorTimer = null;
+
+async function loadMonitor() {
+  try {
+    const res  = await fetch(`${API}/api/monitor`);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    renderMonitor(json.data, json.stats);
+    document.getElementById('monitor-updated').textContent =
+      'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
+  } catch(e) {
+    document.getElementById('monitor-body').innerHTML =
+      `<tr><td colspan="5"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+  }
+}
+
+function renderMonitor(rows, stats) {
+  const tbody = document.getElementById('monitor-body');
+  document.getElementById('monitor-stats').style.display = 'grid';
+  document.getElementById('mon-andamento').textContent = stats.em_andamento;
+  document.getElementById('mon-atendido').textContent  = stats.atendido;
+  document.getElementById('mon-erro').textContent      = stats.erro;
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Nenhuma chamada ativa.</div></td></tr>';
+    return;
+  }
+  const statusMap = {
+    em_andamento: { cls: 'cs-in-progress', label: 'ligando' },
+    enfileirado:  { cls: 'cs-queued',      label: 'aguardando' },
+    atendido:     { cls: 'cs-ended',       label: 'atendido' },
+    erro:         { cls: 'cs-failed',      label: 'erro' },
+  };
+  tbody.innerHTML = rows.map(r => {
+    const s    = statusMap[r.status] || { cls: 'cs-queued', label: r.status };
+    const date = r.created_at ? new Date(r.created_at).toLocaleTimeString('pt-BR') : '—';
+    const cpf  = r.cpf ? r.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : '—';
+    const tel  = r.phone ? r.phone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3') : '—';
+    return `<tr>
+      <td class="td-mono">${cpf}</td>
+      <td class="td-mono">${tel}</td>
+      <td><span class="cs ${s.cls}">${s.label}</span></td>
+      <td class="td-dim">${r.campaign}</td>
+      <td class="td-dim">${date}</td>
+    </tr>`;
+  }).join('');
+}
+
+function startMonitor() {
+  if (monitorTimer) clearInterval(monitorTimer);
+  monitorTimer = setInterval(loadMonitor, 5000);
+}
+
+// ── CAMPANHAS ────────────────────────────────────────────────
+let campaignsLoaded = false;
+
+async function loadCampaigns() {
+  campaignsLoaded = true;
+  document.getElementById('campaigns-body').innerHTML =
+    '<tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+  try {
+    const res  = await fetch(`${API}/api/campaigns`);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    renderCampaigns(json.data);
+  } catch(e) {
+    document.getElementById('campaigns-body').innerHTML =
+      `<tr><td colspan="6"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+  }
+}
+
+function renderCampaigns(rows) {
+  const tbody = document.getElementById('campaigns-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="loader">Nenhuma campanha criada.</div></td></tr>';
+    return;
+  }
+  const statusMap = {
+    rascunho:     { cls: 'cs-queued',      label: 'rascunho' },
+    em_andamento: { cls: 'cs-in-progress', label: 'em andamento' },
+    finalizada:   { cls: 'cs-ended',       label: 'finalizada' },
+    pausada:      { cls: 'cs-failed',      label: 'pausada' },
+  };
+  tbody.innerHTML = rows.map(c => {
+    const s    = statusMap[c.status] || { cls: 'cs-queued', label: c.status };
+    const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
+    const canStart = c.status === 'rascunho' || c.status === 'pausada';
+    const canPause = c.status === 'em_andamento';
+    return `<tr>
+      <td>${c.name}</td>
+      <td><span class="cs ${s.cls}">${s.label}</span></td>
+      <td class="td-mono">${c.total ?? 0}</td>
+      <td class="td-mono">${c.finished ?? 0} / ${c.total ?? 0}</td>
+      <td class="td-dim">${date}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          ${canStart ? `<button class="call-btn" onclick="startCampaign('${c.id}')">▶ Iniciar</button>` : ''}
+          ${canPause ? `<button class="call-btn" onclick="pauseCampaign('${c.id}')">⏸ Pausar</button>` : ''}
+          <button class="del-btn" onclick="deleteCampaign('${c.id}','${c.name}')">✕</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function startCampaign(id) {
+  try {
+    const res  = await fetch(`${API}/api/campaigns/${id}/start`, { method: 'POST' });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    toast(`▶ Campanha iniciada — ${json.fired} disparadas agora`, 'ok');
+    loadCampaigns();
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+  }
+}
+
+async function pauseCampaign(id) {
+  try {
+    const res  = await fetch(`${API}/api/campaigns/${id}/pause`, { method: 'POST' });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    toast('⏸ Campanha pausada', 'ok');
+    loadCampaigns();
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+  }
+}
+
+async function deleteCampaign(id, name) {
+  if (!confirm(`Excluir campanha "${name}"?`)) return;
+  try {
+    const res  = await fetch(`${API}/api/campaigns/${id}`, { method: 'DELETE' });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    toast('✓ Campanha excluída', 'ok');
+    loadCampaigns();
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+  }
+}
+
+async function saveCampaign() {
+  const name = document.getElementById('campaign-name-input').value.trim();
+  if (!name) { toast('Digite um nome para a campanha.', 'err'); return; }
+  if (!importSessionId && !importRows.filter(r => r.has_debt && r.phone).length) {
+    toast('Nenhum contato com débito e telefone.', 'err'); return;
+  }
+  const btn = document.getElementById('btn-save-campaign');
+  btn.disabled = true; btn.textContent = 'Salvando…';
+  try {
+    const body = importSessionId
+      ? { name, session_id: importSessionId }
+      : { name, contacts: importRows.filter(r => r.has_debt && r.phone) };
+
+    const res  = await fetch(`${API}/api/campaigns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    toast(`✓ Campanha "${name}" salva com sucesso`, 'ok');
+    campaignsLoaded = false;
+    resetImport();
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '💾  Salvar campanha';
+  }
+}
+
+// ── MODAL ────────────────────────────────────────────────────
+let modalContact = null;
+
+function openModal(contact) {
+  modalContact = contact;
+  document.getElementById('modal-contact-name').textContent = contact.name || '—';
+  document.getElementById('modal-phone-select').innerHTML =
+    (contact.phones||[]).map(p => `<option value="${p}">${p}</option>`).join('');
+  populateModalLines(linesData);
+  document.getElementById('call-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('call-modal').classList.remove('open');
+  modalContact = null;
+}
+
+async function confirmCall() {
+  const phone = document.getElementById('modal-phone-select').value;
+  if (!phone) { toast('Selecione um telefone.', 'err'); return; }
+  try {
+    const res  = await fetch(`${API}/api/call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contact_id: modalContact?.id, phone })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    toast(`✓ Chamada iniciada — ${phone}`, 'ok');
+    closeModal();
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+  }
+}
+
+document.getElementById('call-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// ── IMPORTAÇÃO — novo fluxo via Supabase Storage ─────────────
+let importRows      = [];
+let importSessionId = null;
+let _pollTimer      = null;
+
+const fileInput  = document.getElementById('file-input');
+const importZone = document.getElementById('import-zone');
+
+// Clique na zona — só abre o seletor se não estiver em upload
+function onDropZoneClick() {
+  if (importZone.classList.contains('uploading')) return;
+  fileInput.click();
+}
+
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) handleImportFile(e.target.files[0]);
+});
+
+importZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  if (!importZone.classList.contains('uploading')) importZone.classList.add('drag');
+});
+importZone.addEventListener('dragleave', () => importZone.classList.remove('drag'));
+importZone.addEventListener('drop', e => {
+  e.preventDefault();
+  importZone.classList.remove('drag');
+  if (!importZone.classList.contains('uploading') && e.dataTransfer.files[0]) {
+    handleImportFile(e.dataTransfer.files[0]);
+  }
+});
+
+// ── helpers de UI de progresso ───────────────────────────────
+function setProgress(pct, stage, color = '') {
+  const fill  = document.getElementById('upload-progress-fill');
+  const stage_el = document.getElementById('upload-progress-stage');
+  const pct_el   = document.getElementById('upload-progress-pct');
+  const wrap     = document.getElementById('upload-progress-wrap');
+
+  wrap.classList.add('visible');
+  fill.style.width = pct + '%';
+  fill.className   = 'upload-progress-bar-fill' + (color ? ' ' + color : '');
+  stage_el.textContent     = stage;
+  stage_el.className       = color || '';
+  pct_el.textContent       = pct + '%';
+  pct_el.className         = color || '';
+}
+
+function hideProgress() {
+  document.getElementById('upload-progress-wrap').classList.remove('visible');
+}
+
+function setDropState(state, title, sub) {
+  const zone = document.getElementById('import-zone');
+  zone.className = 'drop-zone ' + state;
+  document.getElementById('drop-title').textContent = title;
+  document.getElementById('drop-sub').textContent   = sub;
+  if (state === 'uploading') {
+    document.getElementById('drop-icon').textContent = '⬆';
+  } else if (state === 'done') {
+    document.getElementById('drop-icon').textContent = '✓';
+  } else {
+    document.getElementById('drop-icon').textContent = '⬆';
+  }
+}
+
+// ── fluxo principal de importação ────────────────────────────
+async function handleImportFile(file) {
+  const mb  = (file.size / 1024 / 1024).toFixed(1);
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  resetImportUI();
+  setDropState('uploading', `Preparando ${file.name} (${mb} MB)…`, 'Aguarde...');
+  setProgress(2, 'Obtendo URL de upload...', 'amber');
+
+  try {
+    // ── ETAPA 1: pedir presigned URL ao backend ───────────────
+    const presignedRes = await fetch(`${API}/api/upload/presigned?ext=${ext}`);
+    const presignedJson = await presignedRes.json();
+    if (!presignedJson.ok) throw new Error(presignedJson.error || 'Falha ao obter URL de upload');
+
+    const { upload_url, path } = presignedJson;
+
+    // ── ETAPA 2: upload DIRETO ao Supabase Storage via XHR ───
+    // XHR permite monitorar progresso real — fetch não expõe upload progress
+    setProgress(5, 'Enviando arquivo para Storage...', 'amber');
+
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      xhr.upload.addEventListener('progress', e => {
+        if (e.lengthComputable) {
+          // Upload ocupa 5% a 70% da barra
+          const pct = Math.round(5 + (e.loaded / e.total) * 65);
+          const sent = (e.loaded / 1024 / 1024).toFixed(1);
+          const total = (e.total / 1024 / 1024).toFixed(1);
+          setProgress(pct, `Enviando ${sent} / ${total} MB...`, 'amber');
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          reject(new Error(`Upload falhou: HTTP ${xhr.status}`));
+        }
+      });
+
+      xhr.addEventListener('error', () => reject(new Error('Erro de rede no upload')));
+      xhr.addEventListener('abort', () => reject(new Error('Upload cancelado')));
+
+      xhr.open('PUT', upload_url);
+      xhr.setRequestHeader('Content-Type', ext === 'csv' ? 'text/csv' : 'application/octet-stream');
+      xhr.send(file);
+    });
+
+    setProgress(72, 'Arquivo recebido. Enfileirando processamento...', 'amber');
+
+    // ── ETAPA 3: notifica backend para enfileirar o worker ────
+    const importRes = await fetch(`${API}/api/import/from-storage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path,
+        filename:   file.name,
+        size_bytes: file.size,
+      }),
+    });
+    const importJson = await importRes.json();
+    if (!importJson.ok) throw new Error(importJson.error || 'Falha ao enfileirar processamento');
+
+    setProgress(75, 'Worker iniciado. Processando planilha...', '');
+    setDropState('uploading', `Processando ${file.name}…`, 'Worker Celery em andamento...');
+    toast(`⬆ Upload concluído (${mb} MB). Processando...`, 'warn');
+
+    // ── ETAPA 4: polling de progresso do job ─────────────────
+    await pollImportJob(importJson.job_id);
+
+  } catch(e) {
+    setDropState('', 'Erro no upload — clique para tentar novamente', e.message);
+    setProgress(100, `Erro: ${e.message}`, 'red');
+    toast(`Erro: ${e.message}`, 'err');
+    setTimeout(hideProgress, 4000);
+  } finally {
+    fileInput.value = '';
+  }
+}
+
+// ── polling do job Celery ─────────────────────────────────────
+async function pollImportJob(jobId) {
+  if (_pollTimer) clearInterval(_pollTimer);
+
+  return new Promise((resolve) => {
+    _pollTimer = setInterval(async () => {
+      try {
+        const res  = await fetch(`${API}/api/import/status/${jobId}`);
+        const json = await res.json();
+        if (!json.ok) return;
+
+        const total     = json.total     || 0;
+        const processed = json.processed || 0;
+        const withDebt  = json.with_debt || 0;
+
+        if (total > 0) {
+          // Processamento ocupa 75% a 98% da barra
+          const pct = Math.round(75 + (processed / total) * 23);
+          const pctStr = Math.round((processed / total) * 100);
+          setProgress(pct,
+            `Processando ${processed.toLocaleString('pt-BR')} / ${total.toLocaleString('pt-BR')} linhas (${pctStr}%)`,
+            ''
+          );
+          setDropState('uploading',
+            `Processando planilha... ${pctStr}%`,
+            `${processed.toLocaleString('pt-BR')} de ${total.toLocaleString('pt-BR')} linhas — ${withDebt.toLocaleString('pt-BR')} com débito`
+          );
+        }
+
+        if (json.status === 'done') {
+          clearInterval(_pollTimer);
+          importSessionId = jobId;
+
+          setProgress(100, `✓ Concluído — ${withDebt.toLocaleString('pt-BR')} contatos com débito`, 'green');
+          setDropState('done',
+            `✓ ${total.toLocaleString('pt-BR')} contatos carregados`,
+            `${withDebt.toLocaleString('pt-BR')} com débito · clique para trocar o arquivo`
+          );
+
+          // Exibe KPIs e tabela
+          const rows = Array.isArray(json.result) ? json.result : [];
+          importRows = rows;
+          renderImportPreview({ rows, total, with_debt: withDebt, without_debt: total - withDebt });
+          toast(`✓ ${total.toLocaleString('pt-BR')} linhas processadas — ${withDebt.toLocaleString('pt-BR')} com débito`, 'ok');
+
+          setTimeout(hideProgress, 3000);
+          resolve(json);
+
+        } else if (json.status === 'error') {
+          clearInterval(_pollTimer);
+          const errMsg = json.result?.error || 'Erro desconhecido no worker';
+          setProgress(100, `Erro: ${errMsg}`, 'red');
+          setDropState('', 'Erro no processamento — clique para tentar novamente', errMsg);
+          toast(`Erro no worker: ${errMsg}`, 'err');
+          setTimeout(hideProgress, 5000);
+          resolve(json);
+        }
+
+      } catch(e) {
+        // erro de rede no poll — ignora e tenta na próxima iteração
+      }
+    }, 2000);
+  });
+}
+
+// ── render tabela preview ─────────────────────────────────────
+function renderImportPreview(data) {
+  document.getElementById('imp-total').textContent   = (data.total || 0).toLocaleString('pt-BR');
+  document.getElementById('imp-debt').textContent    = (data.with_debt || 0).toLocaleString('pt-BR');
+  document.getElementById('imp-no-debt').textContent = (data.without_debt || 0).toLocaleString('pt-BR');
+  document.getElementById('import-summary').classList.add('visible');
+  document.getElementById('import-actions').style.display = 'flex';
+
+  const rows = data.rows || [];
+  if (rows.length) {
+    document.getElementById('import-table-wrap').style.display = 'block';
+    document.getElementById('import-table-title').textContent  =
+      `Preview — ${rows.length.toLocaleString('pt-BR')} de ${(data.total || rows.length).toLocaleString('pt-BR')}`;
+    document.getElementById('import-body').innerHTML = rows.slice(0, 500).map(r => `
+      <tr>
+        <td>${r.name || '—'}</td>
+        <td class="td-mono">${r.cpf_raw || r.cpf || '—'}</td>
+        <td class="td-mono">${r.phone || '—'}</td>
+        <td>${r.has_debt
+          ? '<span class="debt-yes">✓ sim</span>'
+          : '<span class="debt-no">— não</span>'}</td>
+      </tr>`).join('');
+  }
+}
+
+// ── reset da aba import ───────────────────────────────────────
+function resetImportUI() {
+  importRows      = [];
+  importSessionId = null;
+  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  document.getElementById('import-summary').classList.remove('visible');
+  document.getElementById('import-actions').style.display = 'none';
+  document.getElementById('import-table-wrap').style.display = 'none';
+  document.getElementById('import-body').innerHTML = '';
+  document.getElementById('campaign-name-input').value = '';
+  hideProgress();
+}
+
+function resetImport() {
+  resetImportUI();
+  setDropState('', 'Arraste ou clique para selecionar', 'Aceita .xlsx e .csv · Planilha DDM ou genérica (CPF, Nome)');
+  fileInput.value = '';
+}
+
+// ── INIT ─────────────────────────────────────────────────────
+loadLines();
+setInterval(loadLines, 120_000);
+</script>
+</body>
+</html>
