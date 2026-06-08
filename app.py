@@ -158,7 +158,51 @@ def vapi_call(phone: str) -> dict:
     raise Exception(f"Todas as linhas falharam. Último erro: {last_error}")
 
 # ── Rotas ─────────────────────────────────────────────────────
+@app.route("/api/monitor", methods=["GET"])
+def monitor():
+    try:
+        # Busca campanhas em andamento
+        camps = supabase.table("campaigns")\
+            .select("id, name")\
+            .eq("status", "em_andamento")\
+            .execute().data
 
+        if not camps:
+            return jsonify({"ok": True, "data": [], "stats": {"em_andamento": 0, "atendido": 0, "erro": 0}})
+
+        camp_ids  = [c["id"] for c in camps]
+        camp_map  = {c["id"]: c["name"] for c in camps}
+
+        # Busca chamadas ativas
+        result = supabase.table("campaign_calls")\
+            .select("*")\
+            .in_("campaign_id", camp_ids)\
+            .in_("status", ["em_andamento", "atendido", "enfileirado", "erro"])\
+            .order("created_at", desc=True)\
+            .limit(100)\
+            .execute()
+
+        rows = []
+        for r in result.data:
+            rows.append({
+                "id":          r["id"],
+                "cpf":         r["cpf"],
+                "phone":       r["phone"],
+                "status":      r["status"],
+                "campaign":    camp_map.get(r["campaign_id"], "—"),
+                "created_at":  r["created_at"],
+            })
+
+        stats = {
+            "em_andamento": sum(1 for r in rows if r["status"] in ("em_andamento", "enfileirado")),
+            "atendido":     sum(1 for r in rows if r["status"] == "atendido"),
+            "erro":         sum(1 for r in rows if r["status"] == "erro"),
+        }
+
+        return jsonify({"ok": True, "data": rows, "stats": stats})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    
 @app.route("/api/campaign/start", methods=["POST"])
 def campaign_start():
     try:
@@ -224,6 +268,19 @@ def vapi_webhook():
         body     = request.json
         call_id  = body.get("message", {}).get("call", {}).get("id") or body.get("call", {}).get("id") or body.get("id")
         msg_type = body.get("message", {}).get("type") or body.get("type")
+        # Detecta quando atende
+        
+        if msg_type == "status-update":
+            status_call = body.get("message", {}).get("status")
+            call_id_log = body.get("message", {}).get("call", {}).get("id")
+            if status_call == "in-progress" and call_id_log:
+                print(f"ATENDEU call_id={call_id_log}", flush=True)
+                try:
+                    supabase.table("campaign_calls").update({"status": "atendido"})\
+                        .eq("vapi_call_id", call_id_log).execute()
+                except Exception:
+                    pass
+            return jsonify({"ok": True}), 200
 
         if msg_type not in ("end-of-call-report", "call-ended"):
             return jsonify({"ok": True}), 200

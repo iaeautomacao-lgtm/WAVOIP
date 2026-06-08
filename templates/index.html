@@ -198,6 +198,32 @@
 
   <main>
 
+<!-- MONITOR -->
+<div class="section" id="tab-monitor">
+  <div class="sec-head">
+    <span class="sec-title">Monitor de chamadas ativas</span>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span class="td-dim" id="monitor-updated">—</span>
+      <button class="btn btn-ghost" onclick="loadMonitor()">↻ &nbsp;Atualizar</button>
+    </div>
+  </div>
+  <div class="kpi-strip" id="monitor-stats" style="display:none">
+    <div class="kpi c"><div class="kpi-label">Em andamento</div><div class="kpi-val" id="mon-andamento">0</div></div>
+    <div class="kpi g"><div class="kpi-label">Atendidas</div><div class="kpi-val" id="mon-atendido">0</div></div>
+    <div class="kpi r"><div class="kpi-label">Erro</div><div class="kpi-val" id="mon-erro">0</div></div>
+  </div>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr><th>CPF</th><th>Telefone</th><th>Status</th><th>Campanha</th><th>Iniciada</th></tr>
+      </thead>
+      <tbody id="monitor-body">
+        <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
     <!-- LINHAS -->
     <div class="section active" id="tab-lines">
       <div class="sec-head">
@@ -371,8 +397,63 @@
     clearTimeout(el._t);
     el._t = setTimeout(() => el.className = '', 3500);
   }
+// ── MONITOR ─────────────────────────────────────────────────
+let monitorTimer = null;
 
+async function loadMonitor() {
+  try {
+    const res  = await fetch(`${API}/api/monitor`);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    renderMonitor(json.data, json.stats);
+    document.getElementById('monitor-updated').textContent =
+      'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
+  } catch(e) {
+    document.getElementById('monitor-body').innerHTML =
+      `<tr><td colspan="5"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+  }
+}
+
+function renderMonitor(rows, stats) {
+  const tbody = document.getElementById('monitor-body');
+  document.getElementById('monitor-stats').style.display = 'grid';
+  document.getElementById('mon-andamento').textContent = stats.em_andamento;
+  document.getElementById('mon-atendido').textContent  = stats.atendido;
+  document.getElementById('mon-erro').textContent      = stats.erro;
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Nenhuma chamada ativa.</div></td></tr>';
+    return;
+  }
+
+  const statusMap = {
+    em_andamento: { cls: 'cs-in-progress', label: 'ligando' },
+    enfileirado:  { cls: 'cs-queued',      label: 'aguardando' },
+    atendido:     { cls: 'cs-ended',       label: 'atendido' },
+    erro:         { cls: 'cs-failed',      label: 'erro' },
+  };
+
+  tbody.innerHTML = rows.map(r => {
+    const s    = statusMap[r.status] || { cls: 'cs-queued', label: r.status };
+    const date = r.created_at ? new Date(r.created_at).toLocaleTimeString('pt-BR') : '—';
+    const cpf  = r.cpf ? r.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : '—';
+    const tel  = r.phone ? r.phone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3') : '—';
+    return `<tr>
+      <td class="td-mono">${cpf}</td>
+      <td class="td-mono">${tel}</td>
+      <td><span class="cs ${s.cls}">${s.label}</span></td>
+      <td class="td-dim">${r.campaign}</td>
+      <td class="td-dim">${date}</td>
+    </tr>`;
+  }).join('');
+}
+
+function startMonitor() {
+  if (monitorTimer) clearInterval(monitorTimer);
+  monitorTimer = setInterval(loadMonitor, 5000);
+}
   // ── LINHAS ──────────────────────────────────────────────────
+
   let linesData = [];
 
   async function loadLines() {
