@@ -76,21 +76,26 @@ def normalize_cpf(cpf: str) -> str:
     return str(cpf).replace(".", "").replace("-", "").replace("/", "").strip().zfill(11)
 
 def get_healthy_lines() -> list:
-    """
-    Retorna lista de dispositivos saudáveis ordenada por DEVICE_PRIORITY.
-    Saudável = status open + não desativado + tem número vinculado.
-    """
     token      = wavoip_login()
     devices    = wavoip_get_devices(token)
     device_map = {d.get("token"): d for d in devices}
 
-    return [
-        device_map[t] for t in DEVICE_PRIORITY
-        if t in device_map
-        and device_map[t].get("status") == "open"
-        and device_map[t].get("disabled") == 0
-        and device_map[t].get("phone") is not None
-    ]
+    healthy = []
+    for t in DEVICE_PRIORITY:
+        if t not in device_map:
+            continue
+        d = device_map[t]
+        if d.get("status") != "open":
+            continue
+        if d.get("disabled") != 0:
+            continue
+        if d.get("phone") is None:
+            continue
+        if not WAVOIP_VAPI_MAP.get(t):  # pula se não tem phoneNumberId mapeado
+            continue
+        healthy.append(d)
+
+    return healthy
 
 def vapi_call(phone: str) -> dict:
     """
