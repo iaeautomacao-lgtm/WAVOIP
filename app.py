@@ -392,42 +392,54 @@ def list_campaigns():
 
 
 @app.route("/api/campaigns", methods=["POST"])
+@app.route("/api/campaigns", methods=["POST"])
 def create_campaign():
     try:
-        body    = request.json
-        name    = body.get("name", "").strip()
-        
-        contacts = body.get("contacts", [])
+        body        = request.json
+        name        = body.get("name", "").strip()
+        session_id  = body.get("session_id")
+        contacts    = body.get("contacts", [])
 
         if not name:
             return jsonify({"ok": False, "error": "Nome obrigatório"}), 400
+
+        # Se tem session_id, busca do Supabase
+        if session_id:
+            job = supabase.table("import_jobs")\
+                .select("result, with_debt")\
+                .eq("id", session_id).execute().data
+            if not job:
+                return jsonify({"ok": False, "error": "Sessão não encontrada"}), 404
+            contacts = [r for r in job[0]["result"] if r.get("has_debt") and r.get("phone")]
+
         if not contacts:
-            return jsonify({"ok": False, "error": "Nenhum contato"}), 400
+            return jsonify({"ok": False, "error": "Nenhum contato com débito e telefone"}), 400
 
-        valid = [c for c in contacts if c.get("phone")]
-        if not valid:
-            return jsonify({"ok": False, "error": "Nenhum contato com telefone"}), 400
-
-        # Cria campanha
         camp = supabase.table("campaigns").insert({
             "name":   name,
             "status": "rascunho",
-            "total":  len(valid),
+            "total":  len(contacts),
         }).execute().data[0]
 
         campaign_id = camp["id"]
 
-        # Insere contatos como pendente
-        rows = []
-        for i, c in enumerate(valid):
-            rows.append({
-                "campaign_id": campaign_id,
-                "cpf":         c.get("cpf", ""),
-                "phone":       c.get("phone", "").strip(),
-                "name":        c.get("name", ""),   # ← adiciona isso
-                "status":      "pendente",
+        rows = [{
+            "campaign_id": campaign_id,
+            "cpf":         c.get("cpf", ""),
+            "phone":       c.get("phone", "").strip(),
+            "name":        c.get("name", ""),
+            "status":      "pendente",
             "order_idx":   i,
-})
+            "debito_data": c.get("debito"),
+        } for i, c in enumerate(contacts)]
+
+        # Insere em lotes de 500
+        for i in range(0, len(rows), 500):
+            supabase.table("campaign_calls").insert(rows[i:i+500]).execute()
+
+        return jsonify({"ok": True, "campaign": camp})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
         supabase.table("campaign_calls").insert(rows).execute()
 
@@ -730,9 +742,19 @@ def import_upload():
             total     = len(rows)
             with_debt = sum(1 for r in rows if r["has_debt"])
 
+            # Salva rows numa sessão temporária
+            session = supabase.table("import_jobs").insert({
+                "status":    "done",
+                "total":     total,
+                "with_debt": with_debt,
+                "processed": total,
+                "result":    rows,
+            }).execute().data[0]
+
             return jsonify({
                 "ok":           True,
                 "mode":         "ddm",
+                "session_id":   session["id"],
                 "rows":         rows[:200],
                 "total":        total,
                 "with_debt":    with_debt,

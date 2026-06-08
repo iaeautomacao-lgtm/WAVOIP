@@ -717,29 +717,33 @@
   }
 
   async function saveCampaign() {
-    const name     = document.getElementById('campaign-name-input').value.trim();
-    const withDebt = importRows.filter(r => r.has_debt && r.phone);
-    if (!name)           { toast('Digite um nome para a campanha.', 'err'); return; }
-    if (!withDebt.length){ toast('Nenhum contato com débito e telefone.', 'err'); return; }
+    const name = document.getElementById('campaign-name-input').value.trim();
+    if (!name) { toast('Digite um nome para a campanha.', 'err'); return; }
+    if (!importSessionId && !importRows.filter(r => r.has_debt && r.phone).length) {
+        toast('Nenhum contato com débito e telefone.', 'err'); return;
+    }
     const btn = document.getElementById('btn-save-campaign');
     btn.disabled = true; btn.textContent = 'Salvando…';
     try {
-      const res  = await fetch(`${API}/api/campaigns`, {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ name, contacts: withDebt })
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error);
-      toast(`✓ Campanha "${name}" salva com ${withDebt.length} contatos`, 'ok');
-      campaignsLoaded = false;
-      resetImport();
-    } catch(e) {
-      toast(`Erro: ${e.message}`, 'err');
-    } finally {
-      btn.disabled = false; btn.textContent = '💾  Salvar campanha';
-    }
-  }
+        const body = importSessionId
+            ? { name, session_id: importSessionId }
+            : { name, contacts: importRows.filter(r => r.has_debt && r.phone) };
 
+        const res  = await fetch(`${API}/api/campaigns`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(body)
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error);
+        toast(`✓ Campanha "${name}" salva com sucesso`, 'ok');
+        campaignsLoaded = false;
+        resetImport();
+    } catch(e) {
+        toast(`Erro: ${e.message}`, 'err');
+    } finally {
+        btn.disabled = false; btn.textContent = '💾  Salvar campanha';
+    }
+}
   // ── MODAL ───────────────────────────────────────────────────
   let modalContact = null;
 
