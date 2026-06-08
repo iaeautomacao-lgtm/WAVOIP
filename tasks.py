@@ -57,6 +57,11 @@ def wavoip_login() -> str:
     _wavoip_token    = res.json()["data"]["token"]
     _wavoip_token_ts = time.time()
     return _wavoip_token
+def wavoip_get_devices(token: str) -> list:
+    res = requests.get(f"{WAVOIP_BASE}/v2/devices/me",
+        headers={"Authorization": f"Bearer {token}"}, timeout=10)
+    res.raise_for_status()
+    return res.json().get("data", [])
 
 def get_healthy_lines() -> list:
     token      = wavoip_login()
