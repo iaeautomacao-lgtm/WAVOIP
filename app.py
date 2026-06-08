@@ -9,6 +9,7 @@ from supabase import create_client, Client
 from tasks import celery, make_call_task, process_import, process_import_ddm
 from ddm import processar_debito
 load_dotenv()
+from tasks import celery, make_call_task, process_import, process_import_ddm, process_file
 
 app = Flask(__name__)
 CORS(app)
@@ -490,113 +491,32 @@ def import_upload():
         file  = request.files["file"]
         fname = file.filename.lower()
 
-        if fname.endswith(".csv"):
-            df = pd.read_csv(file, dtype=str, sep=None, engine="python")
-        elif fname.endswith(".xlsx") or fname.endswith(".xls"):
-            df = pd.read_excel(file, dtype=str)
-        else:
+        if not (fname.endswith(".csv") or fname.endswith(".xlsx") or fname.endswith(".xls")):
             return jsonify({"ok": False, "error": "Formato inválido. Use .csv ou .xlsx"}), 400
 
-        df.columns = [c.strip().lower() for c in df.columns]
+        # Salva em /tmp e enfileira no Celery
+        import uuid
+        file_id   = str(uuid.uuid4())
+        file_path = f"/tmp/{file_id}_{file.filename}"
+        file.save(file_path)
 
-        cpf_col  = next((c for c in df.columns if "cpf" in c), None)
-        nome_col = next((c for c in df.columns if "nome" in c or "name" in c), None)
-        val_col  = next((c for c in df.columns if "val_atualizado" in c or "val_nominal" in c), None)
-        is_ddm   = val_col is not None
+        job = supabase.table("import_jobs").insert({
+            "status":    "processing",
+            "total":     0,
+            "with_debt": 0,
+            "processed": 0,
+        }).execute().data[0]
 
-        if not cpf_col:
-            return jsonify({"ok": False, "error": "Coluna CPF não encontrada"}), 400
-        if not nome_col:
-            return jsonify({"ok": False, "error": "Coluna Nome não encontrada"}), 400
+        process_file.delay(job["id"], file_path)
 
-        def get_phone(r):
-            for col in ["fone1", "tel", "telefone", "celular", "phone"]:
-                if col in df.columns:
-                    val = str(r.get(col, "") or "").strip()
-                    if val and val != "nan":
-                        return val
-            return ""
-
-        if is_ddm:
-            # Processamento vetorizado — muito mais rápido que iterrows
-            df["_cpf_norm"] = df[cpf_col].fillna("").astype(str).apply(normalize_cpf)
-            df["_phone"]    = df[["fone1","fone2","fone3"]].apply(
-                lambda row: next((str(v).strip() for v in row if str(v).strip() and str(v).strip() != "nan"), ""),
-                axis=1
-            )
-            df["_val"] = pd.to_numeric(
-                df[val_col].fillna("0").astype(str).str.replace(",", "."),
-                errors="coerce"
-            ).fillna(0)
-
-            total     = len(df[df["_cpf_norm"] != ""])
-            with_debt = int((df["_val"] > 0).sum())
-
-            job = supabase.table("import_jobs").insert({
-                "status":    "processing",
-                "total":     total,
-                "with_debt": 0,
-                "processed": 0,
-            }).execute().data[0]
-
-            # Manda só os dados necessários pro worker
-            records = df[df["_cpf_norm"] != ""][[
-                "_cpf_norm", nome_col, "_phone", "_val", val_col,
-                "carteira" if "carteira" in df.columns else "_cpf_norm",
-                "parcelas" if "parcelas" in df.columns else "_cpf_norm",
-                "val_nominal" if "val_nominal" in df.columns else val_col,
-            ]].rename(columns={
-                "_cpf_norm": "cpf",
-                nome_col:    "name",
-                "_phone":    "phone",
-                "_val":      "val_float",
-                val_col:     "val_avista",
-            }).to_dict("records")
-
-            process_import_ddm.delay(job["id"], records)
-
-            return jsonify({
-                "ok":     True,
-                "mode":   "async",
-                "job_id": job["id"],
-                "total":  total,
-            })
-
-        else:
-            raw_rows = []
-            for _, row in df.iterrows():
-                cpf_raw  = str(row.get(cpf_col, "") or "").strip()
-                cpf_norm = normalize_cpf(cpf_raw)
-                if not cpf_norm:
-                    continue
-                raw_rows.append({
-                    "cpf":   cpf_norm,
-                    "name":  str(row.get(nome_col, "") or "").strip(),
-                    "phone": get_phone(row),
-                })
-
-            if not raw_rows:
-                return jsonify({"ok": False, "error": "Nenhum CPF válido encontrado"}), 400
-
-            job = supabase.table("import_jobs").insert({
-                "status":    "processing",
-                "total":     len(raw_rows),
-                "with_debt": 0,
-                "processed": 0,
-            }).execute().data[0]
-
-            process_import.delay(job["id"], raw_rows)
-
-            return jsonify({
-                "ok":     True,
-                "mode":   "async",
-                "job_id": job["id"],
-                "total":  len(raw_rows),
-            })
+        return jsonify({
+            "ok":     True,
+            "mode":   "async",
+            "job_id": job["id"],
+        })
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
 
 @app.route("/api/import/status/<job_id>", methods=["GET"])
 def import_status(job_id):
