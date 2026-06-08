@@ -608,15 +608,13 @@
     const btn = document.getElementById('btn-call-batch');
     btn.disabled = true; btn.textContent = 'Disparando…';
     try {
-      const res  = await fetch(`${API}/api/import/call-batch`, {
+      const res  = await fetch(`${API}/api/campaign/start`, {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ contacts: withDebt })
+        body: JSON.stringify({ contacts: withDebt, campaign_id: String(Date.now()) })
       });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error);
-      const ok  = json.results.filter(r => r.status==='disparado').length;
-      const err = json.results.filter(r => r.status==='erro').length;
-      toast(`✓ ${ok} ligações disparadas${err?` · ${err} erros`:''}`, 'ok');
+      toast(`✓ Campanha iniciada — ${json.total} contatos · ${json.fired} disparados agora`, 'ok');
     } catch(e) {
       toast(`Erro: ${e.message}`, 'err');
     } finally {
@@ -624,6 +622,7 @@
     }
   }
 
+  
   function resetImport() {
     importRows = []; fileInput.value = '';
     document.getElementById('import-summary').classList.remove('visible');
