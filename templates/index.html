@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CallOps — DDM</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:       #060608;
+      --s1:       #0d0d12;
+      --s2:       #13131a;
+      --s3:       #1a1a24;
+      --border:   rgba(255,255,255,.06);
+      --border2:  rgba(255,255,255,.1);
+      --cyan:     #00d4ff;
+      --green:    #00ff88;
+      --red:      #ff3d5a;
+      --amber:    #ffb800;
+      --text:     #f0f0f8;
+      --muted:    #555570;
+      --muted2:   #888899;
+      --syne:     'Syne', sans-serif;
+      --mono:     'JetBrains Mono', monospace;
+    }
+
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--syne);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ─── Grid de fundo ─── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,255,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 0% 0%, rgba(0,212,255,.07) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 30% at 100% 100%, rgba(0,255,136,.05) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      min-height: 100vh;
+    }
+
+    /* ─── Header ─── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 40px;
+      height: 60px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(6,6,8,.9);
+      backdrop-filter: blur(20px);
+      position: sticky; top: 0; z-index: 100;
+    }
+
+    .logo-wrap { display: flex; align-items: center; gap: 12px; }
+
+    .logo-icon {
+      width: 28px; height: 28px;
+      border: 1.5px solid var(--cyan);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono);
+      font-size: .6rem;
+      color: var(--cyan);
+      letter-spacing: .05em;
+    }
+
+    .logo-text {
+      font-family: var(--syne);
+      font-size: .9rem;
+      font-weight: 700;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+    .logo-text span { color: var(--muted2); font-weight: 400; }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 12px;
+      border-radius: 100px;
+      background: rgba(0,255,136,.06);
+      border: 1px solid rgba(0,255,136,.15);
+      font-family: var(--mono);
+      font-size: .65rem;
+      color: var(--green);
+      letter-spacing: .08em;
+    }
+
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      animation: blink 2s infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    .clock {
+      font-family: var(--mono);
+      font-size: .72rem;
+      color: var(--muted2);
+      letter-spacing: .1em;
+    }
+
+    /* ─── Nav ─── */
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 0 40px;
+      background: var(--s1);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+    }
+
+    .tab {
+      position: relative;
+      padding: 0 20px;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: .65rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color .2s;
+      border-bottom: 2px solid transparent;
+    }
+    .tab:hover { color: var(--muted2); }
+    .tab.active {
+      color: var(--cyan);
+      border-bottom-color: var(--cyan);
+    }
+    .tab-icon { font-size: .75rem; opacity: .7; }
+
+    /* ─── Main ─── */
+    main { padding: 32px 40px; }
+
+    .section { display: none; animation: rise .2s ease; }
+    .section.active { display: block; }
+    @keyframes rise { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+
+    /* ─── Section header ─── */
+    .sec-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .sec-title {
+      font-size: .65rem;
+      font-family: var(--mono);
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--muted2);
+    }
+
+    /* ─── KPI strip ─── */
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    @media(max-width:900px){ .kpi-strip{ grid-template-columns: repeat(2,1fr); } }
+
+    .kpi {
+      background: var(--s2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color .2s;
+    }
+    .kpi:hover { border-color: var(--border2); }
+    .kpi::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 1px;
+    }
+    .kpi.c::before  { background: linear-gradient(90deg, var(--cyan), transparent); }
+    .kpi.g::before  { background: linear-gradient(90deg, var(--green), transparent); }
+    .kpi.r::before  { background: linear-gradient(90deg, var(--red), transparent); }
+    .kpi.a::before  { background: linear-gradient(90deg, var(--amber), transparent); }
+
+    .kpi-label {
+      font-family: var(--mono);
+      font-size: .58rem;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .kpi-val {
+      font-family: var(--mono);
+      font-size: 1.8rem;
+      font-weight: 500;
+      line-height: 1;
+    }
+    .kpi.c .kpi-val { color: var(--cyan); }
+    .kpi.g .kpi-val { color: var(--green); }
+    .kpi.r .kpi-val { color: var(--red); }
+    .kpi.a .kpi-val { color: var(--amber); }
+
+    /* ─── Lines grid ─── */
+    .lines-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .line-card {
+      background: var(--s2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      position: relative;
+      overflow: hidden;
+      cursor: default;
+      transition: border-color .2s, transform .2s;
+    }
+    .line-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+
+    .line-card .top-bar {
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 2px;
+    }
+    .line-card.healthy .top-bar { background: var(--green); box-shadow: 0 0 8px rgba(0,255,136,.4); }
+    .line-card.down    .top-bar { background: var(--red); }
+    .line-card.warn    .top-bar { background: var(--amber); }
+
+    .line-name {
+      font-family: var(--mono);
+      font-size: .6rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .line-number {
+      font-family: var(--mono);
+      font-size: .88rem;
+      color: var(--text);
+      margin-bottom: 14px;
+      letter-spacing: .04em;
+    }
+    .line-number.empty { color: var(--muted); font-size: .75rem; font-style: italic; }
+
+    .line-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 12px; }
+
+    .tag {
+      font-family: var(--mono);
+      font-size: .55rem;
+      letter-spacing: .08em;
+      padding: 2px 7px;
+      border-radius: 3px;
+      text-transform: uppercase;
+    }
+    .tag-green { background: rgba(0,255,136,.1); color: var(--green); border: 1px solid rgba(0,255,136,.2); }
+    .tag-red   { background: rgba(255,61,90,.1);  color: var(--red);   border: 1px solid rgba(255,61,90,.2); }
+    .tag-cyan  { background: rgba(0,212,255,.1);  color: var(--cyan);  border: 1px solid rgba(0,212,255,.2); }
+    .tag-gray  { background: rgba(85,85,112,.15); color: var(--muted2);border: 1px solid rgba(85,85,112,.25); }
+    .tag-amber { background: rgba(255,184,0,.1);  color: var(--amber); border: 1px solid rgba(255,184,0,.2); }
+
+    .line-meta {
+      font-family: var(--mono);
+      font-size: .58rem;
+      color: var(--muted);
+      letter-spacing: .06em;
+    }
+    .line-meta b { color: var(--muted2); }
+
+    /* ─── Botão ─── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: .62rem;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      padding: 7px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all .2s;
+      border: none;
+    }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border2);
+      color: var(--muted2);
+    }
+    .btn-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+
+    .btn-primary {
+      background: var(--cyan);
+      color: #000;
+      font-weight: 600;
+    }
+    .btn-primary:hover { opacity: .85; }
+
+    .btn-success {
+      background: var(--green);
+      color: #000;
+      font-weight: 600;
+    }
+    .btn-success:hover { opacity: .85; }
+    .btn-success:disabled { opacity: .3; cursor: not-allowed; }
+
+    .btn-danger {
+      background: transparent;
+      border: 1px solid rgba(255,61,90,.3);
+      color: var(--red);
+    }
+    .btn-danger:hover { background: rgba(255,61,90,.08); }
+
+    /* ─── Tabela ─── */
+    .table-card {
+      background: var(--s2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+
+    thead tr {
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,.02);
+    }
+    thead th {
+      padding: 11px 16px;
+      text-align: left;
+      font-family: var(--mono);
+      font-size: .58rem;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid rgba(255,255,255,.03);
+      transition: background .12s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(0,212,255,.03); }
+
+    tbody td {
+      padding: 11px 16px;
+      font-size: .82rem;
+      color: var(--text);
+      vertical-align: middle;
+    }
+    .td-mono { font-family: var(--mono); font-size: .7rem; color: var(--muted2); }
+    .td-dim  { color: var(--muted2); font-size: .75rem; }
+
+    .call-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--mono);
+      font-size: .6rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 5px 11px;
+      border-radius: 5px;
+      background: rgba(0,212,255,.08);
+      border: 1px solid rgba(0,212,255,.2);
+      color: var(--cyan);
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .call-btn:hover { background: rgba(0,212,255,.15); border-color: var(--cyan); box-shadow: 0 0 10px rgba(0,212,255,.15); }
+    .call-btn:disabled { opacity: .25; cursor: not-allowed; }
+
+    /* ─── Status badges ─── */
+    .cs {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--mono);
+      font-size: .58rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+    .cs::before { content:''; width:5px; height:5px; border-radius:50%; }
+    .cs-ended       { background: rgba(0,255,136,.08); color: var(--green); }
+    .cs-ended::before { background: var(--green); }
+    .cs-failed      { background: rgba(255,61,90,.08);  color: var(--red); }
+    .cs-failed::before { background: var(--red); }
+    .cs-in-progress { background: rgba(0,212,255,.08);  color: var(--cyan); }
+    .cs-in-progress::before { background: var(--cyan); box-shadow: 0 0 4px var(--cyan); animation: blink 1s infinite; }
+    .cs-queued      { background: rgba(85,85,112,.15);  color: var(--muted2); }
+    .cs-queued::before { background: var(--muted2); }
+
+    /* ─── Paginação ─── */
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .page-info { font-family: var(--mono); font-size: .62rem; color: var(--muted); letter-spacing: .08em; }
+
+    /* ─── Search ─── */
+    .search-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+    .search-icon {
+      position: absolute;
+      left: 11px;
+      font-size: .75rem;
+      color: var(--muted);
+      pointer-events: none;
+    }
+    .search-input {
+      background: var(--s3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: .72rem;
+      padding: 7px 12px 7px 30px;
+      border-radius: 6px;
+      outline: none;
+      width: 220px;
+      transition: border-color .2s;
+      letter-spacing: .04em;
+    }
+    .search-input:focus { border-color: var(--cyan); }
+    .search-input::placeholder { color: var(--muted); }
+
+    /* ─── Import zone ─── */
+    .drop-zone {
+      border: 1px dashed rgba(0,212,255,.2);
+      border-radius: 12px;
+      padding: 56px 32px;
+      text-align: center;
+      cursor: pointer;
+      background: var(--s2);
+      transition: all .2s;
+      margin-bottom: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    .drop-zone::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 60% 60% at 50% 50%, rgba(0,212,255,.03), transparent);
+      pointer-events: none;
+    }
+    .drop-zone:hover, .drop-zone.drag {
+      border-color: var(--cyan);
+      background: rgba(0,212,255,.04);
+    }
+    .drop-icon {
+      font-size: 2rem;
+      margin-bottom: 14px;
+      opacity: .6;
+    }
+    .drop-title {
+      font-size: .85rem;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: .06em;
+      margin-bottom: 6px;
+    }
+    .drop-sub {
+      font-family: var(--mono);
+      font-size: .62rem;
+      color: var(--muted);
+      letter-spacing: .08em;
+    }
+
+    .import-actions { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+
+    .debt-yes { font-family: var(--mono); font-size: .62rem; color: var(--green); letter-spacing: .06em; }
+    .debt-no  { font-family: var(--mono); font-size: .62rem; color: var(--muted); letter-spacing: .06em; }
+
+    /* ─── Modal ─── */
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.75);
+      backdrop-filter: blur(8px);
+      z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+    }
+    .overlay.open { opacity: 1; pointer-events: all; }
+
+    .modal {
+      background: var(--s1);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      padding: 32px;
+      width: 400px;
+      transform: translateY(12px) scale(.98);
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+      position: relative;
+      overflow: hidden;
+    }
+    .modal::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    }
+    .overlay.open .modal { transform: none; }
+
+    .modal-title {
+      font-size: .7rem;
+      font-family: var(--mono);
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 24px;
+    }
+
+    .modal-field { margin-bottom: 16px; }
+    .modal-label {
+      display: block;
+      font-family: var(--mono);
+      font-size: .58rem;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 7px;
+    }
+    .modal-val {
+      font-family: var(--mono);
+      font-size: .82rem;
+      color: var(--text);
+      letter-spacing: .04em;
+    }
+
+    .modal-select {
+      width: 100%;
+      background: var(--s3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: .72rem;
+      padding: 9px 12px;
+      border-radius: 7px;
+      outline: none;
+      transition: border-color .2s;
+      letter-spacing: .04em;
+    }
+    .modal-select:focus { border-color: var(--cyan); }
+
+    .modal-footer {
+      display: flex;
+      gap: 10px;
+      margin-top: 28px;
+    }
+    .modal-footer .btn { flex: 1; justify-content: center; padding: 11px; }
+
+    /* ─── Loader ─── */
+    .loader {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      padding: 52px;
+      font-family: var(--mono);
+      font-size: .65rem;
+      color: var(--muted);
+      letter-spacing: .1em;
+    }
+    .spin {
+      width: 14px; height: 14px;
+      border: 1.5px solid var(--border2);
+      border-top-color: var(--cyan);
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Toast ─── */
+    #toast {
+      position: fixed;
+      bottom: 24px; right: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 18px;
+      border-radius: 8px;
+      background: var(--s2);
+      border: 1px solid var(--border2);
+      font-family: var(--mono);
+      font-size: .68rem;
+      letter-spacing: .06em;
+      color: var(--text);
+      z-index: 999;
+      transform: translateY(16px);
+      opacity: 0;
+      transition: all .3s cubic-bezier(.34,1.56,.64,1);
+      max-width: 340px;
+      pointer-events: none;
+    }
+    #toast.show { transform: none; opacity: 1; }
+    #toast.ok  { border-color: rgba(0,255,136,.3); color: var(--green); }
+    #toast.err { border-color: rgba(255,61,90,.3);  color: var(--red); }
+
+    /* ─── Import summary hidden ─── */
+    .import-summary { display: none; }
+    .import-summary.visible { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 24px; }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <header>
+    <div class="logo-wrap">
+      <div class="logo-icon">CO</div>
+      <div class="logo-text">CallOps <span>/ DDM</span></div>
+    </div>
+    <div class="header-right">
+      <div class="status-pill">
+        <div class="status-dot"></div>
+        <span id="healthy-count">— linhas</span>
+      </div>
+      <div class="clock" id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <nav>
+    <div class="tab active" data-tab="lines"><span class="tab-icon">◈</span> Linhas</div>
+    <div class="tab" data-tab="contacts"><span class="tab-icon">◎</span> Contatos</div>
+    <div class="tab" data-tab="calls"><span class="tab-icon">◷</span> Histórico</div>
+    <div class="tab" data-tab="import"><span class="tab-icon">↑</span> Importar</div>
+  </nav>
+
+  <main>
+
+    <!-- LINHAS -->
+    <div class="section active" id="tab-lines">
+      <div class="sec-head">
+        <span class="sec-title">Status das linhas Wavoip</span>
+        <button class="btn btn-ghost" onclick="loadLines()">↻ &nbsp;Atualizar</button>
+      </div>
+
+      <div class="kpi-strip" id="lines-stats" style="display:none">
+        <div class="kpi c"><div class="kpi-label">Total</div><div class="kpi-val" id="stat-total">0</div></div>
+        <div class="kpi g"><div class="kpi-label">Ativas</div><div class="kpi-val" id="stat-healthy">0</div></div>
+        <div class="kpi r"><div class="kpi-label">Inativas</div><div class="kpi-val" id="stat-down">0</div></div>
+        <div class="kpi a"><div class="kpi-label">Chamadas</div><div class="kpi-val" id="stat-calls">0</div></div>
+      </div>
+
+      <div class="lines-grid" id="lines-grid">
+        <div class="loader"><div class="spin"></div>Carregando linhas...</div>
+      </div>
+    </div>
+
+    <!-- CONTATOS -->
+    <div class="section" id="tab-contacts">
+      <div class="sec-head">
+        <span class="sec-title">Contatos com débito</span>
+        <div class="search-wrap">
+          <span class="search-icon">⌕</span>
+          <input class="search-input" type="text" id="contacts-search" placeholder="Buscar por nome..." />
+        </div>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Nome</th><th>CPF</th><th>Instituição</th><th>Telefones</th><th>Ação</th>
+            </tr>
+          </thead>
+          <tbody id="contacts-body">
+            <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button class="btn btn-ghost" id="contacts-prev" onclick="contactsPage(-1)">← Anterior</button>
+        <span class="page-info" id="contacts-page-info">—</span>
+        <button class="btn btn-ghost" id="contacts-next" onclick="contactsPage(1)">Próxima →</button>
+      </div>
+    </div>
+
+    <!-- HISTÓRICO -->
+    <div class="section" id="tab-calls">
+      <div class="sec-head">
+        <span class="sec-title">Histórico de chamadas</span>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Contato</th><th>Status</th><th>Duração</th><th>Data</th>
+            </tr>
+          </thead>
+          <tbody id="calls-body">
+            <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button class="btn btn-ghost" id="calls-prev" onclick="callsPage(-1)">← Anterior</button>
+        <span class="page-info" id="calls-page-info">—</span>
+        <button class="btn btn-ghost" id="calls-next" onclick="callsPage(1)">Próxima →</button>
+      </div>
+    </div>
+
+    <!-- IMPORTAR -->
+    <div class="section" id="tab-import">
+      <div class="sec-head">
+        <span class="sec-title">Importar planilha de contatos</span>
+      </div>
+
+      <div class="drop-zone" id="import-zone" onclick="document.getElementById('file-input').click()">
+        <div class="drop-icon">⬆</div>
+        <div class="drop-title">Arraste ou clique para selecionar</div>
+        <div class="drop-sub">Aceita .xlsx e .csv &nbsp;·&nbsp; Colunas obrigatórias: CPF, Nome</div>
+        <input type="file" id="file-input" accept=".xlsx,.csv,.xls" style="display:none" />
+      </div>
+
+      <div class="import-summary" id="import-summary">
+        <div class="kpi c"><div class="kpi-label">Total importados</div><div class="kpi-val" id="imp-total">0</div></div>
+        <div class="kpi g"><div class="kpi-label">Com débito</div><div class="kpi-val" id="imp-debt">0</div></div>
+        <div class="kpi r"><div class="kpi-label">Sem débito</div><div class="kpi-val" id="imp-no-debt">0</div></div>
+      </div>
+
+      <div class="import-actions" id="import-actions" style="display:none">
+        <button class="btn btn-success" id="btn-call-batch" onclick="callBatch()">↗ &nbsp;Ligar para todos com débito</button>
+        <button class="btn btn-danger" onclick="resetImport()">✕ &nbsp;Limpar</button>
+      </div>
+
+      <div id="import-table-wrap" style="display:none">
+        <div class="sec-head" style="margin-bottom:14px">
+          <span class="sec-title" id="import-table-title">Preview</span>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Débito?</th></tr>
+            </thead>
+            <tbody id="import-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Modal -->
+<div class="overlay" id="call-modal">
+  <div class="modal">
+    <div class="modal-title">↗ &nbsp;Iniciar chamada</div>
+    <div class="modal-field">
+      <span class="modal-label">Contato</span>
+      <div class="modal-val" id="modal-contact-name">—</div>
+    </div>
+    <div class="modal-field">
+      <span class="modal-label">Telefone</span>
+      <select class="modal-select" id="modal-phone-select"></select>
+    </div>
+    <div class="modal-field">
+      <span class="modal-label">Linha SIP</span>
+      <select class="modal-select" id="modal-line-select">
+        <option value="">Carregando linhas...</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmCall()">Ligar agora</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const API = '';
+
+  setInterval(() => {
+    document.getElementById('clock').textContent = new Date().toLocaleTimeString('pt-BR');
+  }, 1000);
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      if (tab.dataset.tab === 'contacts' && !contactsLoaded) loadContacts();
+      if (tab.dataset.tab === 'calls'    && !callsLoaded)    loadCalls();
+    });
+  });
+
+  function toast(msg, type = 'ok') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `show ${type}`;
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.className = '', 3500);
+  }
+
+  // ── LINHAS ──────────────────────────────────────────────────
+  let linesData = [];
+
+  async function loadLines() {
+    document.getElementById('lines-grid').innerHTML = '<div class="loader"><div class="spin"></div>Carregando linhas...</div>';
+    try {
+      const res  = await fetch(`${API}/api/lines`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      linesData = json.data;
+      renderLines(linesData);
+    } catch(e) {
+      document.getElementById('lines-grid').innerHTML = `<div class="loader">Erro: ${e.message}</div>`;
+    }
+  }
+
+  function renderLines(lines) {
+    const grid = document.getElementById('lines-grid');
+    if (!lines.length) { grid.innerHTML = '<div class="loader">Nenhuma linha encontrada.</div>'; return; }
+
+    grid.innerHTML = lines.map(l => `
+      <div class="line-card ${l.healthy ? 'healthy' : l.status === 'connecting' ? 'warn' : 'down'}">
+        <div class="top-bar"></div>
+        <div class="line-name">${l.name || 'Dispositivo'}</div>
+        <div class="line-number ${!l.phone ? 'empty' : ''}">${l.phone ? l.phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3') : 'Sem número'}</div>
+        <div class="line-tags">
+          <span class="tag ${l.status==='open'?'tag-green':l.status==='connecting'?'tag-amber':'tag-red'}">${l.status}</span>
+          ${l.disabled ? '<span class="tag tag-red">off</span>' : '<span class="tag tag-cyan">on</span>'}
+          ${l.needs_restart ? '<span class="tag tag-amber">restart</span>' : ''}
+        </div>
+        <div class="line-meta">Chamadas: <b>${l.calls_made ?? 0}</b></div>
+      </div>
+    `).join('');
+
+    const stats = document.getElementById('lines-stats');
+    stats.style.display = 'grid';
+    document.getElementById('stat-total').textContent   = lines.length;
+    document.getElementById('stat-healthy').textContent = lines.filter(l => l.healthy).length;
+    document.getElementById('stat-down').textContent    = lines.filter(l => !l.healthy).length;
+    document.getElementById('stat-calls').textContent   = lines.reduce((a,l) => a + (l.calls_made||0), 0);
+
+    const ok = lines.filter(l => l.healthy).length;
+    document.getElementById('healthy-count').textContent = `${ok}/${lines.length} linhas ok`;
+  }
+
+  function populateModalLines(lines) {
+    const sel     = document.getElementById('modal-line-select');
+    const healthy = lines.filter(l => l.healthy);
+    sel.innerHTML = healthy.length
+      ? healthy.map(l => `<option value="${l.id}">${l.name} — ${l.phone}</option>`).join('')
+      : '<option value="">Nenhuma linha disponível</option>';
+  }
+
+  // ── CONTATOS ────────────────────────────────────────────────
+  let contactsLoaded = false, contactsPage_ = 1, contactsSearch = '', searchTimer;
+
+  async function loadContacts() {
+    contactsLoaded = true;
+    document.getElementById('contacts-body').innerHTML =
+      '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+    try {
+      const params = new URLSearchParams({ page: contactsPage_, per_page: 50, search: contactsSearch });
+      const res  = await fetch(`${API}/api/contacts?${params}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      renderContacts(json.data, json.page, json.pages, json.total);
+    } catch(e) {
+      document.getElementById('contacts-body').innerHTML =
+        `<tr><td colspan="5"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+    }
+  }
+
+  function renderContacts(rows, page, pages, total) {
+    const tbody = document.getElementById('contacts-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Nenhum contato encontrado.</div></td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(c => {
+        const phones = Array.isArray(c.phones) ? c.phones : (c.phones ? [c.phones] : []);
+        return `<tr>
+          <td>${c.name || '—'}</td>
+          <td class="td-mono">${c.cpf || c.cpf_norm || '—'}</td>
+          <td class="td-dim">${c.institution || '—'}</td>
+          <td class="td-mono">${phones.slice(0,2).join(', ') || '—'}</td>
+          <td><button class="call-btn" ${!phones.length?'disabled':''}
+            onclick='openModal(${JSON.stringify({id:c.id,name:c.name,phones})})'>
+            ↗ Ligar</button></td>
+        </tr>`;
+      }).join('');
+    }
+    document.getElementById('contacts-page-info').textContent = `${page} / ${pages} — ${total} contatos`;
+    document.getElementById('contacts-prev').disabled = page <= 1;
+    document.getElementById('contacts-next').disabled = page >= pages;
+  }
+
+  function contactsPage(dir) { contactsPage_ += dir; loadContacts(); }
+
+  document.getElementById('contacts-search').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { contactsSearch = e.target.value; contactsPage_ = 1; loadContacts(); }, 400);
+  });
+
+  // ── CHAMADAS ────────────────────────────────────────────────
+  let callsLoaded = false, callsPage_ = 1;
+
+  async function loadCalls() {
+    callsLoaded = true;
+    document.getElementById('calls-body').innerHTML =
+      '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+    try {
+      const res  = await fetch(`${API}/api/calls?page=${callsPage_}&per_page=50`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      renderCalls(json.data, json.page, json.pages, json.total);
+    } catch(e) {
+      document.getElementById('calls-body').innerHTML =
+        `<tr><td colspan="5"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+    }
+  }
+
+  function renderCalls(rows, page, pages, total) {
+    const tbody = document.getElementById('calls-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Sem histórico.</div></td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(c => {
+        const cls  = {'ended':'cs-ended','failed':'cs-failed','in-progress':'cs-in-progress','queued':'cs-queued'}[c.status]||'cs-queued';
+        const dur  = c.duration ? `${Math.floor(c.duration/60)}m ${c.duration%60}s` : '—';
+        const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
+        return `<tr>
+          <td class="td-mono" style="color:var(--muted)">${(c.id||'').slice(0,8)}…</td>
+          <td>${c.contact_name || c.customer_number || '—'}</td>
+          <td><span class="cs ${cls}">${c.status||'—'}</span></td>
+          <td class="td-mono">${dur}</td>
+          <td class="td-dim">${date}</td>
+        </tr>`;
+      }).join('');
+    }
+    document.getElementById('calls-page-info').textContent = `${page} / ${pages} — ${total} chamadas`;
+    document.getElementById('calls-prev').disabled = page <= 1;
+    document.getElementById('calls-next').disabled = page >= pages;
+  }
+
+  function callsPage(dir) { callsPage_ += dir; loadCalls(); }
+
+  // ── MODAL ───────────────────────────────────────────────────
+  let modalContact = null;
+
+  function openModal(contact) {
+    modalContact = contact;
+    document.getElementById('modal-contact-name').textContent = contact.name || '—';
+    document.getElementById('modal-phone-select').innerHTML =
+      (contact.phones||[]).map(p => `<option value="${p}">${p}</option>`).join('');
+    populateModalLines(linesData);
+    document.getElementById('call-modal').classList.add('open');
+  }
+
+  function closeModal() {
+    document.getElementById('call-modal').classList.remove('open');
+    modalContact = null;
+  }
+
+  async function confirmCall() {
+    const phone = document.getElementById('modal-phone-select').value;
+    if (!phone) { toast('Selecione um telefone.', 'err'); return; }
+    try {
+      const res  = await fetch(`${API}/api/call`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ contact_id: modalContact?.id, phone })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast(`✓ Chamada iniciada — ${phone}`, 'ok');
+      closeModal();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  document.getElementById('call-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+
+  // ── IMPORTAÇÃO ──────────────────────────────────────────────
+  let importRows = [];
+  const fileInput  = document.getElementById('file-input');
+  const importZone = document.getElementById('import-zone');
+
+  fileInput.addEventListener('change', e => { if (e.target.files[0]) handleImportFile(e.target.files[0]); });
+  importZone.addEventListener('dragover', e => { e.preventDefault(); importZone.classList.add('drag'); });
+  importZone.addEventListener('dragleave', () => importZone.classList.remove('drag'));
+  importZone.addEventListener('drop', e => {
+    e.preventDefault(); importZone.classList.remove('drag');
+    if (e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0]);
+  });
+
+  async function handleImportFile(file) {
+    importZone.querySelector('.drop-title').textContent = `Processando ${file.name}…`;
+    importZone.style.pointerEvents = 'none';
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res  = await fetch(`${API}/api/import/preview`, { method: 'POST', body: fd });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      importRows = json.rows;
+      renderImportPreview(json);
+      toast(`✓ ${json.total} contatos carregados`, 'ok');
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+      importZone.querySelector('.drop-title').textContent = 'Arraste ou clique para selecionar';
+    } finally {
+      importZone.style.pointerEvents = '';
+    }
+  }
+
+  function renderImportPreview(data) {
+    document.getElementById('imp-total').textContent   = data.total;
+    document.getElementById('imp-debt').textContent    = data.with_debt;
+    document.getElementById('imp-no-debt').textContent = data.without_debt;
+    document.getElementById('import-summary').classList.add('visible');
+    document.getElementById('import-actions').style.display = 'flex';
+    document.getElementById('import-table-wrap').style.display = 'block';
+    document.getElementById('import-table-title').textContent = `Preview — ${data.rows.length} de ${data.total}`;
+    document.getElementById('import-body').innerHTML = data.rows.map(r => `
+      <tr>
+        <td>${r.name||'—'}</td>
+        <td class="td-mono">${r.cpf_raw||r.cpf||'—'}</td>
+        <td class="td-mono">${r.phone||'—'}</td>
+        <td>${r.has_debt ? '<span class="debt-yes">✓ sim</span>' : '<span class="debt-no">— não</span>'}</td>
+      </tr>`).join('');
+    importZone.querySelector('.drop-title').textContent = `✓ ${data.total} contatos carregados`;
+    importZone.querySelector('.drop-sub').textContent   = 'Clique para trocar o arquivo';
+    document.getElementById('btn-call-batch').disabled = data.with_debt === 0;
+  }
+
+  async function callBatch() {
+    const withDebt = importRows.filter(r => r.has_debt && r.phone);
+    if (!withDebt.length) { toast('Nenhum contato com débito e telefone.', 'err'); return; }
+    if (!confirm(`Disparar ${withDebt.length} ligações para contatos com débito?`)) return;
+    const btn = document.getElementById('btn-call-batch');
+    btn.disabled = true; btn.textContent = 'Disparando…';
+    try {
+      const res  = await fetch(`${API}/api/import/call-batch`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ contacts: withDebt })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      const ok  = json.results.filter(r => r.status==='disparado').length;
+      const err = json.results.filter(r => r.status==='erro').length;
+      toast(`✓ ${ok} ligações disparadas${err?` · ${err} erros`:''}`, 'ok');
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    } finally {
+      btn.disabled = false; btn.textContent = '↗  Ligar para todos com débito';
+    }
+  }
+
+  function resetImport() {
+    importRows = []; fileInput.value = '';
+    document.getElementById('import-summary').classList.remove('visible');
+    document.getElementById('import-actions').style.display = 'none';
+    document.getElementById('import-table-wrap').style.display = 'none';
+    document.getElementById('import-body').innerHTML = '';
+    importZone.querySelector('.drop-title').textContent = 'Arraste ou clique para selecionar';
+    importZone.querySelector('.drop-sub').textContent   = 'Aceita .xlsx e .csv · Colunas obrigatórias: CPF, Nome';
+  }
+
+  loadLines();
+  setInterval(loadLines, 120_000);
+</script>
+</body>
+</html>

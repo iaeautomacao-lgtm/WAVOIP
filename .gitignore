@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+devices_response.txt
+teste.csv
+*.egg-info/
+dist/
+build/
+.celery*
