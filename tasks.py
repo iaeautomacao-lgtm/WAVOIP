@@ -60,19 +60,25 @@ def wavoip_login() -> str:
 
 def get_healthy_lines() -> list:
     token      = wavoip_login()
-    res        = requests.get(f"{WAVOIP_BASE}/v2/devices/me",
-                    headers={"Authorization": f"Bearer {token}"}, timeout=10)
-    res.raise_for_status()
-    devices    = res.json().get("data", [])
+    devices    = wavoip_get_devices(token)
     device_map = {d.get("token"): d for d in devices}
-    return [
-        device_map[t] for t in DEVICE_PRIORITY
-        if t in device_map
-        and device_map[t].get("status") == "open"
-        and device_map[t].get("disabled") == 0
-        and device_map[t].get("phone") is not None
-    ]
 
+    healthy = []
+    for t in DEVICE_PRIORITY:
+        if t not in device_map:
+            continue
+        d = device_map[t]
+        if d.get("status") != "open":
+            continue
+        if d.get("disabled") != 0:
+            continue
+        if d.get("phone") is None:
+            continue
+        if not WAVOIP_VAPI_MAP.get(t):  # 🆕 pula se não tem phoneNumberId mapeado
+            continue
+        healthy.append(d)
+
+    return healthy
 _rr_idx = 0
 
 def vapi_call(phone: str) -> dict:
