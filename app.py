@@ -222,7 +222,7 @@ def vapi_webhook():
     try:
         body     = request.json
         print(f"WEBHOOK BODY: {body}", flush=True)  # log temporário
-        call_id  = body.get("call", {}).get("id") or body.get("id")
+        call_id  = body.get("message", {}).get("call", {}).get("id") or body.get("call", {}).get("id") or body.get("id")
         msg_type = body.get("message", {}).get("type") or body.get("type")
 
         if msg_type not in ("end-of-call-report", "call-ended"):
@@ -368,7 +368,7 @@ def create_campaign():
 @app.route("/api/campaigns/<campaign_id>/start", methods=["POST"])
 def start_campaign(campaign_id):
     try:
-        # Verifica se campanha existe
+        print(f"START CAMPAIGN: {campaign_id}", flush=True)  # log temporário
         camp = supabase.table("campaigns")\
             .select("*").eq("id", campaign_id).execute().data
         if not camp:
@@ -378,13 +378,13 @@ def start_campaign(campaign_id):
         if camp["status"] == "em_andamento":
             return jsonify({"ok": False, "error": "Campanha já em andamento"}), 400
 
-        # Atualiza status
+       
         supabase.table("campaigns").update({
             "status":     "em_andamento",
             "updated_at": "now()",
         }).eq("id", campaign_id).execute()
 
-        # Busca pendentes
+     
         pending = supabase.table("campaign_calls")\
             .select("*")\
             .eq("campaign_id", campaign_id)\
