@@ -21,12 +21,12 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 celery = Celery("tasks", broker=REDIS_URL, backend=REDIS_URL)
 celery.conf.update(
-    task_serializer                  = "json",
-    result_serializer                = "json",
-    accept_content                   = ["json"],
-    task_acks_late                   = True,
-    task_reject_on_worker_lost       = True,
-    worker_prefetch_multiplier       = 1,
+    task_serializer                    = "json",
+    result_serializer                  = "json",
+    accept_content                     = ["json"],
+    task_acks_late                     = True,
+    task_reject_on_worker_lost         = True,
+    worker_prefetch_multiplier         = 1,
     broker_connection_retry_on_startup = True,
 )
 
@@ -78,12 +78,12 @@ def get_healthy_lines() -> list:
     device_map = {d.get("token"): d for d in devices}
     healthy    = []
     for t in DEVICE_PRIORITY:
-        if t not in device_map:          continue
+        if t not in device_map:         continue
         d = device_map[t]
-        if d.get("status") != "open":   continue
-        if d.get("disabled") != 0:      continue
-        if d.get("phone") is None:      continue
-        if not WAVOIP_VAPI_MAP.get(t):  continue
+        if d.get("status") != "open":  continue
+        if d.get("disabled") != 0:     continue
+        if d.get("phone") is None:     continue
+        if not WAVOIP_VAPI_MAP.get(t): continue
         healthy.append(d)
     return healthy
 
@@ -201,12 +201,10 @@ def process_import(self, job_id: str, rows: list):
         cpf   = str(row.get("cpf", "")).strip()
         name  = str(row.get("name", "")).strip()
         phone = str(row.get("phone", "")).strip()
-
         debito = _processar_debito(cpf) if cpf else None
 
         result.append({
             "cpf":      cpf,
-            "cpf_raw":  cpf,
             "name":     name,
             "phone":    phone,
             "has_debt": debito is not None,
@@ -237,33 +235,123 @@ def process_import(self, job_id: str, rows: list):
         pass
 
 
-@celery.task(bind=True, name="tasks.process_import_ddm")
-def process_import_ddm(self, job_id: str, rows: list):
-    processed = 0
-    with_debt = 0
-    result    = []
+@celery.task(bind=True, name="tasks.process_file")
+def process_file(self, job_id: str, file_path: str):
+    import pandas as pd
 
-    for row in rows:
-        if row.get("has_debt") and row.get("phone"):
-            result.append(row)
-            with_debt += 1
-        processed += 1
+    def _norm_cpf(cpf):
+        return re.sub(r'\D', '', str(cpf)).zfill(11) if cpf else ""
 
-        if processed % 1000 == 0:
-            try:
-                supabase.table("import_jobs").update({
-                    "processed": processed,
-                    "with_debt": with_debt,
-                }).eq("id", job_id).execute()
-            except Exception:
-                pass
+    def _get_phone(r, cols):
+        for col in ["fone1", "tel", "telefone", "celular", "phone"]:
+            if col in cols:
+                val = str(r.get(col, "") or "").strip()
+                if val and val != "nan":
+                    return val
+        return ""
 
     try:
+        if file_path.endswith(".csv"):
+            df = pd.read_csv(file_path, dtype=str, sep=None, engine="python")
+        else:
+            df = pd.read_excel(file_path, dtype=str)
+
+        df.columns = [c.strip().lower() for c in df.columns]
+        cols     = list(df.columns)
+        cpf_col  = next((c for c in cols if "cpf" in c), None)
+        nome_col = next((c for c in cols if "nome" in c or "name" in c), None)
+        val_col  = next((c for c in cols if "val_atualizado" in c or "val_nominal" in c), None)
+        is_ddm   = val_col is not None
+
+        if not cpf_col or not nome_col:
+            supabase.table("import_jobs").update({"status": "error"}).eq("id", job_id).execute()
+            return
+
+        total     = 0
+        with_debt = 0
+        rows      = []
+
+        for _, r in df.iterrows():
+            cpf_norm = _norm_cpf(str(r.get(cpf_col, "") or ""))
+            if not cpf_norm:
+                continue
+
+            phone = _get_phone(r, cols)
+            total += 1
+
+            if is_ddm:
+                val_str = str(r.get(val_col, "0") or "0").strip().replace(",", ".")
+                try:
+                    tem_debito = float(val_str) > 0
+                except Exception:
+                    tem_debito = False
+
+                if tem_debito and phone:
+                    with_debt += 1
+                    debito = {
+                        "instituicao":    str(r.get("carteira", "") or "").strip(),
+                        "nome_devedor":   str(r.get(nome_col, "") or "").strip(),
+                        "numero_debitos": str(r.get("parcelas", "1") or "1").strip(),
+                        "PgtoAvista": {
+                            "ValorTotal":    str(r.get("val_nominal", "0,00") or "0,00").strip(),
+                            "PercDesconto":  "0",
+                            "ValorDesconto": "0,00",
+                            "ValorFinal":    val_str.replace(".", ","),
+                        },
+                        "CalculoBoleto": {
+                            "SubtotalBoleto":    val_str.replace(".", ","),
+                            "HonorarioBoleto":   "0,00",
+                            "ValorCobrarBoleto": "0,00",
+                        },
+                        "ParcelasBoleto": str(r.get("parcelas", "1") or "1").strip(),
+                        "PgtoParceladoCartao": {
+                            "Parcelas":     str(r.get("parcelas", "1") or "1").strip(),
+                            "ValorParcela": "0,00",
+                            "ValorFinal":   val_str.replace(".", ","),
+                        },
+                    }
+                    rows.append({
+                        "cpf":      cpf_norm,
+                        "name":     str(r.get(nome_col, "") or "").strip(),
+                        "phone":    phone,
+                        "has_debt": True,
+                        "debito":   debito,
+                    })
+            else:
+                debito = _processar_debito(cpf_norm)
+                if debito:
+                    with_debt += 1
+                if phone:
+                    rows.append({
+                        "cpf":      cpf_norm,
+                        "name":     str(r.get(nome_col, "") or "").strip(),
+                        "phone":    phone,
+                        "has_debt": debito is not None,
+                        "debito":   debito,
+                    })
+
+            if total % 1000 == 0:
+                try:
+                    supabase.table("import_jobs").update({
+                        "total":     total,
+                        "processed": total,
+                        "with_debt": with_debt,
+                    }).eq("id", job_id).execute()
+                except Exception:
+                    pass
+
         supabase.table("import_jobs").update({
             "status":    "done",
-            "processed": processed,
+            "total":     total,
+            "processed": total,
             "with_debt": with_debt,
-            "result":    result,
+            "result":    rows,
         }).eq("id", job_id).execute()
+
     except Exception:
-        pass
+        supabase.table("import_jobs").update({"status": "error"}).eq("id", job_id).execute()
+    finally:
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
