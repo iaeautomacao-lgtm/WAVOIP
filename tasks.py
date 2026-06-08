@@ -23,6 +23,9 @@ SUPABASE_BUCKET      = os.getenv("SUPABASE_BUCKET", "imports")
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
+WATCHDOG_TIMEOUT_MIN = int(os.getenv("WATCHDOG_TIMEOUT_MIN", "8"))   # minutos sem webhook → re-dispara
+WATCHDOG_MAX_RETRIES = int(os.getenv("WATCHDOG_MAX_RETRIES", "3"))    # tentativas antes de marcar erro
+
 celery = Celery("tasks", broker=REDIS_URL, backend=REDIS_URL)
 celery.conf.update(
     task_serializer                    = "json",
@@ -32,6 +35,13 @@ celery.conf.update(
     task_reject_on_worker_lost         = True,
     worker_prefetch_multiplier         = 1,
     broker_connection_retry_on_startup = True,
+    # Watchdog roda a cada 2 minutos via Celery Beat
+    beat_schedule = {
+        "campaign-watchdog": {
+            "task":     "tasks.campaign_watchdog",
+            "schedule": 120,  # segundos
+        },
+    },
 )
 
 WAVOIP_VAPI_MAP = {
@@ -212,16 +222,25 @@ def _set_job_error(job_id: str, error_msg: str):
 
 @celery.task(bind=True, max_retries=0, name="tasks.make_call")
 def make_call_task(self, campaign_id: str, contact: dict):
-    phone  = contact.get("phone", "").strip()
     cpf    = contact.get("cpf", "")
     name   = contact.get("name", "")
     row_id = contact.get("row_id")
-    debito = contact.get("debito_data")
+    debito = contact.get("debito_data") or {}
 
-    if not phone:
+    # Monta lista de telefones a tentar em ordem:
+    # 1. all_phones do debito_data (FONE1..FONE10 da planilha DDM)
+    # 2. phone principal do contato como fallback
+    all_phones = debito.get("all_phones") or []
+    phone_main = contact.get("phone", "").strip()
+
+    # Garante que phone_main esta na lista sem duplicar
+    phones = list(dict.fromkeys(p for p in all_phones + [phone_main] if p and str(p).strip()))
+
+    if not phones:
         _update_result(row_id, "sem_telefone", None, None)
         return
 
+    # Aguarda linha SIP disponivel (max 30min)
     MAX_WAIT  = 30 * 60
     CHECK_INT = 30
     waited    = 0
@@ -237,13 +256,176 @@ def make_call_task(self, campaign_id: str, contact: dict):
         _update_result(row_id, "falha_sem_linha", None, None)
         return
 
-    try:
-        data    = vapi_call(phone, cpf=cpf, name=name, debito=debito)
-        call_id = data.get("id")
-        _update_result(row_id, "em_andamento", call_id, phone)
-    except Exception as ex:
-        _update_result(row_id, "erro", None, phone, str(ex))
+    # Tenta cada telefone em sequencia ate um funcionar
+    last_error = None
+    for phone in phones:
+        phone = str(phone).strip()
+        if not phone:
+            continue
+        try:
+            data    = vapi_call(phone, cpf=cpf, name=name, debito=debito)
+            call_id = data.get("id")
+            # Sucesso — registra o telefone que funcionou e encerra
+            _update_result(row_id, "em_andamento", call_id, phone)
+            return
+        except Exception as ex:
+            last_error = f"{phone}: {str(ex)}"
+            # Pausa curta entre tentativas
+            time.sleep(3)
+            continue
 
+    # Todos os telefones falharam
+    _update_result(row_id, "erro", None, phones[0], f"todos os fones falharam — {last_error}")
+
+
+
+
+@celery.task(name="tasks.campaign_watchdog")
+def campaign_watchdog():
+    """
+    Roda a cada 2 minutos via Celery Beat.
+    Detecta chamadas travadas (em_andamento/enfileirado sem webhook por N minutos)
+    e re-dispara o proximo contato para desbloquear a campanha.
+
+    Uma chamada e considerada travada quando:
+      - status eh em_andamento ou enfileirado
+      - updated_at e mais antigo que WATCHDOG_TIMEOUT_MIN minutos
+    """
+    from datetime import datetime, timezone, timedelta
+
+    try:
+        camps = supabase.table("campaigns") \
+            .select("id, name, status, total, finished") \
+            .eq("status", "em_andamento") \
+            .execute().data
+
+        if not camps:
+            return {"checked": 0}
+
+        cutoff  = (datetime.now(timezone.utc) - timedelta(minutes=WATCHDOG_TIMEOUT_MIN)).isoformat()
+        rescued = 0
+        errors  = 0
+
+        for camp in camps:
+            campaign_id = camp["id"]
+            try:
+                # Chamadas travadas (sem webhook no tempo limite)
+                stuck = supabase.table("campaign_calls") \
+                    .select("id, cpf, phone, name, debito_data, order_idx, watchdog_retries") \
+                    .eq("campaign_id", campaign_id) \
+                    .in_("status", ["em_andamento", "enfileirado"]) \
+                    .lt("updated_at", cutoff) \
+                    .order("order_idx") \
+                    .execute().data
+
+                if not stuck:
+                    # Campanha ativa mas nenhuma chamada em voo —
+                    # webhook do ultimo contato pode ter se perdido
+                    pending = supabase.table("campaign_calls") \
+                        .select("id, cpf, phone, name, debito_data, order_idx, watchdog_retries") \
+                        .eq("campaign_id", campaign_id) \
+                        .eq("status", "pendente") \
+                        .order("order_idx") \
+                        .limit(1) \
+                        .execute().data
+
+                    if pending:
+                        _watchdog_dispatch(campaign_id, pending[0],
+                                           pending[0].get("watchdog_retries") or 0,
+                                           reason="sem_ativa")
+                        rescued += 1
+                    else:
+                        _check_campaign_completion(campaign_id)
+                    continue
+
+                for row in stuck:
+                    retries = row.get("watchdog_retries") or 0
+                    if retries >= WATCHDOG_MAX_RETRIES:
+                        # Esgotou tentativas — marca erro e avanca
+                        supabase.table("campaign_calls").update({
+                            "status": "erro",
+                            "error":  f"watchdog: {retries} tentativas sem resposta",
+                        }).eq("id", row["id"]).execute()
+                        errors += 1
+                        _advance_campaign(campaign_id, row["order_idx"])
+                    else:
+                        _watchdog_dispatch(campaign_id, row, retries, reason="timeout_webhook")
+                        rescued += 1
+
+            except Exception:
+                continue  # erro em uma campanha nao para o watchdog das outras
+
+        return {"checked": len(camps), "rescued": rescued, "errors": errors}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _watchdog_dispatch(campaign_id: str, row: dict, current_retries: int, reason: str):
+    """Re-enfileira uma chamada travada incrementando o contador de retries."""
+    try:
+        supabase.table("campaign_calls").update({
+            "status":           "enfileirado",
+            "watchdog_retries": current_retries + 1,
+            "error":            f"watchdog/{reason} retry #{current_retries + 1}",
+        }).eq("id", row["id"]).execute()
+
+        make_call_task.delay(campaign_id, {
+            "row_id":      row["id"],
+            "cpf":         row.get("cpf", ""),
+            "phone":       row.get("phone", ""),
+            "name":        row.get("name", ""),
+            "debito_data": row.get("debito_data"),
+        })
+    except Exception:
+        pass
+
+
+def _advance_campaign(campaign_id: str, current_order_idx: int):
+    """Pula para o proximo contato pendente apos esgotar retries."""
+    try:
+        next_row = supabase.table("campaign_calls") \
+            .select("id, cpf, phone, name, debito_data, order_idx, watchdog_retries") \
+            .eq("campaign_id", campaign_id) \
+            .eq("status", "pendente") \
+            .gt("order_idx", current_order_idx) \
+            .order("order_idx") \
+            .limit(1) \
+            .execute().data
+
+        if next_row:
+            row = next_row[0]
+            supabase.table("campaign_calls").update({"status": "enfileirado"}) \
+                .eq("id", row["id"]).execute()
+            make_call_task.delay(campaign_id, {
+                "row_id":      row["id"],
+                "cpf":         row.get("cpf", ""),
+                "phone":       row.get("phone", ""),
+                "name":        row.get("name", ""),
+                "debito_data": row.get("debito_data"),
+            })
+        else:
+            _check_campaign_completion(campaign_id)
+    except Exception:
+        pass
+
+
+def _check_campaign_completion(campaign_id: str):
+    """Verifica se todos os contatos foram processados e finaliza a campanha."""
+    try:
+        remaining = supabase.table("campaign_calls") \
+            .select("id", count="exact") \
+            .eq("campaign_id", campaign_id) \
+            .in_("status", ["pendente", "enfileirado", "em_andamento"]) \
+            .execute()
+
+        if (remaining.count or 0) == 0:
+            supabase.table("campaigns").update({
+                "status":     "finalizada",
+                "updated_at": "now()",
+            }).eq("id", campaign_id).execute()
+    except Exception:
+        pass
 
 @celery.task(bind=True, name="tasks.process_import")
 def process_import(self, job_id: str, rows: list):
@@ -339,7 +521,10 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
         signed = supabase_admin.storage.from_(SUPABASE_BUCKET).create_signed_url(
             storage_path, expires_in=3600
         )
-        download_url = signed["signedURL"]
+        # SDK v2 retorna signed_url ou signedUrl (nao signedURL com URL maiusculo)
+        download_url = signed.get("signedURL") or signed.get("signedUrl") or signed.get("signed_url", "")
+        if not download_url:
+            raise Exception(f"SDK nao retornou URL de download. Chaves: {list(signed.keys())}")
 
         # Download com stream para não estourar memória no header
         resp = requests.get(download_url, timeout=300)
