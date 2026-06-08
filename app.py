@@ -218,10 +218,10 @@ def campaign_start():
 
 
 @app.route("/api/webhook/vapi", methods=["POST"])
+@app.route("/api/webhook/vapi", methods=["POST"])
 def vapi_webhook():
     try:
         body     = request.json
-        print(f"WEBHOOK BODY: {body}", flush=True)  # log temporário
         call_id  = body.get("message", {}).get("call", {}).get("id") or body.get("call", {}).get("id") or body.get("id")
         msg_type = body.get("message", {}).get("type") or body.get("type")
 
@@ -237,8 +237,8 @@ def vapi_webhook():
         if not res.data:
             return jsonify({"ok": True}), 200
 
-        row         = res.data[0]
-        campaign_id = row["campaign_id"]
+        row          = res.data[0]
+        campaign_id  = row["campaign_id"]
         ended_reason = body.get("message", {}).get("endedReason") or body.get("endedReason", "")
         duration     = body.get("message", {}).get("durationSeconds") or body.get("durationSeconds", 0)
 
@@ -255,39 +255,42 @@ def vapi_webhook():
             camp = camp[0]
             if camp["status"] not in ("pausada", "finalizada"):
                 finished = (camp.get("finished") or 0) + 1
-                errors   = (camp.get("errors") or 0) + (1 if ended_reason in ("error", "failed") else 0)
                 supabase.table("campaigns").update({
                     "finished":   finished,
                     "updated_at": "now()",
                 }).eq("id", campaign_id).execute()
 
-                # Busca próximo pendente
-                next_res = supabase.table(" ")\
-                    .select("*")\
-                    .eq("campaign_id", campaign_id)\
-                    .eq("status", "pendente")\
-                    .order("order_idx")\
-                    .limit(1).execute()
-
-                if next_res.data:
-                    next_row = next_res.data[0]
-                    supabase.table("campaign_calls").update({"status": "enfileirado"})\
-                        .eq("id", next_row["id"]).execute()
-                    make_call_task.delay(campaign_id, {
-                        "row_id": next_row["id"],
-                        "cpf":    next_row["cpf"],
-                        "phone":  next_row["phone"],
-                    })
-                else:
-                    # Sem mais pendentes → finaliza campanha
+                # Verifica se concluiu tudo
+                if finished >= (camp.get("total") or 0):
                     supabase.table("campaigns").update({
                         "status": "finalizada", "updated_at": "now()"
                     }).eq("id", campaign_id).execute()
+                else:
+                    # Busca próximo pendente
+                    next_res = supabase.table("campaign_calls")\
+                        .select("*")\
+                        .eq("campaign_id", campaign_id)\
+                        .eq("status", "pendente")\
+                        .order("order_idx")\
+                        .limit(1).execute()
+
+                    if next_res.data:
+                        next_row = next_res.data[0]
+                        supabase.table("campaign_calls").update({"status": "enfileirado"})\
+                            .eq("id", next_row["id"]).execute()
+                        make_call_task.delay(campaign_id, {
+                            "row_id": next_row["id"],
+                            "cpf":    next_row["cpf"],
+                            "phone":  next_row["phone"],
+                        })
+                    else:
+                        supabase.table("campaigns").update({
+                            "status": "finalizada", "updated_at": "now()"
+                        }).eq("id", campaign_id).execute()
 
         return jsonify({"ok": True}), 200
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-    
 
 @app.route("/api/campaign/<campaign_id>/status", methods=["GET"])
 def campaign_status(campaign_id):
