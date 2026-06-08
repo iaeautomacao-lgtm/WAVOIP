@@ -236,8 +236,10 @@ def process_import(self, job_id: str, rows: list):
 
 
 @celery.task(bind=True, name="tasks.process_file")
-def process_file(self, job_id: str, file_path: str):
+def process_file(self, job_id: str, file_id: str, fname: str):
     import pandas as pd
+    import redis as redis_lib
+    import io
 
     def _norm_cpf(cpf):
         return re.sub(r'\D', '', str(cpf)).zfill(11) if cpf else ""
@@ -251,10 +253,27 @@ def process_file(self, job_id: str, file_path: str):
         return ""
 
     try:
-        if file_path.endswith(".csv"):
-            df = pd.read_csv(file_path, dtype=str, sep=None, engine="python")
+        # Busca arquivo do Redis
+        r     = redis_lib.from_url(os.getenv("REDIS_URL"))
+        data  = r.get(f"import:{file_id}")
+        if not data:
+            supabase.table("import_jobs").update({"status": "error"}).eq("id", job_id).execute()
+            return
+
+        buf = io.BytesIO(data)
+        if fname.endswith(".csv"):
+            df = pd.read_csv(buf, dtype=str, sep=None, engine="python")
         else:
-            df = pd.read_excel(file_path, dtype=str)
+            df = pd.read_excel(buf, dtype=str)
+
+        r.delete(f"import:{file_id}")  # limpa do Redis
+
+        if len(df) > 20000:
+            supabase.table("import_jobs").update({
+                "status": "error",
+                "total":  len(df),
+            }).eq("id", job_id).execute()
+            return
 
         df.columns = [c.strip().lower() for c in df.columns]
         cols     = list(df.columns)
@@ -350,8 +369,3 @@ def process_file(self, job_id: str, file_path: str):
 
     except Exception:
         supabase.table("import_jobs").update({"status": "error"}).eq("id", job_id).execute()
-    finally:
-        try:
-            os.remove(file_path)
-        except Exception:
-            pass

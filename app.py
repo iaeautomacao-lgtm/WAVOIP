@@ -491,11 +491,16 @@ def import_upload():
         if not (fname.endswith(".csv") or fname.endswith(".xlsx") or fname.endswith(".xls")):
             return jsonify({"ok": False, "error": "Formato inválido. Use .csv ou .xlsx"}), 400
 
-        # Salva em /tmp e enfileira no Celery
+        import redis as redis_lib
         import uuid
-        file_id   = str(uuid.uuid4())
-        file_path = f"/tmp/{file_id}_{file.filename}"
-        file.save(file_path)
+
+        # Lê bytes do arquivo
+        file_bytes = file.read()
+        file_id    = str(uuid.uuid4())
+
+        # Salva no Redis com TTL de 1 hora
+        r = redis_lib.from_url(os.getenv("REDIS_URL"))
+        r.setex(f"import:{file_id}", 3600, file_bytes)
 
         job = supabase.table("import_jobs").insert({
             "status":    "processing",
@@ -504,7 +509,7 @@ def import_upload():
             "processed": 0,
         }).execute().data[0]
 
-        process_file.delay(job["id"], file_path)
+        process_file.delay(job["id"], file_id, fname)
 
         return jsonify({
             "ok":     True,
