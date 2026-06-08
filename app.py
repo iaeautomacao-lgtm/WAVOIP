@@ -158,7 +158,7 @@ def vapi_call(phone: str) -> dict:
     raise Exception(f"Todas as linhas falharam. Último erro: {last_error}")
 
 # ── Rotas ─────────────────────────────────────────────────────
-@app.route("/api/campaign/start", methods=["POST"])
+
 @app.route("/api/campaign/start", methods=["POST"])
 def campaign_start():
     try:
