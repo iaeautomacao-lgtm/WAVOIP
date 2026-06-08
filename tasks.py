@@ -5,6 +5,7 @@ import requests
 from celery import Celery
 from supabase import create_client
 from typing import Optional, Dict, Any
+from ddm import processar_debito as _processar_debito
 
 REDIS_URL         = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 VAPI_API_KEY      = os.getenv("VAPI_API_KEY")
@@ -320,5 +321,52 @@ def _save_result(campaign_id, cpf, status, call_id, phone, error=None):
             "vapi_call_id": call_id,
             "error":        error,
         }).execute()
+    except Exception:
+        pass
+
+@celery.task(bind=True, name="tasks.process_import")
+def process_import(self, job_id: str, rows: list):
+    processed  = 0
+    with_debt  = 0
+    result     = []
+
+    for row in rows:
+        cpf   = str(row.get("cpf", "")).strip()
+        name  = str(row.get("name", "")).strip()
+        phone = str(row.get("phone", "")).strip()
+
+        debito = _processar_debito(cpf) if cpf else None
+
+        result.append({
+            "cpf":      cpf,
+            "cpf_raw":  cpf,
+            "name":     name,
+            "phone":    phone,
+            "has_debt": debito is not None,
+            "debito":   debito,
+        })
+
+        processed += 1
+        if debito:
+            with_debt += 1
+
+        # Atualiza progresso a cada 10 CPFs
+        if processed % 10 == 0:
+            try:
+                supabase.table("import_jobs").update({
+                    "processed": processed,
+                    "with_debt": with_debt,
+                }).eq("id", job_id).execute()
+            except Exception:
+                pass
+
+    # Finaliza
+    try:
+        supabase.table("import_jobs").update({
+            "status":    "done",
+            "processed": processed,
+            "with_debt": with_debt,
+            "result":    result,
+        }).eq("id", job_id).execute()
     except Exception:
         pass

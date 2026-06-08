@@ -608,8 +608,11 @@ def make_call():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-@app.route("/api/import/preview", methods=["POST"])
-def import_preview():
+from ddm import processar_debito
+from tasks import process_import
+
+@app.route("/api/import/upload", methods=["POST"])
+def import_upload():
     try:
         if "file" not in request.files:
             return jsonify({"ok": False, "error": "Nenhum arquivo enviado"}), 400
@@ -618,7 +621,7 @@ def import_preview():
         fname = file.filename.lower()
 
         if fname.endswith(".csv"):
-            df = pd.read_csv(file, dtype=str)
+            df = pd.read_csv(file, dtype=str, sep=None, engine="python")
         elif fname.endswith(".xlsx") or fname.endswith(".xls"):
             df = pd.read_excel(file, dtype=str)
         else:
@@ -626,51 +629,150 @@ def import_preview():
 
         df.columns = [c.strip().lower() for c in df.columns]
 
-        cpf_col  = next((c for c in df.columns if "cpf"    in c), None)
-        nome_col = next((c for c in df.columns if "nome"   in c or "name"  in c), None)
-        tel_col  = next((c for c in df.columns if "tel"    in c or "fone"  in c
-                                                or "phone" in c or "celular" in c), None)
+        # Detecta colunas
+        cpf_col  = next((c for c in df.columns if "cpf" in c), None)
+        nome_col = next((c for c in df.columns if "nome" in c or "name" in c), None)
+        tel_col  = next((c for c in df.columns if c in ("fone1", "tel", "telefone", "celular", "phone")), None)
+
+        # Detecta se é formato DDM
+        val_col  = next((c for c in df.columns if "val_atualizado" in c or "val_nominal" in c), None)
+        is_ddm   = val_col is not None
 
         if not cpf_col:
             return jsonify({"ok": False, "error": "Coluna CPF não encontrada"}), 400
         if not nome_col:
             return jsonify({"ok": False, "error": "Coluna Nome não encontrada"}), 400
 
-        rows = []
+        # Monta lista de rows
+        raw_rows = []
         for _, row in df.iterrows():
             cpf_raw  = str(row.get(cpf_col, "") or "").strip()
             cpf_norm = normalize_cpf(cpf_raw)
             if not cpf_norm:
                 continue
 
-            name  = str(row.get(nome_col, "") or "").strip()
-            phone = str(row.get(tel_col,  "") or "").strip() if tel_col else ""
+            # Telefone — tenta múltiplas colunas
+            phone = ""
+            for col in ["fone1", "tel", "telefone", "celular", "phone"]:
+                if col in df.columns:
+                    val = str(row.get(col, "") or "").strip()
+                    if val and val != "nan":
+                        phone = val
+                        break
 
-            # Consulta DDM
-            debito = processar_debito(cpf_norm)
-
-            rows.append({
-                "cpf":      cpf_norm,
-                "cpf_raw":  cpf_raw,
-                "name":     name,
-                "phone":    phone,
-                "has_debt": debito is not None,
-                "debito":   debito,
+            raw_rows.append({
+                "cpf":   cpf_norm,
+                "name":  str(row.get(nome_col, "") or "").strip(),
+                "phone": phone,
             })
 
-        if not rows:
+        if not raw_rows:
             return jsonify({"ok": False, "error": "Nenhum CPF válido encontrado"}), 400
 
-        total     = len(rows)
-        with_debt = sum(1 for r in rows if r["has_debt"])
+        if is_ddm:
+            # Formato DDM — processa na hora sem consultar API
+            rows = []
+            for i, row in enumerate(df.iterrows()):
+                _, r = row
+                cpf_raw  = str(r.get(cpf_col, "") or "").strip()
+                cpf_norm = normalize_cpf(cpf_raw)
+                if not cpf_norm:
+                    continue
 
+                phone = ""
+                for col in ["fone1", "tel", "telefone", "celular", "phone"]:
+                    if col in df.columns:
+                        val = str(r.get(col, "") or "").strip()
+                        if val and val != "nan":
+                            phone = val
+                            break
+
+                val_avista = str(r.get(val_col, "0") or "0").strip().replace(",", ".")
+                try:
+                    tem_debito = float(val_avista) > 0
+                except Exception:
+                    tem_debito = False
+
+                debito = None
+                if tem_debito:
+                    debito = {
+                        "instituicao":    str(r.get("carteira", "") or "").strip(),
+                        "nome_devedor":   str(r.get(nome_col, "") or "").strip(),
+                        "numero_debitos": str(r.get("parcelas", "1") or "1").strip(),
+                        "PgtoAvista": {
+                            "ValorTotal":    str(r.get("val_nominal", "0,00") or "0,00").strip(),
+                            "PercDesconto":  "0",
+                            "ValorDesconto": "0,00",
+                            "ValorFinal":    str(r.get(val_col, "0,00") or "0,00").strip(),
+                        },
+                        "CalculoBoleto": {
+                            "SubtotalBoleto":    str(r.get(val_col, "0,00") or "0,00").strip(),
+                            "HonorarioBoleto":   "0,00",
+                            "ValorCobrarBoleto": "0,00",
+                        },
+                        "ParcelasBoleto": str(r.get("parcelas", "1") or "1").strip(),
+                        "PgtoParceladoCartao": {
+                            "Parcelas":     str(r.get("parcelas", "1") or "1").strip(),
+                            "ValorParcela": "0,00",
+                            "ValorFinal":   str(r.get(val_col, "0,00") or "0,00").strip(),
+                        },
+                    }
+
+                rows.append({
+                    "cpf":      cpf_norm,
+                    "cpf_raw":  cpf_raw,
+                    "name":     str(r.get(nome_col, "") or "").strip(),
+                    "phone":    phone,
+                    "has_debt": tem_debito,
+                    "debito":   debito,
+                })
+
+            total     = len(rows)
+            with_debt = sum(1 for r in rows if r["has_debt"])
+
+            return jsonify({
+                "ok":           True,
+                "mode":         "ddm",
+                "rows":         rows[:200],
+                "total":        total,
+                "with_debt":    with_debt,
+                "without_debt": total - with_debt,
+            })
+
+        else:
+            # Formato genérico — enfileira no Celery
+            job = supabase.table("import_jobs").insert({
+                "status": "processing",
+                "total":  len(raw_rows),
+            }).execute().data[0]
+
+            process_import.delay(job["id"], raw_rows)
+
+            return jsonify({
+                "ok":     True,
+                "mode":   "async",
+                "job_id": job["id"],
+                "total":  len(raw_rows),
+            })
+
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/import/status/<job_id>", methods=["GET"])
+def import_status(job_id):
+    try:
+        job = supabase.table("import_jobs").select("*").eq("id", job_id).execute().data
+        if not job:
+            return jsonify({"ok": False, "error": "Job não encontrado"}), 404
+        job = job[0]
         return jsonify({
-            "ok":           True,
-            "rows":         rows[:200],
-            "total":        total,
-            "with_debt":    with_debt,
-            "without_debt": total - with_debt,
-            "columns":      {"cpf": cpf_col, "name": nome_col, "phone": tel_col}
+            "ok":        True,
+            "status":    job["status"],
+            "total":     job["total"],
+            "processed": job["processed"],
+            "with_debt": job["with_debt"],
+            "result":    job["result"] if job["status"] == "done" else None,
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500

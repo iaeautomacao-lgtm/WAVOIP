@@ -793,24 +793,68 @@
   });
 
   async function handleImportFile(file) {
-    importZone.querySelector('.drop-title').textContent = `Processando ${file.name}…`;
-    importZone.style.pointerEvents = 'none';
-    const fd = new FormData();
-    fd.append('file', file);
-    try {
-      const res  = await fetch(`${API}/api/import/preview`, { method: 'POST', body: fd });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error);
+  importZone.querySelector('.drop-title').textContent = `Processando ${file.name}…`;
+  importZone.style.pointerEvents = 'none';
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res  = await fetch(`${API}/api/import/upload`, { method: 'POST', body: fd });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+
+    if (json.mode === 'ddm') {
+      // Formato DDM — resultado imediato
       importRows = json.rows;
       renderImportPreview(json);
       toast(`✓ ${json.total} contatos carregados`, 'ok');
-    } catch(e) {
-      toast(`Erro: ${e.message}`, 'err');
-      importZone.querySelector('.drop-title').textContent = 'Arraste ou clique para selecionar';
-    } finally {
-      importZone.style.pointerEvents = '';
+    } else {
+      // Formato genérico — polling
+      toast(`⏳ Processando ${json.total} CPFs em background...`, 'ok');
+      renderImportProgress(json.total, 0);
+      pollImportJob(json.job_id, json.total);
     }
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+    importZone.querySelector('.drop-title').textContent = 'Arraste ou clique para selecionar';
+  } finally {
+    importZone.style.pointerEvents = '';
   }
+}
+
+function renderImportProgress(total, processed) {
+  const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+  importZone.querySelector('.drop-title').textContent = `⏳ Consultando DDM... ${processed}/${total} (${pct}%)`;
+  importZone.querySelector('.drop-sub').textContent   = 'Aguarde, isso pode levar alguns minutos';
+}
+
+let _pollTimer = null;
+function pollImportJob(job_id, total) {
+  if (_pollTimer) clearInterval(_pollTimer);
+  _pollTimer = setInterval(async () => {
+    try {
+      const res  = await fetch(`${API}/api/import/status/${job_id}`);
+      const json = await res.json();
+      if (!json.ok) return;
+
+      renderImportProgress(json.total, json.processed);
+
+      if (json.status === 'done') {
+        clearInterval(_pollTimer);
+        const data = {
+          rows:         json.result,
+          total:        json.total,
+          with_debt:    json.with_debt,
+          without_debt: json.total - json.with_debt,
+        };
+        importRows = json.result;
+        renderImportPreview(data);
+        toast(`✓ ${json.total} CPFs processados — ${json.with_debt} com débito`, 'ok');
+      }
+    } catch(e) {
+      clearInterval(_pollTimer);
+    }
+  }, 3000);
+}
 
   function renderImportPreview(data) {
     document.getElementById('imp-total').textContent   = data.total;
