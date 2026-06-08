@@ -332,6 +332,7 @@ def create_campaign():
     try:
         body    = request.json
         name    = body.get("name", "").strip()
+        
         contacts = body.get("contacts", [])
 
         if not name:
@@ -353,13 +354,16 @@ def create_campaign():
         campaign_id = camp["id"]
 
         # Insere contatos como pendente
-        rows = [{
-            "campaign_id": campaign_id,
-            "cpf":         c.get("cpf", ""),
-            "phone":       c.get("phone", "").strip(),
-            "status":      "pendente",
+        rows = []
+        for i, c in enumerate(valid):
+            rows.append({
+                "campaign_id": campaign_id,
+                "cpf":         c.get("cpf", ""),
+                "phone":       c.get("phone", "").strip(),
+                "name":        c.get("name", ""),   # ← adiciona isso
+                "status":      "pendente",
             "order_idx":   i,
-        } for i, c in enumerate(valid)]
+})
 
         supabase.table("campaign_calls").insert(rows).execute()
 
