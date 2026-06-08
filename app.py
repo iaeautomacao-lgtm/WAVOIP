@@ -221,6 +221,7 @@ def campaign_start():
 def vapi_webhook():
     try:
         body     = request.json
+        print(f"WEBHOOK BODY: {body}", flush=True)  # log temporário
         call_id  = body.get("call", {}).get("id") or body.get("id")
         msg_type = body.get("message", {}).get("type") or body.get("type")
 
