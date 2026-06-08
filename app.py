@@ -9,7 +9,7 @@ from supabase import create_client, Client
 from tasks import celery, make_call_task, process_import, process_import_ddm
 from ddm import processar_debito
 load_dotenv()
-from tasks import celery, make_call_task, process_import, process_import_ddm, process_file
+from tasks import celery, make_call_task, process_import, process_file
 
 app = Flask(__name__)
 CORS(app)
