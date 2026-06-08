@@ -261,7 +261,7 @@ def vapi_webhook():
                 }).eq("id", campaign_id).execute()
 
                 # Busca próximo pendente
-                next_res = supabase.table("campaign_calls")\
+                next_res = supabase.table(" ")\
                     .select("*")\
                     .eq("campaign_id", campaign_id)\
                     .eq("status", "pendente")\
