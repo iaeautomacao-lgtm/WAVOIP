@@ -3,10 +3,10 @@ from flask_cors import CORS
 import requests
 import os
 import time
-import pandas as pd
+import uuid
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from tasks import celery, make_call_task, process_import, process_file
+from tasks import celery, make_call_task, process_import, process_file, process_import_from_storage
 
 app = Flask(__name__)
 CORS(app)
@@ -19,8 +19,12 @@ VAPI_ASSISTANT_ID = os.getenv("VAPI_ASSISTANT_ID")
 VAPI_BASE         = "https://api.vapi.ai"
 SUPABASE_URL      = os.getenv("SUPABASE_URL")
 SUPABASE_KEY      = os.getenv("SUPABASE_KEY")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
+SUPABASE_BUCKET   = os.getenv("SUPABASE_BUCKET", "imports")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Cliente com service_role para operações de storage (presigned URL)
+supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 WAVOIP_VAPI_MAP = {
     "88b232ad-5c1d-404f-8652-f5399e6a6f51": os.getenv("VAPI_PHONE_NUMBER_ID_1"),
@@ -479,8 +483,14 @@ def vapi_webhook():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+# ── IMPORT: legado Redis (mantido para arquivos pequenos / compatibilidade) ────
+
 @app.route("/api/import/upload", methods=["POST"])
 def import_upload():
+    """
+    Rota legada — mantida para arquivos pequenos (< 20k linhas).
+    Para arquivos grandes, use o fluxo presigned: /api/upload/presigned → PUT → /api/import/from-storage
+    """
     try:
         if "file" not in request.files:
             return jsonify({"ok": False, "error": "Nenhum arquivo enviado"}), 400
@@ -492,13 +502,10 @@ def import_upload():
             return jsonify({"ok": False, "error": "Formato inválido. Use .csv ou .xlsx"}), 400
 
         import redis as redis_lib
-        import uuid
 
-        # Lê bytes do arquivo
         file_bytes = file.read()
         file_id    = str(uuid.uuid4())
 
-        # Salva no Redis com TTL de 1 hora
         r = redis_lib.from_url(os.getenv("REDIS_URL"))
         r.setex(f"import:{file_id}", 3600, file_bytes)
 
@@ -520,6 +527,70 @@ def import_upload():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+
+# ── IMPORT: novo fluxo via Supabase Storage (arquivos grandes) ─────────────────
+
+@app.route("/api/upload/presigned", methods=["GET"])
+def get_presigned_url():
+    """
+    Etapa 1 — retorna presigned URL para upload DIRETO do browser ao Supabase Storage.
+    O arquivo nunca passa pelo Gunicorn, eliminando o timeout 522.
+    """
+    try:
+        ext       = request.args.get("ext", "csv").lstrip(".")
+        file_path = f"uploads/{uuid.uuid4()}.{ext}"
+
+        res = supabase_admin.storage.from_(SUPABASE_BUCKET).create_signed_upload_url(file_path)
+
+        # SDK retorna dict com 'signedURL' e 'token'
+        return jsonify({
+            "ok":         True,
+            "upload_url": res["signedURL"],
+            "token":      res.get("token", ""),
+            "path":       file_path,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/import/from-storage", methods=["POST"])
+def import_from_storage():
+    """
+    Etapa 3 — recebe o path do arquivo já no bucket e enfileira o worker Celery.
+    Operação instantânea: só cria o job e dispara a task.
+    """
+    try:
+        data         = request.json or {}
+        storage_path = data.get("path")
+        filename     = data.get("filename", "import.csv")
+        size_bytes   = data.get("size_bytes", 0)
+
+        if not storage_path:
+            return jsonify({"ok": False, "error": "path obrigatório"}), 400
+
+        fname = filename.lower()
+        if not (fname.endswith(".csv") or fname.endswith(".xlsx") or fname.endswith(".xls")):
+            return jsonify({"ok": False, "error": "Formato inválido. Use .csv ou .xlsx"}), 400
+
+        job = supabase.table("import_jobs").insert({
+            "status":    "queued",
+            "total":     0,
+            "with_debt": 0,
+            "processed": 0,
+            "result":    {"filename": filename, "storage_path": storage_path, "size_bytes": size_bytes},
+        }).execute().data[0]
+
+        process_import_from_storage.delay(job["id"], storage_path, fname)
+
+        return jsonify({
+            "ok":     True,
+            "job_id": job["id"],
+            "status": "queued",
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/import/status/<job_id>", methods=["GET"])
 def import_status(job_id):
     try:
@@ -527,6 +598,15 @@ def import_status(job_id):
         if not job:
             return jsonify({"ok": False, "error": "Job não encontrado"}), 404
         job = job[0]
+
+        # result pode ser lista (legado) ou dict (novo fluxo storage)
+        result_preview = None
+        if job["status"] == "done" and job["result"]:
+            if isinstance(job["result"], list):
+                result_preview = job["result"][:200]
+            elif isinstance(job["result"], dict):
+                result_preview = job["result"]
+
         return jsonify({
             "ok":        True,
             "status":    job["status"],
@@ -534,7 +614,7 @@ def import_status(job_id):
             "processed": job["processed"],
             "with_debt": job["with_debt"],
             "session_id": job["id"] if job["status"] == "done" else None,
-            "result":    job["result"][:200] if job["status"] == "done" and job["result"] else None,
+            "result":    result_preview,
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
