@@ -518,56 +518,19 @@ def import_upload():
             return ""
 
         if is_ddm:
-            ddm_rows = []
-            for _, r in df.iterrows():
-                cpf_raw  = str(r.get(cpf_col, "") or "").strip()
-                cpf_norm = normalize_cpf(cpf_raw)
-                if not cpf_norm:
-                    continue
+            # Processamento vetorizado — muito mais rápido que iterrows
+            df["_cpf_norm"] = df[cpf_col].fillna("").astype(str).apply(normalize_cpf)
+            df["_phone"]    = df[["fone1","fone2","fone3"]].apply(
+                lambda row: next((str(v).strip() for v in row if str(v).strip() and str(v).strip() != "nan"), ""),
+                axis=1
+            )
+            df["_val"] = pd.to_numeric(
+                df[val_col].fillna("0").astype(str).str.replace(",", "."),
+                errors="coerce"
+            ).fillna(0)
 
-                phone      = get_phone(r)
-                val_avista = str(r.get(val_col, "0") or "0").strip().replace(",", ".")
-                try:
-                    tem_debito = float(val_avista) > 0
-                except Exception:
-                    tem_debito = False
-
-                debito = None
-                if tem_debito:
-                    debito = {
-                        "instituicao":    str(r.get("carteira", "") or "").strip(),
-                        "nome_devedor":   str(r.get(nome_col, "") or "").strip(),
-                        "numero_debitos": str(r.get("parcelas", "1") or "1").strip(),
-                        "PgtoAvista": {
-                            "ValorTotal":    str(r.get("val_nominal", "0,00") or "0,00").strip(),
-                            "PercDesconto":  "0",
-                            "ValorDesconto": "0,00",
-                            "ValorFinal":    val_avista.replace(".", ","),
-                        },
-                        "CalculoBoleto": {
-                            "SubtotalBoleto":    val_avista.replace(".", ","),
-                            "HonorarioBoleto":   "0,00",
-                            "ValorCobrarBoleto": "0,00",
-                        },
-                        "ParcelasBoleto": str(r.get("parcelas", "1") or "1").strip(),
-                        "PgtoParceladoCartao": {
-                            "Parcelas":     str(r.get("parcelas", "1") or "1").strip(),
-                            "ValorParcela": "0,00",
-                            "ValorFinal":   val_avista.replace(".", ","),
-                        },
-                    }
-
-                ddm_rows.append({
-                    "cpf":      cpf_norm,
-                    "cpf_raw":  cpf_raw,
-                    "name":     str(r.get(nome_col, "") or "").strip(),
-                    "phone":    phone,
-                    "has_debt": tem_debito,
-                    "debito":   debito,
-                })
-
-            total     = len(ddm_rows)
-            with_debt = sum(1 for r in ddm_rows if r["has_debt"])
+            total     = len(df[df["_cpf_norm"] != ""])
+            with_debt = int((df["_val"] > 0).sum())
 
             job = supabase.table("import_jobs").insert({
                 "status":    "processing",
@@ -576,7 +539,21 @@ def import_upload():
                 "processed": 0,
             }).execute().data[0]
 
-            process_import_ddm.delay(job["id"], ddm_rows)
+            # Manda só os dados necessários pro worker
+            records = df[df["_cpf_norm"] != ""][[
+                "_cpf_norm", nome_col, "_phone", "_val", val_col,
+                "carteira" if "carteira" in df.columns else "_cpf_norm",
+                "parcelas" if "parcelas" in df.columns else "_cpf_norm",
+                "val_nominal" if "val_nominal" in df.columns else val_col,
+            ]].rename(columns={
+                "_cpf_norm": "cpf",
+                nome_col:    "name",
+                "_phone":    "phone",
+                "_val":      "val_float",
+                val_col:     "val_avista",
+            }).to_dict("records")
+
+            process_import_ddm.delay(job["id"], records)
 
             return jsonify({
                 "ok":     True,
