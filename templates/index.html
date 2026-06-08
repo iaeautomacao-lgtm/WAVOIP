@@ -133,7 +133,7 @@
     .page-info { font-family: var(--mono); font-size: .62rem; color: var(--muted); letter-spacing: .08em; }
     .search-wrap { position: relative; display: inline-flex; align-items: center; }
     .search-icon { position: absolute; left: 11px; font-size: .75rem; color: var(--muted); pointer-events: none; }
-    .search-input { background: var(--s3); border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: .72rem; padding: 7px 12px 7px 30px; border-radius: 6px; outline: none; width: 220px; transition: border-color .2s; letter-spacing: .04em; }
+    .search-input { background: var(--s3); border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: .72rem; padding: 7px 12px; border-radius: 6px; outline: none; width: 220px; transition: border-color .2s; letter-spacing: .04em; }
     .search-input:focus { border-color: var(--cyan); }
     .search-input::placeholder { color: var(--muted); }
     .drop-zone { border: 1px dashed rgba(0,212,255,.2); border-radius: 12px; padding: 56px 32px; text-align: center; cursor: pointer; background: var(--s2); transition: all .2s; margin-bottom: 24px; position: relative; overflow: hidden; }
@@ -142,7 +142,7 @@
     .drop-icon { font-size: 2rem; margin-bottom: 14px; opacity: .6; }
     .drop-title { font-size: .85rem; font-weight: 600; color: var(--text); letter-spacing: .06em; margin-bottom: 6px; }
     .drop-sub { font-family: var(--mono); font-size: .62rem; color: var(--muted); letter-spacing: .08em; }
-    .import-actions { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+    .import-actions { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
     .debt-yes { font-family: var(--mono); font-size: .62rem; color: var(--green); letter-spacing: .06em; }
     .debt-no  { font-family: var(--mono); font-size: .62rem; color: var(--muted); letter-spacing: .06em; }
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.75); backdrop-filter: blur(8px); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; }
@@ -167,6 +167,9 @@
     #toast.err { border-color: rgba(255,61,90,.3); color: var(--red); }
     .import-summary { display: none; }
     .import-summary.visible { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 24px; }
+    .campaign-name-input { background: var(--s3); border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: .72rem; padding: 7px 12px; border-radius: 6px; outline: none; width: 280px; transition: border-color .2s; letter-spacing: .04em; }
+    .campaign-name-input:focus { border-color: var(--cyan); }
+    .campaign-name-input::placeholder { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -189,6 +192,7 @@
     <div class="tab active" data-tab="lines"><span>◈</span> Linhas</div>
     <div class="tab" data-tab="contacts"><span>◎</span> Contatos</div>
     <div class="tab" data-tab="calls"><span>◷</span> Histórico</div>
+    <div class="tab" data-tab="campaigns"><span>◑</span> Campanhas</div>
     <div class="tab" data-tab="import"><span>↑</span> Importar</div>
   </nav>
 
@@ -259,10 +263,28 @@
       </div>
     </div>
 
+    <!-- CAMPANHAS -->
+    <div class="section" id="tab-campaigns">
+      <div class="sec-head">
+        <span class="sec-title">Campanhas de discagem</span>
+        <button class="btn btn-ghost" onclick="loadCampaigns()">↻ &nbsp;Atualizar</button>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr><th>Nome</th><th>Status</th><th>Total</th><th>Finalizadas</th><th>Criada em</th><th>Ações</th></tr>
+          </thead>
+          <tbody id="campaigns-body">
+            <tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- IMPORTAR -->
     <div class="section" id="tab-import">
       <div class="sec-head">
-        <span class="sec-title">Importar planilha de contatos</span>
+        <span class="sec-title">Nova campanha</span>
       </div>
       <div class="drop-zone" id="import-zone" onclick="document.getElementById('file-input').click()">
         <div class="drop-icon">⬆</div>
@@ -276,7 +298,8 @@
         <div class="kpi r"><div class="kpi-label">Sem débito</div><div class="kpi-val" id="imp-no-debt">0</div></div>
       </div>
       <div class="import-actions" id="import-actions" style="display:none">
-        <button class="btn btn-success" id="btn-call-batch" onclick="callBatch()">↗ &nbsp;Ligar para todos com débito</button>
+        <input class="campaign-name-input" type="text" id="campaign-name-input" placeholder="Nome da campanha..." />
+        <button class="btn btn-success" id="btn-save-campaign" onclick="saveCampaign()">💾 &nbsp;Salvar campanha</button>
         <button class="btn btn-danger" onclick="resetImport()">✕ &nbsp;Limpar</button>
       </div>
       <div id="import-table-wrap" style="display:none">
@@ -335,8 +358,9 @@
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       tab.classList.add('active');
       document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-      if (tab.dataset.tab === 'contacts' && !contactsLoaded) loadContacts();
-      if (tab.dataset.tab === 'calls'    && !callsLoaded)    loadCalls();
+      if (tab.dataset.tab === 'contacts'  && !contactsLoaded)  loadContacts();
+      if (tab.dataset.tab === 'calls'     && !callsLoaded)     loadCalls();
+      if (tab.dataset.tab === 'campaigns' && !campaignsLoaded) loadCampaigns();
     });
   });
 
@@ -509,6 +533,119 @@
 
   function callsPage(dir) { callsPage_ += dir; loadCalls(); }
 
+  // ── CAMPANHAS ───────────────────────────────────────────────
+  let campaignsLoaded = false;
+
+  async function loadCampaigns() {
+    campaignsLoaded = true;
+    document.getElementById('campaigns-body').innerHTML =
+      '<tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+    try {
+      const res  = await fetch(`${API}/api/campaigns`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      renderCampaigns(json.data);
+    } catch(e) {
+      document.getElementById('campaigns-body').innerHTML =
+        `<tr><td colspan="6"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+    }
+  }
+
+  function renderCampaigns(rows) {
+    const tbody = document.getElementById('campaigns-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6"><div class="loader">Nenhuma campanha criada.</div></td></tr>';
+      return;
+    }
+    const statusMap = {
+      rascunho:     { cls: 'cs-queued',      label: 'rascunho' },
+      em_andamento: { cls: 'cs-in-progress', label: 'em andamento' },
+      finalizada:   { cls: 'cs-ended',       label: 'finalizada' },
+      pausada:      { cls: 'cs-failed',      label: 'pausada' },
+    };
+    tbody.innerHTML = rows.map(c => {
+      const s    = statusMap[c.status] || { cls: 'cs-queued', label: c.status };
+      const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
+      const canStart = c.status === 'rascunho' || c.status === 'pausada';
+      const canPause = c.status === 'em_andamento';
+      return `<tr>
+        <td>${c.name}</td>
+        <td><span class="cs ${s.cls}">${s.label}</span></td>
+        <td class="td-mono">${c.total ?? 0}</td>
+        <td class="td-mono">${c.finished ?? 0} / ${c.total ?? 0}</td>
+        <td class="td-dim">${date}</td>
+        <td>
+          <div style="display:flex;gap:6px">
+            ${canStart ? `<button class="call-btn" onclick="startCampaign('${c.id}')">▶ Iniciar</button>` : ''}
+            ${canPause ? `<button class="call-btn" onclick="pauseCampaign('${c.id}')">⏸ Pausar</button>` : ''}
+            <button class="del-btn" onclick="deleteCampaign('${c.id}','${c.name}')">✕</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function startCampaign(id) {
+    try {
+      const res  = await fetch(`${API}/api/campaigns/${id}/start`, { method: 'POST' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast(`▶ Campanha iniciada — ${json.fired} disparadas agora`, 'ok');
+      loadCampaigns();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  async function pauseCampaign(id) {
+    try {
+      const res  = await fetch(`${API}/api/campaigns/${id}/pause`, { method: 'POST' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('⏸ Campanha pausada', 'ok');
+      loadCampaigns();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  async function deleteCampaign(id, name) {
+    if (!confirm(`Excluir campanha "${name}"?`)) return;
+    try {
+      const res  = await fetch(`${API}/api/campaigns/${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('✓ Campanha excluída', 'ok');
+      loadCampaigns();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  async function saveCampaign() {
+    const name     = document.getElementById('campaign-name-input').value.trim();
+    const withDebt = importRows.filter(r => r.has_debt && r.phone);
+    if (!name)           { toast('Digite um nome para a campanha.', 'err'); return; }
+    if (!withDebt.length){ toast('Nenhum contato com débito e telefone.', 'err'); return; }
+    const btn = document.getElementById('btn-save-campaign');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      const res  = await fetch(`${API}/api/campaigns`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name, contacts: withDebt })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast(`✓ Campanha "${name}" salva com ${withDebt.length} contatos`, 'ok');
+      campaignsLoaded = false;
+      resetImport();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    } finally {
+      btn.disabled = false; btn.textContent = '💾  Salvar campanha';
+    }
+  }
+
   // ── MODAL ───────────────────────────────────────────────────
   let modalContact = null;
 
@@ -598,37 +735,15 @@
       </tr>`).join('');
     importZone.querySelector('.drop-title').textContent = `✓ ${data.total} contatos carregados`;
     importZone.querySelector('.drop-sub').textContent   = 'Clique para trocar o arquivo';
-    document.getElementById('btn-call-batch').disabled = data.with_debt === 0;
   }
 
-  async function callBatch() {
-    const withDebt = importRows.filter(r => r.has_debt && r.phone);
-    if (!withDebt.length) { toast('Nenhum contato com débito e telefone.', 'err'); return; }
-    if (!confirm(`Disparar ${withDebt.length} ligações para contatos com débito?`)) return;
-    const btn = document.getElementById('btn-call-batch');
-    btn.disabled = true; btn.textContent = 'Disparando…';
-    try {
-      const res  = await fetch(`${API}/api/campaign/start`, {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ contacts: withDebt, campaign_id: String(Date.now()) })
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error);
-      toast(`✓ Campanha iniciada — ${json.total} contatos · ${json.fired} disparados agora`, 'ok');
-    } catch(e) {
-      toast(`Erro: ${e.message}`, 'err');
-    } finally {
-      btn.disabled = false; btn.textContent = '↗  Ligar para todos com débito';
-    }
-  }
-
-  
   function resetImport() {
     importRows = []; fileInput.value = '';
     document.getElementById('import-summary').classList.remove('visible');
     document.getElementById('import-actions').style.display = 'none';
     document.getElementById('import-table-wrap').style.display = 'none';
     document.getElementById('import-body').innerHTML = '';
+    document.getElementById('campaign-name-input').value = '';
     importZone.querySelector('.drop-title').textContent = 'Arraste ou clique para selecionar';
     importZone.querySelector('.drop-sub').textContent   = 'Aceita .xlsx e .csv · Colunas obrigatórias: CPF, Nome';
   }

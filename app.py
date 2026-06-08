@@ -220,66 +220,73 @@ def campaign_start():
 @app.route("/api/webhook/vapi", methods=["POST"])
 def vapi_webhook():
     try:
-        body      = request.json
-        call_id   = body.get("call", {}).get("id") or body.get("id")
-        msg_type  = body.get("message", {}).get("type") or body.get("type")
+        body     = request.json
+        call_id  = body.get("call", {}).get("id") or body.get("id")
+        msg_type = body.get("message", {}).get("type") or body.get("type")
 
-        # Só processa quando a chamada termina
         if msg_type not in ("end-of-call-report", "call-ended"):
             return jsonify({"ok": True}), 200
 
         if not call_id:
             return jsonify({"ok": True}), 200
 
-        # Busca o registro da chamada
         res = supabase.table("campaign_calls")\
-            .select("*")\
-            .eq("vapi_call_id", call_id)\
-            .execute()
+            .select("*").eq("vapi_call_id", call_id).execute()
 
         if not res.data:
             return jsonify({"ok": True}), 200
 
         row         = res.data[0]
         campaign_id = row["campaign_id"]
-
-        # Extrai duração e razão de fim
         ended_reason = body.get("message", {}).get("endedReason") or body.get("endedReason", "")
         duration     = body.get("message", {}).get("durationSeconds") or body.get("durationSeconds", 0)
 
-        # Atualiza status da chamada finalizada
+        # Atualiza chamada
         supabase.table("campaign_calls").update({
             "status":   "finalizado",
             "error":    ended_reason,
             "duration": duration,
         }).eq("id", row["id"]).execute()
 
-        # Busca próximo pendente da campanha (order_idx mais baixo)
-        next_res = supabase.table("campaign_calls")\
-            .select("*")\
-            .eq("campaign_id", campaign_id)\
-            .eq("status", "pendente")\
-            .order("order_idx", desc=False)\
-            .limit(1)\
-            .execute()
+        # Atualiza contadores da campanha
+        camp = supabase.table("campaigns").select("*").eq("id", campaign_id).execute().data
+        if camp:
+            camp = camp[0]
+            if camp["status"] not in ("pausada", "finalizada"):
+                finished = (camp.get("finished") or 0) + 1
+                errors   = (camp.get("errors") or 0) + (1 if ended_reason in ("error", "failed") else 0)
+                supabase.table("campaigns").update({
+                    "finished":   finished,
+                    "updated_at": "now()",
+                }).eq("id", campaign_id).execute()
 
-        if next_res.data:
-            next_row = next_res.data[0]
-            # Marca como "enfileirado" pra não pegar duplicado
-            supabase.table("campaign_calls").update({"status": "enfileirado"})\
-                .eq("id", next_row["id"]).execute()
+                # Busca próximo pendente
+                next_res = supabase.table("campaign_calls")\
+                    .select("*")\
+                    .eq("campaign_id", campaign_id)\
+                    .eq("status", "pendente")\
+                    .order("order_idx")\
+                    .limit(1).execute()
 
-            make_call_task.delay(campaign_id, {
-                "row_id": next_row["id"],
-                "cpf":    next_row["cpf"],
-                "phone":  next_row["phone"],
-            })
+                if next_res.data:
+                    next_row = next_res.data[0]
+                    supabase.table("campaign_calls").update({"status": "enfileirado"})\
+                        .eq("id", next_row["id"]).execute()
+                    make_call_task.delay(campaign_id, {
+                        "row_id": next_row["id"],
+                        "cpf":    next_row["cpf"],
+                        "phone":  next_row["phone"],
+                    })
+                else:
+                    # Sem mais pendentes → finaliza campanha
+                    supabase.table("campaigns").update({
+                        "status": "finalizada", "updated_at": "now()"
+                    }).eq("id", campaign_id).execute()
 
         return jsonify({"ok": True}), 200
-
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
+    
 
 @app.route("/api/campaign/<campaign_id>/status", methods=["GET"])
 def campaign_status(campaign_id):
@@ -304,7 +311,146 @@ def campaign_status(campaign_id):
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-    
+@app.route("/api/campaigns", methods=["GET"])
+def list_campaigns():
+    try:
+        result = supabase.table("campaigns")\
+            .select("*")\
+            .order("created_at", desc=True)\
+            .execute()
+        return jsonify({"ok": True, "data": result.data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/campaigns", methods=["POST"])
+def create_campaign():
+    try:
+        body    = request.json
+        name    = body.get("name", "").strip()
+        contacts = body.get("contacts", [])
+
+        if not name:
+            return jsonify({"ok": False, "error": "Nome obrigatório"}), 400
+        if not contacts:
+            return jsonify({"ok": False, "error": "Nenhum contato"}), 400
+
+        valid = [c for c in contacts if c.get("phone")]
+        if not valid:
+            return jsonify({"ok": False, "error": "Nenhum contato com telefone"}), 400
+
+        # Cria campanha
+        camp = supabase.table("campaigns").insert({
+            "name":   name,
+            "status": "rascunho",
+            "total":  len(valid),
+        }).execute().data[0]
+
+        campaign_id = camp["id"]
+
+        # Insere contatos como pendente
+        rows = [{
+            "campaign_id": campaign_id,
+            "cpf":         c.get("cpf", ""),
+            "phone":       c.get("phone", "").strip(),
+            "status":      "pendente",
+            "order_idx":   i,
+        } for i, c in enumerate(valid)]
+
+        supabase.table("campaign_calls").insert(rows).execute()
+
+        return jsonify({"ok": True, "campaign": camp})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/campaigns/<campaign_id>/start", methods=["POST"])
+def start_campaign(campaign_id):
+    try:
+        # Verifica se campanha existe
+        camp = supabase.table("campaigns")\
+            .select("*").eq("id", campaign_id).execute().data
+        if not camp:
+            return jsonify({"ok": False, "error": "Campanha não encontrada"}), 404
+        camp = camp[0]
+
+        if camp["status"] == "em_andamento":
+            return jsonify({"ok": False, "error": "Campanha já em andamento"}), 400
+
+        # Atualiza status
+        supabase.table("campaigns").update({
+            "status":     "em_andamento",
+            "updated_at": "now()",
+        }).eq("id", campaign_id).execute()
+
+        # Busca pendentes
+        pending = supabase.table("campaign_calls")\
+            .select("*")\
+            .eq("campaign_id", campaign_id)\
+            .eq("status", "pendente")\
+            .order("order_idx")\
+            .execute().data
+
+        if not pending:
+            supabase.table("campaigns").update({"status": "finalizada"}).eq("id", campaign_id).execute()
+            return jsonify({"ok": True, "fired": 0, "message": "Nenhum pendente"})
+
+        # Janela dinâmica
+        try:
+            healthy = get_healthy_lines()
+            window  = max(1, len(healthy))
+        except Exception:
+            window = 1
+
+        fired = 0
+        for row in pending[:window]:
+            supabase.table("campaign_calls").update({"status": "enfileirado"})\
+                .eq("id", row["id"]).execute()
+            make_call_task.delay(campaign_id, {
+                "row_id": row["id"],
+                "cpf":    row["cpf"],
+                "phone":  row["phone"],
+            })
+            fired += 1
+
+        supabase.table("campaigns").update({"fired": fired}).eq("id", campaign_id).execute()
+
+        return jsonify({"ok": True, "fired": fired, "window": window, "total": len(pending)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/campaigns/<campaign_id>/pause", methods=["POST"])
+def pause_campaign(campaign_id):
+    try:
+        supabase.table("campaigns").update({
+            "status": "pausada", "updated_at": "now()"
+        }).eq("id", campaign_id).execute()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/campaigns/<campaign_id>", methods=["DELETE"])
+def delete_campaign(campaign_id):
+    try:
+        supabase.table("campaign_calls").delete().eq("campaign_id", campaign_id).execute()
+        supabase.table("campaigns").delete().eq("id", campaign_id).execute()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/contacts/<contact_id>", methods=["DELETE"])
+def delete_contact(contact_id):
+    try:
+        supabase.table("contacts").delete().eq("id", contact_id).execute()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+   
 @app.route("/")
 def index():
     return render_template("index.html")
