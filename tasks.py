@@ -57,6 +57,7 @@ def wavoip_login() -> str:
     _wavoip_token    = res.json()["data"]["token"]
     _wavoip_token_ts = time.time()
     return _wavoip_token
+
 def wavoip_get_devices(token: str) -> list:
     res = requests.get(f"{WAVOIP_BASE}/v2/devices/me",
         headers={"Authorization": f"Bearer {token}"}, timeout=10)
@@ -126,26 +127,21 @@ def vapi_call(phone: str) -> dict:
     raise Exception(f"Todas as linhas falharam: {last_err}")
 
 
+
 @celery.task(bind=True, max_retries=0, name="tasks.make_call")
 def make_call_task(self, campaign_id: str, contact: dict):
-    """
-    Tarefa de uma ligação.
-    - Verifica se há linhas disponíveis
-    - Se não houver, aguarda até 30min checando a cada 30s (pausa automática)
-    - Se voltar linha, retoma
-    - Se não voltar em 30min, marca como falha
-    """
     phone = contact.get("phone", "").strip()
     cpf   = contact.get("cpf", "")
+    row_id = contact.get("row_id")  # id da linha em campaign_calls
 
     if not phone:
-        _save_result(campaign_id, cpf, "sem_telefone", None, None)
+        _update_result(row_id, "sem_telefone", None, None)
         return
 
-    # ── Pausa automática se todas as linhas caírem ──
-    MAX_WAIT   = 30 * 60   # 30 minutos máximo esperando
-    CHECK_INT  = 30        # verifica a cada 30 segundos
-    waited     = 0
+    # Pausa automática se não há linhas
+    MAX_WAIT  = 30 * 60
+    CHECK_INT = 30
+    waited    = 0
 
     while waited < MAX_WAIT:
         try:
@@ -157,15 +153,26 @@ def make_call_task(self, campaign_id: str, contact: dict):
         time.sleep(CHECK_INT)
         waited += CHECK_INT
     else:
-        _save_result(campaign_id, cpf, "falha_sem_linha", None, None)
+        _update_result(row_id, "falha_sem_linha", None, None)
         return
 
-    # ── Dispara a ligação ──
     try:
         data = vapi_call(phone)
-        _save_result(campaign_id, cpf, "disparado", data.get("id"), phone)
+        call_id = data.get("id")
+        _update_result(row_id, "em_andamento", call_id, phone)
     except Exception as ex:
-        _save_result(campaign_id, cpf, "erro", None, phone, str(ex))
+        _update_result(row_id, "erro", None, phone, str(ex))
+
+
+def _update_result(row_id, status, call_id, phone, error=None):
+    try:
+        update = {"status": status}
+        if call_id:  update["vapi_call_id"] = call_id
+        if phone:    update["phone"]         = phone
+        if error:    update["error"]         = error
+        supabase.table("campaign_calls").update(update).eq("id", row_id).execute()
+    except Exception:
+        pass
 
 
 def _save_result(campaign_id, cpf, status, call_id, phone, error=None):

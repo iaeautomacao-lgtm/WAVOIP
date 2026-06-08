@@ -159,31 +159,124 @@ def vapi_call(phone: str) -> dict:
 
 # ── Rotas ─────────────────────────────────────────────────────
 @app.route("/api/campaign/start", methods=["POST"])
+@app.route("/api/campaign/start", methods=["POST"])
 def campaign_start():
-    """
-    Recebe lista de contatos com débito e enfileira
-    uma tarefa Celery por contato.
-    """
     try:
-        body      = request.json
-        contacts  = body.get("contacts", [])
+        body        = request.json
+        contacts    = body.get("contacts", [])
         campaign_id = body.get("campaign_id") or str(int(time.time()))
 
         if not contacts:
             return jsonify({"ok": False, "error": "Nenhum contato"}), 400
 
-        enqueued = 0
-        for c in contacts:
+        # Insere todos como "pendente" com order_idx
+        rows = []
+        for i, c in enumerate(contacts):
             if not c.get("phone"):
                 continue
-            make_call_task.delay(campaign_id, c)
-            enqueued += 1
+            rows.append({
+                "campaign_id": campaign_id,
+                "cpf":         c.get("cpf", ""),
+                "phone":       c.get("phone", "").strip(),
+                "status":      "pendente",
+                "order_idx":   i,
+            })
+
+        if not rows:
+            return jsonify({"ok": False, "error": "Nenhum contato com telefone"}), 400
+
+        result = supabase.table("campaign_calls").insert(rows).execute()
+        inserted = result.data  # lista com ids gerados
+
+        # Descobre quantas linhas saudáveis tem agora
+        try:
+            healthy = get_healthy_lines()
+            window  = max(1, len(healthy))
+        except Exception:
+            window = 1
+
+        # Enfileira os primeiros N (janela)
+        fired = 0
+        for row in inserted[:window]:
+            make_call_task.delay(campaign_id, {
+                "row_id": row["id"],
+                "cpf":    row["cpf"],
+                "phone":  row["phone"],
+            })
+            fired += 1
 
         return jsonify({
             "ok":          True,
             "campaign_id": campaign_id,
-            "enqueued":    enqueued
+            "total":       len(rows),
+            "fired":       fired,
+            "window":      window,
         })
+
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/webhook/vapi", methods=["POST"])
+def vapi_webhook():
+    try:
+        body      = request.json
+        call_id   = body.get("call", {}).get("id") or body.get("id")
+        msg_type  = body.get("message", {}).get("type") or body.get("type")
+
+        # Só processa quando a chamada termina
+        if msg_type not in ("end-of-call-report", "call-ended"):
+            return jsonify({"ok": True}), 200
+
+        if not call_id:
+            return jsonify({"ok": True}), 200
+
+        # Busca o registro da chamada
+        res = supabase.table("campaign_calls")\
+            .select("*")\
+            .eq("vapi_call_id", call_id)\
+            .execute()
+
+        if not res.data:
+            return jsonify({"ok": True}), 200
+
+        row         = res.data[0]
+        campaign_id = row["campaign_id"]
+
+        # Extrai duração e razão de fim
+        ended_reason = body.get("message", {}).get("endedReason") or body.get("endedReason", "")
+        duration     = body.get("message", {}).get("durationSeconds") or body.get("durationSeconds", 0)
+
+        # Atualiza status da chamada finalizada
+        supabase.table("campaign_calls").update({
+            "status":   "finalizado",
+            "error":    ended_reason,
+            "duration": duration,
+        }).eq("id", row["id"]).execute()
+
+        # Busca próximo pendente da campanha (order_idx mais baixo)
+        next_res = supabase.table("campaign_calls")\
+            .select("*")\
+            .eq("campaign_id", campaign_id)\
+            .eq("status", "pendente")\
+            .order("order_idx", desc=False)\
+            .limit(1)\
+            .execute()
+
+        if next_res.data:
+            next_row = next_res.data[0]
+            # Marca como "enfileirado" pra não pegar duplicado
+            supabase.table("campaign_calls").update({"status": "enfileirado"})\
+                .eq("id", next_row["id"]).execute()
+
+            make_call_task.delay(campaign_id, {
+                "row_id": next_row["id"],
+                "cpf":    next_row["cpf"],
+                "phone":  next_row["phone"],
+            })
+
+        return jsonify({"ok": True}), 200
+
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
