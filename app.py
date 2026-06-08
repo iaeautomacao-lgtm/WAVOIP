@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from tasks import celery, make_call_task
 load_dotenv()
+from ddm import processar_debito
+
 
 app = Flask(__name__)
 CORS(app)
@@ -242,12 +244,15 @@ def campaign_start():
         # Enfileira os primeiros N (janela)
         fired = 0
         for row in inserted[:window]:
+            supabase.table("campaign_calls").update({"status": "enfileirado"})\
+                .eq("id", row["id"]).execute()
             make_call_task.delay(campaign_id, {
-                "row_id": row["id"],
-                "cpf":    row["cpf"],
-                "phone":  row["phone"],
-            })
-            fired += 1
+                "row_id":      row["id"],
+                "cpf":         row["cpf"],
+                "phone":       row["phone"],
+                "name":        row.get("name", ""),
+                "debito_data": row.get("debito_data"),
+        })
 
         return jsonify({
             "ok":          True,
@@ -336,10 +341,12 @@ def vapi_webhook():
                         supabase.table("campaign_calls").update({"status": "enfileirado"})\
                             .eq("id", next_row["id"]).execute()
                         make_call_task.delay(campaign_id, {
-                            "row_id": next_row["id"],
-                            "cpf":    next_row["cpf"],
-                            "phone":  next_row["phone"],
-                        })
+                            "row_id":      next_row["id"],
+                            "cpf":         next_row["cpf"],
+                            "phone":       next_row["phone"],
+                            "name":        next_row.get("name", ""),
+                            "debito_data": next_row.get("debito_data"),
+})
                     else:
                         supabase.table("campaigns").update({
                             "status": "finalizada", "updated_at": "now()"
@@ -620,8 +627,8 @@ def import_preview():
         df.columns = [c.strip().lower() for c in df.columns]
 
         cpf_col  = next((c for c in df.columns if "cpf"    in c), None)
-        nome_col = next((c for c in df.columns if "nome"   in c or "name"    in c), None)
-        tel_col  = next((c for c in df.columns if "tel"    in c or "fone"    in c
+        nome_col = next((c for c in df.columns if "nome"   in c or "name"  in c), None)
+        tel_col  = next((c for c in df.columns if "tel"    in c or "fone"  in c
                                                 or "phone" in c or "celular" in c), None)
 
         if not cpf_col:
@@ -630,48 +637,40 @@ def import_preview():
             return jsonify({"ok": False, "error": "Coluna Nome não encontrada"}), 400
 
         rows = []
-        cpfs = []
         for _, row in df.iterrows():
             cpf_raw  = str(row.get(cpf_col, "") or "").strip()
             cpf_norm = normalize_cpf(cpf_raw)
             if not cpf_norm:
                 continue
-            cpfs.append(cpf_norm)
+
+            name  = str(row.get(nome_col, "") or "").strip()
+            phone = str(row.get(tel_col,  "") or "").strip() if tel_col else ""
+
+            # Consulta DDM
+            debito = processar_debito(cpf_norm)
+
             rows.append({
-                "cpf":     cpf_norm,
-                "cpf_raw": cpf_raw,
-                "name":    str(row.get(nome_col, "") or "").strip(),
-                "phone":   str(row.get(tel_col,  "") or "").strip() if tel_col else "",
+                "cpf":      cpf_norm,
+                "cpf_raw":  cpf_raw,
+                "name":     name,
+                "phone":    phone,
+                "has_debt": debito is not None,
+                "debito":   debito,
             })
 
         if not rows:
             return jsonify({"ok": False, "error": "Nenhum CPF válido encontrado"}), 400
 
-        found_cpfs = set()
-        for i in range(0, len(cpfs), 100):
-            batch = cpfs[i:i+100]
-            res1 = supabase.table("contacts").select("cpf, cpf_norm").in_("cpf",      batch).execute()
-            res2 = supabase.table("contacts").select("cpf, cpf_norm").in_("cpf_norm", batch).execute()
-            for r in (res1.data or []):
-                found_cpfs.add(normalize_cpf(r.get("cpf",      "")))
-                found_cpfs.add(normalize_cpf(r.get("cpf_norm", "") or ""))
-            for r in (res2.data or []):
-                found_cpfs.add(normalize_cpf(r.get("cpf",      "")))
-                found_cpfs.add(normalize_cpf(r.get("cpf_norm", "") or ""))
-
-        for row in rows:
-            row["has_debt"] = row["cpf"] in found_cpfs
-
         total     = len(rows)
         with_debt = sum(1 for r in rows if r["has_debt"])
 
         return jsonify({
-            "ok":          True,
-            "rows":        rows[:200],
-            "total":       total,
-            "with_debt":   with_debt,
-            "without_debt":total - with_debt,
-            "columns":     {"cpf": cpf_col, "name": nome_col, "phone": tel_col}
+            "ok":           True,
+            "rows":         rows[:200],
+            "total":        total,
+            "with_debt":    with_debt,
+            "without_debt": total - with_debt,
+            "columns":      {"cpf": cpf_col, "name": nome_col, "phone": tel_col}
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500

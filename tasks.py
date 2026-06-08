@@ -197,7 +197,7 @@ def processar_debito(cpf: str) -> Optional[Dict]:
 
 # ── VAPI ───────────────────────────────────────────────────────
 
-def vapi_call(phone: str, cpf: str = "", name: str = "") -> Dict:
+def vapi_call(phone: str, cpf: str = "", name: str = "", debito: dict = None) -> Dict:
     digits = ''.join(filter(str.isdigit, phone))
     if not digits.startswith("55"):
         digits = "55" + digits
@@ -212,34 +212,28 @@ def vapi_call(phone: str, cpf: str = "", name: str = "") -> Dict:
     _rr_idx += 1
     last_err = None
 
-    # Consulta débito DDM
-    debito = processar_debito(cpf) if cpf else None
-
     for i in range(len(healthy)):
         line     = healthy[(start + i) % len(healthy)]
         phone_id = WAVOIP_VAPI_MAP.get(line.get("token"))
         if not phone_id:
             continue
 
-        # Monta payload base
         payload: Dict[str, Any] = {
             "phoneNumberId": phone_id,
             "assistantId":   VAPI_ASSISTANT_ID,
             "customer":      {"number": phone_e164, "name": name},
         }
 
-        # Se tem débito, injeta variableValues
         if debito:
-            primeiro_nome = name.split()[0] if name else ""
             payload["assistantOverrides"] = {
                 "variableValues": {
-                    "instituicao":          debito["instituicao"],
-                    "Valorcpf":             cpf,
-                    "NominalPrinc":         debito["PgtoAvista"]["ValorTotal"],
-                    "PgtoAvista":           debito["PgtoAvista"],
-                    "CalculoBoleto":        debito["CalculoBoleto"],
-                    "ParcelasBoleto":       debito["ParcelasBoleto"],
-                    "PgtoParceladoCartao":  debito["PgtoParceladoCartao"],
+                    "instituicao":         debito.get("instituicao", ""),
+                    "Valorcpf":            cpf,
+                    "NominalPrinc":        debito.get("PgtoAvista", {}).get("ValorTotal", "0,00"),
+                    "PgtoAvista":          debito.get("PgtoAvista", {}),
+                    "CalculoBoleto":       debito.get("CalculoBoleto", {}),
+                    "ParcelasBoleto":      debito.get("ParcelasBoleto", "0"),
+                    "PgtoParceladoCartao": debito.get("PgtoParceladoCartao", {}),
                 }
             }
 
@@ -268,6 +262,7 @@ def make_call_task(self, campaign_id: str, contact: dict):
     cpf    = contact.get("cpf", "")
     name   = contact.get("name", "")
     row_id = contact.get("row_id")
+    debito     = contact.get("debito_data")
 
     if not phone:
         _update_result(row_id, "sem_telefone", None, None)
