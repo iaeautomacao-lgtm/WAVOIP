@@ -513,8 +513,8 @@ def get_calls():
         per_page = int(request.args.get("per_page", 50))
         offset   = (page - 1) * per_page
 
-        result = supabase.table("calls").select(
-            "*", count="exact"
+        result = supabase.table("campaign_calls").select(
+            "*, campaigns(name)", count="exact"
         ).order("created_at", desc=True).range(offset, offset + per_page - 1).execute()
 
         return jsonify({

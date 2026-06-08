@@ -508,18 +508,26 @@
     }
   }
 
-  function renderCalls(rows, page, pages, total) {
+function renderCalls(rows, page, pages, total) {
     const tbody = document.getElementById('calls-body');
     if (!rows.length) {
       tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Sem histórico.</div></td></tr>';
     } else {
       tbody.innerHTML = rows.map(c => {
-        const cls  = {'ended':'cs-ended','failed':'cs-failed','in-progress':'cs-in-progress','queued':'cs-queued'}[c.status]||'cs-queued';
+        const statusMap = {
+          finalizado:    'cs-ended',
+          em_andamento:  'cs-in-progress',
+          erro:          'cs-failed',
+          pendente:      'cs-queued',
+          enfileirado:   'cs-queued',
+        };
+        const cls  = statusMap[c.status] || 'cs-queued';
         const dur  = c.duration ? `${Math.floor(c.duration/60)}m ${c.duration%60}s` : '—';
         const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
+        const camp = c.campaigns?.name || '—';
         return `<tr>
           <td class="td-mono" style="color:var(--muted)">${(c.id||'').slice(0,8)}…</td>
-          <td>${c.contact_name || c.customer_number || '—'}</td>
+          <td>${c.cpf || '—'}<br><span class="td-dim">${camp}</span></td>
           <td><span class="cs ${cls}">${c.status||'—'}</span></td>
           <td class="td-mono">${dur}</td>
           <td class="td-dim">${date}</td>
