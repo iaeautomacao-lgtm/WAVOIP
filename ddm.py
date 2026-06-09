@@ -9,11 +9,21 @@ DDM_CALCULA  = f"{DDM_BASE_URL}/ws_ddm/ws/CalculaDebitos.php"
 DDM_CALC_ID  = f"{DDM_BASE_URL}/calc/"
 
 
+def _safe_dict(obj) -> dict:
+    """Garante que obj é dict — se vier lista, pega o primeiro elemento."""
+    if isinstance(obj, list):
+        return obj[0] if obj and isinstance(obj[0], dict) else {}
+    if isinstance(obj, dict):
+        return obj
+    return {}
+
+
 def consultar_debitos_cpf(cpf: str) -> Dict:
     try:
         r = requests.get(f"{DDM_CALCULA}?tk={DDM_TOKEN}&Doc={cpf}", timeout=30)
         r.raise_for_status()
-        return r.json()
+        raw = r.json()
+        return _safe_dict(raw)
     except Exception as e:
         return {"ERRO": str(e)}
 
@@ -22,7 +32,8 @@ def consultar_detalhes_iddev(idcalc: str) -> Dict:
     try:
         r = requests.get(f"{DDM_CALC_ID}?tk={DDM_TOKEN}&idDev={idcalc}", timeout=30)
         r.raise_for_status()
-        return r.json()
+        raw = r.json()
+        return _safe_dict(raw)
     except Exception as e:
         return {"ERRO": str(e)}
 
@@ -40,25 +51,30 @@ def processar_debito(cpf: str) -> Optional[Dict]:
     if detalhes.get("ERRO"):
         return None
 
-    lista_parcelas = detalhes.get("ListaParcelas", {}).get("Parcelas", [])
+    lista_parcelas = _safe_dict(detalhes.get("ListaParcelas", {})).get("Parcelas", [])
     if isinstance(lista_parcelas, dict):
         lista_parcelas = [lista_parcelas]
     if not lista_parcelas:
         return None
-    if lista_parcelas[0].get("ValorParcela", "0,00") == "0,00":
+    if _safe_dict(lista_parcelas[0] if isinstance(lista_parcelas, list) else lista_parcelas).get("ValorParcela", "0,00") == "0,00":
         return None
 
     def _last(obj):
-        return obj[-1] if isinstance(obj, list) and obj else (obj if isinstance(obj, dict) else {})
+        """Pega último item de lista, ou normaliza dict, ou retorna {}."""
+        if isinstance(obj, list):
+            return obj[-1] if obj and isinstance(obj[-1], dict) else {}
+        if isinstance(obj, dict):
+            return obj
+        return {}
 
-    dados       = detalhes.get("Dados", {})
+    dados       = _safe_dict(detalhes.get("Dados", {}))
     pgto_avista = _last(detalhes.get("PgtoAvista", {}))
     pgto_boleto = _last(detalhes.get("PgtoParceladoBoleto", {}))
     pgto_cartao = _last(detalhes.get("PgtoParceladoCartao", {}))
 
     nome_cliente = re.sub(r'\bNOVO\b', '', dados.get("Cliente", ""), flags=re.IGNORECASE).strip()
 
-    lista_debitos = dados_cpf.get("ListaDebitos", {}).get("Debito", [])
+    lista_debitos = _safe_dict(dados_cpf.get("ListaDebitos", {})).get("Debito", [])
     if isinstance(lista_debitos, dict):
         lista_debitos = [lista_debitos]
 
