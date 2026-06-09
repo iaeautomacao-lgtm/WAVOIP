@@ -537,11 +537,15 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
         signed_path = sign_data.get("signedURL") or sign_data.get("signedUrl") or sign_data.get("signed_url", "")
         if not signed_path:
             raise Exception(f"Storage API nao retornou URL. Resposta: {sign_data}")
-        # Monta URL completa se vier caminho relativo
-        if signed_path.startswith("/"):
-            download_url = f"{storage_host}{signed_path}"
-        else:
+        # Monta URL completa — garante que /storage/v1 está presente
+        if signed_path.startswith("http"):
             download_url = signed_path
+        elif signed_path.startswith("/storage/v1"):
+            download_url = f"{storage_host}{signed_path}"
+        elif signed_path.startswith("/object"):
+            download_url = f"{storage_host}/storage/v1{signed_path}"
+        else:
+            download_url = f"{storage_host}/storage/v1/object/sign/{signed_path}"
 
         # Download com stream para não estourar memória no header
         resp = requests.get(download_url, timeout=300)
