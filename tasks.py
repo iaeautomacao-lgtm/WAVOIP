@@ -518,24 +518,30 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
         }).eq("id", job_id).execute()
 
         # Gera URL assinada para download (1h de validade)
-        # SDK storage3 v2 pode retornar lista ou dict dependendo da versao
-        signed = supabase_admin.storage.from_(SUPABASE_BUCKET).create_signed_url(
-            storage_path, expires_in=3600
+        # Usa requests direto na API REST do Supabase Storage — bypassa o SDK
+        # (o SDK storage3 retorna formato inconsistente entre versoes)
+        import json as _json
+        storage_host = SUPABASE_URL.rstrip("/")
+        sign_resp = requests.post(
+            f"{storage_host}/storage/v1/object/sign/{SUPABASE_BUCKET}/{storage_path}",
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={"expiresIn": 3600},
+            timeout=15,
         )
-        # Normaliza: se vier lista pega o primeiro elemento
-        if isinstance(signed, list):
-            signed = signed[0] if signed else {}
-        # Tenta todas as variações de chave conhecidas
-        download_url = (
-            signed.get("signedURL") or
-            signed.get("signedUrl") or
-            signed.get("signed_url") or
-            signed.get("data", {}).get("signedUrl") or
-            signed.get("data", {}).get("signedURL") or
-            ""
-        )
-        if not download_url:
-            raise Exception(f"SDK nao retornou URL de download. Resposta: {signed}")
+        sign_resp.raise_for_status()
+        sign_data = sign_resp.json()
+        # API REST retorna: {"signedURL": "/storage/v1/object/sign/...?token=..."}
+        signed_path = sign_data.get("signedURL") or sign_data.get("signedUrl") or sign_data.get("signed_url", "")
+        if not signed_path:
+            raise Exception(f"Storage API nao retornou URL. Resposta: {sign_data}")
+        # Monta URL completa se vier caminho relativo
+        if signed_path.startswith("/"):
+            download_url = f"{storage_host}{signed_path}"
+        else:
+            download_url = signed_path
 
         # Download com stream para não estourar memória no header
         resp = requests.get(download_url, timeout=300)
