@@ -6,31 +6,28 @@ from typing import Optional, Dict
 DDM_TOKEN    = os.getenv("DDM_TOKEN", "2e30b68c0feda298f9d6d40ab36c1a09")
 DDM_BASE_URL = "https://www.ddmacordos.com"
 DDM_CALCULA  = f"{DDM_BASE_URL}/ws_ddm/ws/CalculaDebitos.php"
-DDM_CALC_ID  = f"{DDM_BASE_URL}/calc/"
 
 
 def _safe_dict(obj) -> dict:
-    """Garante que obj é dict — se vier lista, pega o primeiro elemento."""
     if isinstance(obj, list):
         return obj[0] if obj and isinstance(obj[0], dict) else {}
-    if isinstance(obj, dict):
+    return obj if isinstance(obj, dict) else {}
+
+
+def _safe_list(obj) -> list:
+    if isinstance(obj, list):
         return obj
-    return {}
+    if isinstance(obj, dict):
+        return [obj]
+    return []
 
 
 def consultar_debitos_cpf(cpf: str) -> Dict:
     try:
-        r = requests.get(f"{DDM_CALCULA}?tk={DDM_TOKEN}&Doc={cpf}", timeout=30)
-        r.raise_for_status()
-        raw = r.json()
-        return _safe_dict(raw)
-    except Exception as e:
-        return {"ERRO": str(e)}
-
-
-def consultar_detalhes_iddev(idcalc: str) -> Dict:
-    try:
-        r = requests.get(f"{DDM_CALC_ID}?tk={DDM_TOKEN}&idDev={idcalc}", timeout=30)
+        r = requests.get(
+            f"{DDM_CALCULA}?tk={DDM_TOKEN}&Doc={cpf}",
+            timeout=30
+        )
         r.raise_for_status()
         raw = r.json()
         return _safe_dict(raw)
@@ -39,65 +36,56 @@ def consultar_detalhes_iddev(idcalc: str) -> Dict:
 
 
 def processar_debito(cpf: str) -> Optional[Dict]:
-    dados_cpf = consultar_debitos_cpf(cpf)
-    if dados_cpf.get("ERRO"):
+    dados = consultar_debitos_cpf(cpf)
+
+    if dados.get("ERRO"):
         return None
 
-    idcalc = dados_cpf.get("idcalc")
+    idcalc = dados.get("idcalc")
     if not idcalc:
         return None
 
-    detalhes = consultar_detalhes_iddev(idcalc)
-    if detalhes.get("ERRO"):
+    # Parcelas — pega só as que têm ValorParcela numérico
+    parcelas_raw = _safe_list(_safe_dict(dados.get("ListaParcelas", {})).get("Parcelas", []))
+    parcelas = [p for p in parcelas_raw if isinstance(p, dict) and p.get("ValorParcela") and p.get("ValorParcela") != "0,00"]
+
+    if not parcelas:
         return None
 
-    lista_parcelas = _safe_dict(detalhes.get("ListaParcelas", {})).get("Parcelas", [])
-    if isinstance(lista_parcelas, dict):
-        lista_parcelas = [lista_parcelas]
-    if not lista_parcelas:
+    # Primeira parcela = à vista
+    avista = parcelas[0]
+    valor_avista = avista.get("ValorParcela", "0,00")
+
+    if valor_avista == "0,00":
         return None
-    if _safe_dict(lista_parcelas[0] if isinstance(lista_parcelas, list) else lista_parcelas).get("ValorParcela", "0,00") == "0,00":
-        return None
 
-    def _last(obj):
-        """Pega último item de lista, ou normaliza dict, ou retorna {}."""
-        if isinstance(obj, list):
-            return obj[-1] if obj and isinstance(obj[-1], dict) else {}
-        if isinstance(obj, dict):
-            return obj
-        return {}
+    # Débitos individuais
+    lista_debitos = _safe_list(_safe_dict(dados.get("ListaDebitos", {})).get("Debito", []))
 
-    dados       = _safe_dict(detalhes.get("Dados", {}))
-    pgto_avista = _last(detalhes.get("PgtoAvista", {}))
-    pgto_boleto = _last(detalhes.get("PgtoParceladoBoleto", {}))
-    pgto_cartao = _last(detalhes.get("PgtoParceladoCartao", {}))
-
+    # Nome do cliente sem "NOVO"
     nome_cliente = re.sub(r'\bNOVO\b', '', dados.get("Cliente", ""), flags=re.IGNORECASE).strip()
 
-    lista_debitos = _safe_dict(dados_cpf.get("ListaDebitos", {})).get("Debito", [])
-    if isinstance(lista_debitos, dict):
-        lista_debitos = [lista_debitos]
-
+    # Monta estrutura compatível com o restante do sistema
     return {
         "instituicao":    nome_cliente,
-        "nome_devedor":   dados.get("NomeDevedor", ""),
+        "nome_devedor":   dados.get("NomeDev", ""),
         "numero_debitos": str(len(lista_debitos)),
         "idcalc":         idcalc,
         "PgtoAvista": {
-            "ValorTotal":    pgto_avista.get("ValorTotal", "0,00"),
-            "PercDesconto":  pgto_avista.get("PercDesconto", "0"),
-            "ValorDesconto": pgto_avista.get("ValorDesconto", "0,00"),
-            "ValorFinal":    pgto_avista.get("ValorFinal", "0,00"),
+            "ValorTotal":    dados.get("TotalNominal", "0,00"),
+            "PercDesconto":  "0",
+            "ValorDesconto": "0,00",
+            "ValorFinal":    valor_avista,
         },
         "CalculoBoleto": {
-            "SubtotalBoleto":    pgto_boleto.get("Valor", "0,00"),
-            "HonorarioBoleto":   pgto_boleto.get("ValorDesconto", "0,00"),
-            "ValorCobrarBoleto": pgto_boleto.get("ValorParcela", "0,00"),
+            "SubtotalBoleto":    valor_avista,
+            "HonorarioBoleto":   "0,00",
+            "ValorCobrarBoleto": valor_avista,
         },
-        "ParcelasBoleto": pgto_boleto.get("Parcelas", "0"),
+        "ParcelasBoleto": str(len(parcelas)),
         "PgtoParceladoCartao": {
-            "Parcelas":     pgto_cartao.get("Parcelas", "0"),
-            "ValorParcela": pgto_cartao.get("ValorParcela", "0,00"),
-            "ValorFinal":   pgto_cartao.get("ValorFinal", "0,00"),
+            "Parcelas":     str(len(parcelas)),
+            "ValorParcela": valor_avista,
+            "ValorFinal":   valor_avista,
         },
     }
