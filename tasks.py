@@ -518,13 +518,24 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
         }).eq("id", job_id).execute()
 
         # Gera URL assinada para download (1h de validade)
+        # SDK storage3 v2 pode retornar lista ou dict dependendo da versao
         signed = supabase_admin.storage.from_(SUPABASE_BUCKET).create_signed_url(
             storage_path, expires_in=3600
         )
-        # SDK v2 retorna signed_url ou signedUrl (nao signedURL com URL maiusculo)
-        download_url = signed.get("signedURL") or signed.get("signedUrl") or signed.get("signed_url", "")
+        # Normaliza: se vier lista pega o primeiro elemento
+        if isinstance(signed, list):
+            signed = signed[0] if signed else {}
+        # Tenta todas as variações de chave conhecidas
+        download_url = (
+            signed.get("signedURL") or
+            signed.get("signedUrl") or
+            signed.get("signed_url") or
+            signed.get("data", {}).get("signedUrl") or
+            signed.get("data", {}).get("signedURL") or
+            ""
+        )
         if not download_url:
-            raise Exception(f"SDK nao retornou URL de download. Chaves: {list(signed.keys())}")
+            raise Exception(f"SDK nao retornou URL de download. Resposta: {signed}")
 
         # Download com stream para não estourar memória no header
         resp = requests.get(download_url, timeout=300)
@@ -546,13 +557,15 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
         else:
             df = pd.read_csv(buf, dtype=str, sep=None, engine="python", encoding=encoding)
 
-        # Remove arquivo do bucket após download bem-sucedido
+        # Processa o dataframe — delete só acontece após sucesso completo
+        _process_dataframe(job_id, df, fname_lower)
+
+        # Remove arquivo do bucket APENAS após processamento bem-sucedido
+        # (se deletar antes e o retry precisar do arquivo, vai quebrar)
         try:
             supabase_admin.storage.from_(SUPABASE_BUCKET).remove([storage_path])
         except Exception:
             pass  # não crítico
-
-        _process_dataframe(job_id, df, fname_lower)
 
     except Exception as exc:
         _set_job_error(job_id, str(exc))
