@@ -532,8 +532,13 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
             timeout=15,
         )
         sign_resp.raise_for_status()
-        sign_data = sign_resp.json()
-        # API REST retorna: {"signedURL": "/storage/v1/object/sign/...?token=..."}
+        sign_raw = sign_resp.json()
+        # API REST pode retornar dict ou lista com um item — normaliza para dict
+        if isinstance(sign_raw, list):
+            sign_data = sign_raw[0] if sign_raw else {}
+        else:
+            sign_data = sign_raw
+        # Retorna: {"signedURL": "/storage/v1/object/sign/...?token=..."}
         signed_path = sign_data.get("signedURL") or sign_data.get("signedUrl") or sign_data.get("signed_url", "")
         if not signed_path:
             raise Exception(f"Storage API nao retornou URL. Resposta: {sign_data}")
@@ -578,8 +583,14 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
             pass  # não crítico
 
     except Exception as exc:
-        _set_job_error(job_id, str(exc))
-        raise self.retry(exc=exc, countdown=30)
+        err_msg = str(exc)
+        _set_job_error(job_id, err_msg)
+        # Só faz retry em erros transitórios (rede, storage)
+        transient_keywords = ("timeout", "connection", "502", "503", "504", "reset", "storage")
+        is_transient = any(kw in err_msg.lower() for kw in transient_keywords)
+        if is_transient and self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=30)
+        # Erro permanente — não retry
 
 
 def _process_dataframe(job_id: str, df, fname: str):

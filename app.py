@@ -542,16 +542,24 @@ def get_presigned_url():
 
         res = supabase_admin.storage.from_(SUPABASE_BUCKET).create_signed_upload_url(file_path)
 
-        # SDK v2 retorna: signed_url, signedUrl, token, path
-        # (NÃO 'signedURL' com URL maiúsculo)
-        upload_url = res.get("signed_url") or res.get("signedUrl") or res.get("signedURL", "")
+        # SDK v2 pode retornar objeto (atributos) ou dict — normaliza para dict
+        if isinstance(res, dict):
+            res_dict = res
+        else:
+            res_dict = vars(res) if hasattr(res, "__dict__") else {}
+
+        upload_url = (
+            res_dict.get("signed_url")
+            or res_dict.get("signedUrl")
+            or res_dict.get("signedURL", "")
+        )
         if not upload_url:
-            raise Exception(f"SDK não retornou URL de upload. Chaves recebidas: {list(res.keys())}")
+            raise Exception(f"SDK não retornou URL de upload. Resposta: {res_dict}")
 
         return jsonify({
             "ok":         True,
             "upload_url": upload_url,
-            "token":      res.get("token", ""),
+            "token":      res_dict.get("token", ""),
             "path":       file_path,
         })
     except Exception as e:
