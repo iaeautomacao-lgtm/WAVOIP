@@ -793,42 +793,37 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
             "status": "processing"
         }).eq("id", job_id).execute()
 
-        # Gera URL assinada para download (1h de validade)
-        # Usa requests direto na API REST do Supabase Storage — bypassa o SDK
-        # (o SDK storage3 retorna formato inconsistente entre versoes)
-        import json as _json
+        # Baixa direto com service role. Evita erro 400 no endpoint de assinatura
+        # quando a Storage ainda nao enxerga o objeto logo apos o upload.
+        from urllib.parse import quote
         storage_host = SUPABASE_URL.rstrip("/")
-        sign_resp = requests.post(
-            f"{storage_host}/storage/v1/object/sign/{SUPABASE_BUCKET}/{storage_path}",
-            headers={
-                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={"expiresIn": 3600},
-            timeout=15,
-        )
-        sign_resp.raise_for_status()
-        sign_data = sign_resp.json()
-        # API REST retorna: {"signedURL": "/storage/v1/object/sign/...?token=..."}
-        signed_path = sign_data.get("signedURL") or sign_data.get("signedUrl") or sign_data.get("signed_url", "")
-        if not signed_path:
-            raise Exception(f"Storage API nao retornou URL. Resposta: {sign_data}")
-        # Monta URL completa — garante que /storage/v1 está presente
-        if signed_path.startswith("http"):
-            download_url = signed_path
-        elif signed_path.startswith("/storage/v1"):
-            download_url = f"{storage_host}{signed_path}"
-        elif signed_path.startswith("/object"):
-            download_url = f"{storage_host}/storage/v1{signed_path}"
-        else:
-            download_url = f"{storage_host}/storage/v1/object/sign/{signed_path}"
+        object_path = quote(storage_path.lstrip("/"), safe="/")
+        download_url = f"{storage_host}/storage/v1/object/{SUPABASE_BUCKET}/{object_path}"
+        resp = None
+        for attempt in range(5):
+            resp = requests.get(
+                download_url,
+                headers={
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    "apikey": SUPABASE_SERVICE_KEY,
+                },
+                timeout=300,
+            )
+            if resp.ok:
+                break
+            if resp.status_code in (400, 404) and attempt < 4:
+                time.sleep(2)
+                continue
+            resp.raise_for_status()
 
-        # Download com stream para não estourar memória no header
-        resp = requests.get(download_url, timeout=300)
-        resp.raise_for_status()
+        if resp is None:
+            raise Exception("Falha ao baixar arquivo do Supabase Storage")
+
+        raw_bytes = resp.content
+        if not raw_bytes:
+            raise Exception("Arquivo baixado do Supabase Storage veio vazio")
 
         # Detecta encoding — planilha DDM geralmente vem em latin-1
-        raw_bytes = resp.content
         try:
             raw_bytes.decode("utf-8")
             encoding = "utf-8"
@@ -854,7 +849,9 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
             pass  # não crítico
 
     except Exception as exc:
-        _set_job_error(job_id, str(exc))
+        if self.request.retries >= self.max_retries:
+            _set_job_error(job_id, str(exc))
+            raise
         raise self.retry(exc=exc, countdown=30)
 
 
