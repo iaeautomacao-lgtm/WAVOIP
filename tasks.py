@@ -8,29 +8,34 @@ from supabase import create_client
 from typing import Optional, Dict, Any
 from ddm import processar_debito as _processar_debito
 
-REDIS_URL            = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-VAPI_API_KEY         = os.getenv("VAPI_API_KEY")
-VAPI_ASSISTANT_ID    = os.getenv("VAPI_ASSISTANT_ID")
+def env(name: str, default: str = "") -> str:
+    value = os.getenv(name, default)
+    return value.strip().strip('"').strip("'") if isinstance(value, str) else value
+
+
+REDIS_URL            = env("REDIS_URL", "redis://localhost:6379/0")
+VAPI_API_KEY         = env("VAPI_API_KEY")
+VAPI_ASSISTANT_ID    = env("VAPI_ASSISTANT_ID")
 VAPI_BASE            = "https://api.vapi.ai"
-WAVOIP_EMAIL         = os.getenv("WAVOIP_EMAIL")
-WAVOIP_PASSWORD      = os.getenv("WAVOIP_PASSWORD")
+WAVOIP_EMAIL         = env("WAVOIP_EMAIL")
+WAVOIP_PASSWORD      = env("WAVOIP_PASSWORD")
 WAVOIP_BASE          = "https://api.wavoip.com"
-SUPABASE_URL         = os.getenv("SUPABASE_URL")
-SUPABASE_KEY         = os.getenv("SUPABASE_KEY")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
-SUPABASE_BUCKET      = os.getenv("SUPABASE_BUCKET", "imports")
+SUPABASE_URL         = env("SUPABASE_URL")
+SUPABASE_KEY         = env("SUPABASE_KEY")
+SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
+SUPABASE_BUCKET      = env("SUPABASE_BUCKET", "imports")
 
 # ── Email (SMTP) ──────────────────────────────────────────────
-SMTP_HOST     = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT     = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER     = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM     = os.getenv("SMTP_FROM", "atendimento@ddm.adv.br")
-SMTP_TIMEOUT  = int(os.getenv("SMTP_TIMEOUT", "10"))
-SMTP_SECURITY = os.getenv("SMTP_SECURITY", "starttls").lower()
+SMTP_HOST     = env("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT     = int(env("SMTP_PORT", "587"))
+SMTP_USER     = env("SMTP_USER")
+SMTP_PASSWORD = env("SMTP_PASSWORD")
+SMTP_FROM     = env("SMTP_FROM", "atendimento@ddm.adv.br")
+SMTP_TIMEOUT  = int(env("SMTP_TIMEOUT", "10"))
+SMTP_SECURITY = env("SMTP_SECURITY", "starttls").lower()
 
 # ── DDM Acordos ───────────────────────────────────────────────
-DDM_TOKEN    = os.getenv("DDM_TOKEN", "2e30b68c0feda298f9d6d40ab36c1a09")
+DDM_TOKEN    = env("DDM_TOKEN", "2e30b68c0feda298f9d6d40ab36c1a09")
 DDM_BASE     = "https://ddmacordos.com"
 
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -58,11 +63,11 @@ celery.conf.update(
 )
 
 WAVOIP_VAPI_MAP = {
-    "88b232ad-5c1d-404f-8652-f5399e6a6f51": os.getenv("VAPI_PHONE_NUMBER_ID_1"),
-    "ed49616d-fb19-46df-96b8-decab4cde3cf": os.getenv("VAPI_PHONE_NUMBER_ID_2"),
-    "c8af8686-ca83-4eef-b757-f53940426011": os.getenv("VAPI_PHONE_NUMBER_ID_3"),
-    "49d7328f-13ab-469f-b8a9-b7eb2b713f43": os.getenv("VAPI_PHONE_NUMBER_ID_4"),
-    "8d739b23-77ed-4eb7-b807-e81270eb4ddb": os.getenv("VAPI_PHONE_NUMBER_ID_5"),
+    "88b232ad-5c1d-404f-8652-f5399e6a6f51": env("VAPI_PHONE_NUMBER_ID_1"),
+    "ed49616d-fb19-46df-96b8-decab4cde3cf": env("VAPI_PHONE_NUMBER_ID_2"),
+    "c8af8686-ca83-4eef-b757-f53940426011": env("VAPI_PHONE_NUMBER_ID_3"),
+    "49d7328f-13ab-469f-b8a9-b7eb2b713f43": env("VAPI_PHONE_NUMBER_ID_4"),
+    "8d739b23-77ed-4eb7-b807-e81270eb4ddb": env("VAPI_PHONE_NUMBER_ID_5"),
 }
 
 DEVICE_PRIORITY = [

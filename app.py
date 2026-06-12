@@ -13,26 +13,31 @@ from tasks import celery, make_call_task, process_import, process_file, process_
 app = Flask(__name__)
 CORS(app)
 
-WAVOIP_EMAIL      = os.getenv("WAVOIP_EMAIL")
-WAVOIP_PASSWORD   = os.getenv("WAVOIP_PASSWORD")
+def env(name: str, default: str = "") -> str:
+    value = os.getenv(name, default)
+    return value.strip().strip('"').strip("'") if isinstance(value, str) else value
+
+
+WAVOIP_EMAIL      = env("WAVOIP_EMAIL")
+WAVOIP_PASSWORD   = env("WAVOIP_PASSWORD")
 WAVOIP_BASE       = "https://api.wavoip.com"
-VAPI_API_KEY      = os.getenv("VAPI_API_KEY")
-VAPI_ASSISTANT_ID = os.getenv("VAPI_ASSISTANT_ID")
+VAPI_API_KEY      = env("VAPI_API_KEY")
+VAPI_ASSISTANT_ID = env("VAPI_ASSISTANT_ID")
 VAPI_BASE         = "https://api.vapi.ai"
-SUPABASE_URL      = os.getenv("SUPABASE_URL")
-SUPABASE_KEY      = os.getenv("SUPABASE_KEY")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
-SUPABASE_BUCKET   = os.getenv("SUPABASE_BUCKET", "imports")
+SUPABASE_URL      = env("SUPABASE_URL")
+SUPABASE_KEY      = env("SUPABASE_KEY")
+SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
+SUPABASE_BUCKET   = env("SUPABASE_BUCKET", "imports")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 WAVOIP_VAPI_MAP = {
-    "88b232ad-5c1d-404f-8652-f5399e6a6f51": os.getenv("VAPI_PHONE_NUMBER_ID_1"),
-    "ed49616d-fb19-46df-96b8-decab4cde3cf": os.getenv("VAPI_PHONE_NUMBER_ID_2"),
-    "c8af8686-ca83-4eef-b757-f53940426011": os.getenv("VAPI_PHONE_NUMBER_ID_3"),
-    "49d7328f-13ab-469f-b8a9-b7eb2b713f43": os.getenv("VAPI_PHONE_NUMBER_ID_4"),
-    "8d739b23-77ed-4eb7-b807-e81270eb4ddb": os.getenv("VAPI_PHONE_NUMBER_ID_5"),
+    "88b232ad-5c1d-404f-8652-f5399e6a6f51": env("VAPI_PHONE_NUMBER_ID_1"),
+    "ed49616d-fb19-46df-96b8-decab4cde3cf": env("VAPI_PHONE_NUMBER_ID_2"),
+    "c8af8686-ca83-4eef-b757-f53940426011": env("VAPI_PHONE_NUMBER_ID_3"),
+    "49d7328f-13ab-469f-b8a9-b7eb2b713f43": env("VAPI_PHONE_NUMBER_ID_4"),
+    "8d739b23-77ed-4eb7-b807-e81270eb4ddb": env("VAPI_PHONE_NUMBER_ID_5"),
 }
 
 DEVICE_PRIORITY = [
@@ -663,6 +668,15 @@ def get_presigned_url():
             "path":       file_path,
         })
     except Exception as e:
+        logging.warning(
+            "[UPLOAD_PRESIGNED] erro=%s url=%s bucket=%s key_len=%s service_key_len=%s service_starts_eyJ=%s",
+            str(e),
+            SUPABASE_URL,
+            SUPABASE_BUCKET,
+            len(SUPABASE_KEY or ""),
+            len(SUPABASE_SERVICE_KEY or ""),
+            str(SUPABASE_SERVICE_KEY or "").startswith("eyJ"),
+        )
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
