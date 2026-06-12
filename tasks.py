@@ -26,6 +26,8 @@ SMTP_PORT     = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER     = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM     = os.getenv("SMTP_FROM", "atendimento@ddm.adv.br")
+SMTP_TIMEOUT  = int(os.getenv("SMTP_TIMEOUT", "10"))
+SMTP_SECURITY = os.getenv("SMTP_SECURITY", "starttls").lower()
 
 # ── DDM Acordos ───────────────────────────────────────────────
 DDM_TOKEN    = os.getenv("DDM_TOKEN", "2e30b68c0feda298f9d6d40ab36c1a09")
@@ -601,14 +603,21 @@ def _enviar_email_acordo(
     msg["To"]      = destinatario
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as srv:
+    if SMTP_SECURITY == "ssl":
+        srv = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
+    else:
+        srv = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
+
+    with srv:
         srv.ehlo()
-        srv.starttls()
+        if SMTP_SECURITY == "starttls":
+            srv.starttls()
+            srv.ehlo()
         srv.login(SMTP_USER, SMTP_PASSWORD)
         srv.sendmail(SMTP_FROM, [destinatario], msg.as_string())
 
 
-@celery.task(bind=True, max_retries=2, name="tasks.formalizar_acordo")
+@celery.task(bind=True, max_retries=2, soft_time_limit=45, time_limit=60, name="tasks.formalizar_acordo")
 def formalizar_acordo(self, dados: dict):
     """
     Disparada quando a Júlia formaliza um acordo.
