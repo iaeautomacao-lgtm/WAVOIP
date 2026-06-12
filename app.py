@@ -485,7 +485,7 @@ def vapi_webhook():
         debito      = row.get("debito_data") or {}
 
         ended_reason = msg.get("endedReason") or body.get("endedReason", "")
-        duration     = msg.get("durationSeconds") or body.get("durationSeconds", 0)
+        duration = int(float(msg.get("durationSeconds") or body.get("durationSeconds") or 0))
 
         # Extrai transcrição — pode estar em artifact.transcript ou messages
         transcript = (
