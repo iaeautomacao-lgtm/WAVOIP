@@ -442,6 +442,11 @@ def delete_campaign(campaign_id):
 def vapi_webhook():
     try:
         body     = request.json
+        # ── LOG TEMPORÁRIO DE DEBUG — remover após resolver ──────────────
+        import logging
+        import json as _json
+        logging.warning(f"[WEBHOOK] body_keys={list(body.keys() if body else [])} type={body.get('type')} msg_type={body.get('message',{}).get('type')} call_id={body.get('id')} transcript_len={len(body.get('artifact',{}).get('transcript','') or body.get('message',{}).get('artifact',{}).get('transcript','') or '')}")
+        # ────────────────────────────────────────────────────────────────
         call_id  = body.get("message", {}).get("call", {}).get("id") or body.get("call", {}).get("id") or body.get("id")
         msg_type = body.get("message", {}).get("type") or body.get("type")
 
