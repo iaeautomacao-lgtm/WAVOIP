@@ -148,6 +148,23 @@ def _detectar_acordo_formalizado(transcript: str) -> bool:
         "acordo fechado",
         "formalizado com sucesso",
         "vou formalizar agora",
+        # frases reais da júlia
+        "vou enviar o boleto",
+        "enviando o boleto",
+        "boleto para o seu email",
+        "boleto no seu email",
+        "confirmo o acordo",
+        "confirmando o acordo",
+        "acordo confirmado",
+        "pagamento confirmado",
+        "negociação realizada",
+        "negociacao realizada",
+        "regularizar sua situação",
+        "quitar a vista",
+        "fechamos o acordo",
+        "combinado então",
+        "combinado entao",
+        "trato feito",
     ]
     return any(f in t for f in frases)
 
