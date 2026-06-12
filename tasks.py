@@ -663,7 +663,8 @@ def formalizar_acordo(self, dados: dict):
                 )
                 email_enviado = True
             except Exception as e:
-                pass
+                import logging
+                logging.error(f"[FORMALIZAR] erro SMTP: {e}")  # ADD ISSO
 
         # 3. Registra acordo no Supabase
         try:
