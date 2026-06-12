@@ -803,22 +803,37 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
         from urllib.parse import quote
         storage_host = SUPABASE_URL.rstrip("/")
         object_path = quote(storage_path.lstrip("/"), safe="/")
-        download_url = f"{storage_host}/storage/v1/object/{SUPABASE_BUCKET}/{object_path}"
+        download_urls = [
+            f"{storage_host}/storage/v1/object/{SUPABASE_BUCKET}/{object_path}",
+            f"{storage_host}/storage/v1/object/authenticated/{SUPABASE_BUCKET}/{object_path}",
+        ]
         resp = None
+        last_error = ""
+        headers = {
+            "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+            "apikey": SUPABASE_SERVICE_KEY,
+        }
         for attempt in range(5):
-            resp = requests.get(
-                download_url,
-                headers={
-                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-                    "apikey": SUPABASE_SERVICE_KEY,
-                },
-                timeout=300,
-            )
-            if resp.ok:
+            for download_url in download_urls:
+                resp = requests.get(download_url, headers=headers, timeout=300)
+                if resp.ok:
+                    break
+                last_error = f"{resp.status_code} {resp.text[:300]}"
+            if resp is not None and resp.ok:
                 break
-            if resp.status_code in (400, 404) and attempt < 4:
+            if attempt < 4:
                 time.sleep(2)
                 continue
+            import logging
+            logging.warning(
+                "[STORAGE_DOWNLOAD] path=%s bucket=%s key_len=%s service_key_len=%s service_starts_eyJ=%s erro=%s",
+                storage_path,
+                SUPABASE_BUCKET,
+                len(SUPABASE_KEY or ""),
+                len(SUPABASE_SERVICE_KEY or ""),
+                str(SUPABASE_SERVICE_KEY or "").startswith("eyJ"),
+                last_error,
+            )
             resp.raise_for_status()
 
         if resp is None:
