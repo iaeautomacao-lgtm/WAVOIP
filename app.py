@@ -5,6 +5,7 @@ import os
 import re
 import time
 import uuid
+import logging
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from tasks import celery, make_call_task, process_import, process_file, process_import_from_storage, formalizar_acordo
@@ -137,10 +138,6 @@ def vapi_call(phone: str) -> dict:
 
 
 def _detectar_acordo_formalizado(transcript: str) -> bool:
-    """
-    Detecta se houve formalização de acordo na transcrição.
-    Busca as frases que a Júlia usa ao formalizar.
-    """
     if not transcript:
         return False
     t = transcript.lower()
@@ -441,53 +438,79 @@ def delete_campaign(campaign_id):
 @app.route("/api/webhook/vapi", methods=["POST"])
 def vapi_webhook():
     try:
-        body     = request.json
-        # ── LOG TEMPORÁRIO DE DEBUG — remover após resolver ──────────────
-        import logging
-        import json as _json
-        logging.warning(f"[WEBHOOK] body_keys={list(body.keys() if body else [])} type={body.get('type')} msg_type={body.get('message',{}).get('type')} call_id={body.get('id')} transcript_len={len(body.get('artifact',{}).get('transcript','') or body.get('message',{}).get('artifact',{}).get('transcript','') or '')}")
-        # ────────────────────────────────────────────────────────────────
-        call_id  = body.get("message", {}).get("call", {}).get("id") or body.get("call", {}).get("id") or body.get("id")
-        msg_type = body.get("message", {}).get("type") or body.get("type")
+        body = request.json or {}
 
+        # O Vapi envia tudo dentro de body["message"]
+        msg      = body.get("message", {})
+        msg_type = msg.get("type") or body.get("type", "")
+
+        # Extrai call_id de todas as posições possíveis
+        call_id = (
+            msg.get("call", {}).get("id") or
+            body.get("call", {}).get("id") or
+            msg.get("callId") or
+            body.get("callId") or
+            body.get("id")
+        )
+
+        logging.warning(f"[WEBHOOK] msg_type={msg_type} call_id={call_id}")
+
+        # ── status-update ─────────────────────────────────────────────
         if msg_type == "status-update":
-            status_call = body.get("message", {}).get("status")
-            call_id_log = body.get("message", {}).get("call", {}).get("id")
-            if status_call == "in-progress" and call_id_log:
+            if msg.get("status") == "in-progress" and call_id:
                 try:
                     supabase.table("campaign_calls").update({"status": "atendido"})\
-                        .eq("vapi_call_id", call_id_log).execute()
+                        .eq("vapi_call_id", call_id).execute()
                 except Exception:
                     pass
             return jsonify({"ok": True}), 200
 
+        # ── ignora eventos que não são fim de chamada ─────────────────
         if msg_type not in ("end-of-call-report", "call-ended"):
             return jsonify({"ok": True}), 200
 
         if not call_id:
+            logging.warning("[WEBHOOK] end-of-call sem call_id — ignorando")
             return jsonify({"ok": True}), 200
 
+        # ── busca o campaign_call pelo vapi_call_id ───────────────────
         res = supabase.table("campaign_calls")\
             .select("*").eq("vapi_call_id", call_id).execute()
         if not res.data:
+            logging.warning(f"[WEBHOOK] call_id {call_id} não encontrado em campaign_calls")
             return jsonify({"ok": True}), 200
 
         row         = res.data[0]
         campaign_id = row["campaign_id"]
         debito      = row.get("debito_data") or {}
 
-        ended_reason = body.get("message", {}).get("endedReason") or body.get("endedReason", "")
-        duration     = body.get("message", {}).get("durationSeconds") or body.get("durationSeconds", 0)
-        transcript   = (
-            body.get("message", {}).get("artifact", {}).get("transcript") or
+        ended_reason = msg.get("endedReason") or body.get("endedReason", "")
+        duration     = msg.get("durationSeconds") or body.get("durationSeconds", 0)
+
+        # Extrai transcrição — pode estar em artifact.transcript ou messages
+        transcript = (
+            msg.get("artifact", {}).get("transcript") or
             body.get("artifact", {}).get("transcript") or
             ""
         )
+        # Se não veio no artifact, reconstrói das messages
+        if not transcript:
+            messages = msg.get("artifact", {}).get("messages") or []
+            lines = []
+            for m in messages:
+                role = "AI" if m.get("role") in ("assistant", "bot") else "User"
+                txt  = m.get("message") or m.get("content") or ""
+                if txt:
+                    lines.append(f"{role}: {txt}")
+            transcript = "\n".join(lines)
+
         summary = (
-            body.get("message", {}).get("analysis", {}).get("summary") or
+            msg.get("analysis", {}).get("summary") or
             body.get("analysis", {}).get("summary") or
             ""
         )
+
+        logging.warning(f"[WEBHOOK] end-of-call call_id={call_id} transcript_len={len(transcript)} ended_reason={ended_reason}")
 
         supabase.table("campaign_calls").update({
             "status":   "finalizado",
@@ -495,30 +518,24 @@ def vapi_webhook():
             "duration": duration,
         }).eq("id", row["id"]).execute()
 
-        # ── Detecta acordo formalizado e dispara task de email ──────────
+        # ── Detecta acordo formalizado e dispara task de email ────────
         if _detectar_acordo_formalizado(transcript):
+            logging.warning(f"[WEBHOOK] ACORDO DETECTADO para call_id={call_id}")
             try:
-                cpf         = row.get("cpf", "")
-                nome        = row.get("name", "")
-                email       = debito.get("email", "")
-                instituicao = debito.get("instituicao", "")
-                valor       = _extrair_valor(summary)
-                forma_pag   = _extrair_forma_pagamento(transcript)
-
                 formalizar_acordo.delay({
-                    "cpf":              cpf,
-                    "nome":             nome,
-                    "email":            email,
-                    "instituicao":      instituicao,
-                    "valor":            valor,
-                    "forma_pagamento":  forma_pag,
+                    "cpf":              row.get("cpf", ""),
+                    "nome":             row.get("name", ""),
+                    "email":            debito.get("email", ""),
+                    "instituicao":      debito.get("instituicao", ""),
+                    "valor":            _extrair_valor(summary),
+                    "forma_pagamento":  _extrair_forma_pagamento(transcript),
                     "vapi_call_id":     call_id,
                     "campaign_call_id": row["id"],
                 })
-            except Exception:
-                pass  # não bloqueia o fluxo principal
+            except Exception as e:
+                logging.warning(f"[WEBHOOK] erro ao enfileirar formalizar_acordo: {e}")
 
-        # ── Avança fila da campanha ─────────────────────────────────────
+        # ── Avança fila da campanha ───────────────────────────────────
         camp = supabase.table("campaigns").select("*").eq("id", campaign_id).execute().data
         if camp:
             camp = camp[0]
@@ -558,6 +575,7 @@ def vapi_webhook():
 
         return jsonify({"ok": True}), 200
     except Exception as e:
+        logging.warning(f"[WEBHOOK] ERRO: {e}")
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
