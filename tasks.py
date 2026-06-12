@@ -20,6 +20,17 @@ SUPABASE_KEY         = os.getenv("SUPABASE_KEY")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
 SUPABASE_BUCKET      = os.getenv("SUPABASE_BUCKET", "imports")
 
+# ── Email (SMTP) ──────────────────────────────────────────────
+SMTP_HOST     = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT     = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER     = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM     = os.getenv("SMTP_FROM", "atendimento@ddm.adv.br")
+
+# ── DDM Acordos ───────────────────────────────────────────────
+DDM_TOKEN    = os.getenv("DDM_TOKEN", "2e30b68c0feda298f9d6d40ab36c1a09")
+DDM_BASE     = "https://ddmacordos.com"
+
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
@@ -427,6 +438,261 @@ def _check_campaign_completion(campaign_id: str):
     except Exception:
         pass
 
+
+
+# ── ACORDO FORMALIZADO ────────────────────────────────────────
+
+def _ddm_get_iddev(cpf: str) -> str:
+    """Busca o iddev pelo CPF na API DDM."""
+    url = f"{DDM_BASE}/calc/localiza_dev.php?tk={DDM_TOKEN}&cpf={cpf}"
+    r = requests.get(url, timeout=15)
+    r.raise_for_status()
+    data = r.json()
+    # Retorna o iddev/idcalc
+    return str(data.get("idcalc") or data.get("iddev") or data.get("id") or "")
+
+
+def _ddm_get_payment_links(iddev: str) -> dict:
+    """Busca links de boleto/pix pelo iddev."""
+    url = f"{DDM_BASE}/calc/?tk={DDM_TOKEN}&idDev={iddev}&cli=ddm"
+    r = requests.get(url, timeout=15)
+    r.raise_for_status()
+    data = r.json()
+
+    # Navega pela estrutura de Acordos para encontrar acordo_pagamento
+    link_boleto = ""
+    link_pix    = ""
+    linha_dig   = ""
+    vencimento  = ""
+
+    acordos_raw = data.get("Acordos", [])
+    if isinstance(acordos_raw, dict):
+        acordos_raw = [acordos_raw]
+
+    for ac in (acordos_raw or []):
+        if isinstance(ac, list):
+            for sub in ac:
+                pag = sub.get("acordo_pagamento", {}) if isinstance(sub, dict) else {}
+                link_boleto = link_boleto or str(pag.get("boleto") or "").strip()
+                link_pix    = link_pix    or str(pag.get("pix")    or "").strip()
+        elif isinstance(ac, dict):
+            pag = ac.get("acordo_pagamento", {})
+            link_boleto = link_boleto or str(pag.get("boleto") or "").strip()
+            link_pix    = link_pix    or str(pag.get("pix")    or "").strip()
+
+    # Fallback: campos diretos
+    if not link_boleto:
+        boleto_obj = data.get("boleto", {})
+        link_boleto = str(boleto_obj.get("link") or "").strip()
+        linha_dig   = str(boleto_obj.get("linhaDigitavel") or "").strip()
+        vencimento  = str(boleto_obj.get("vencimento") or "").strip()
+    if not link_pix:
+        pix_obj = data.get("pix", {})
+        link_pix = str(pix_obj.get("link") or "").strip()
+
+    return {
+        "link_boleto": link_boleto,
+        "link_pix":    link_pix,
+        "linha_dig":   linha_dig,
+        "vencimento":  vencimento,
+    }
+
+
+def _enviar_email_acordo(
+    destinatario: str,
+    nome: str,
+    instituicao: str,
+    valor: str,
+    forma_pagamento: str,
+    link_boleto: str,
+    link_pix: str,
+    linha_dig: str,
+    vencimento: str,
+):
+    """Envia email de formalização de acordo para o devedor."""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    link_principal = link_pix or link_boleto or ""
+
+    # Monta seção de pagamento do email
+    secao_pix = f"""
+    <tr>
+      <td style="padding:8px 0;">
+        <b style="color:#101828;">Pix:</b><br>
+        <a href="{link_pix}" style="color:#FF5706;">{link_pix}</a>
+      </td>
+    </tr>""" if link_pix else ""
+
+    secao_boleto = f"""
+    <tr>
+      <td style="padding:8px 0;">
+        <b style="color:#101828;">Boleto:</b><br>
+        <a href="{link_boleto}" style="color:#FF5706;">{link_boleto}</a>
+        {f'<br><span style="color:#667085;font-size:13px;">Linha digitável: {linha_dig}</span>' if linha_dig else ""}
+        {f'<br><span style="color:#667085;font-size:13px;">Vencimento: {vencimento}</span>' if vencimento else ""}
+      </td>
+    </tr>""" if link_boleto else ""
+
+    html = f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.08);">
+
+<!-- Header -->
+<tr><td style="background:#FF5706;padding:28px 36px;">
+  <img src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=375,h=152,fit=crop/m6L4ppGnqncBWn2J/ativo-16-YZ9a5WVxR2fx79Vd.png"
+       alt="DDM" height="40" style="display:block;" />
+</td></tr>
+
+<!-- Body -->
+<tr><td style="padding:32px 36px;">
+  <p style="color:#101828;font-size:18px;font-weight:bold;margin:0 0 8px;">Acordo formalizado com sucesso!</p>
+  <p style="color:#475467;font-size:15px;margin:0 0 24px;">Prezado(a) {nome},</p>
+  <p style="color:#475467;font-size:14px;line-height:1.6;margin:0 0 24px;">
+    Confirmamos a formalização do acordo referente à pendência financeira vinculada à
+    <strong>{instituicao}</strong>, conforme tratado em nossa ligação.
+  </p>
+
+  <!-- Detalhes -->
+  <table width="100%" cellpadding="0" cellspacing="0"
+         style="background:#f9fafb;border-radius:10px;padding:20px;margin-bottom:24px;">
+    <tr><td style="padding:6px 0;">
+      <span style="color:#667085;font-size:13px;">Instituição</span><br>
+      <strong style="color:#101828;">{instituicao}</strong>
+    </td></tr>
+    <tr><td style="padding:6px 0;">
+      <span style="color:#667085;font-size:13px;">Forma de pagamento</span><br>
+      <strong style="color:#101828;">{forma_pagamento}</strong>
+    </td></tr>
+    <tr><td style="padding:6px 0;">
+      <span style="color:#667085;font-size:13px;">Valor acordado</span><br>
+      <strong style="color:#101828;font-size:18px;">R$ {valor}</strong>
+    </td></tr>
+  </table>
+
+  <!-- Links de pagamento -->
+  {"<p style='color:#101828;font-weight:bold;margin:0 0 12px;'>Links para pagamento:</p><table width='100%' cellpadding='0' cellspacing='0'>" + secao_pix + secao_boleto + "</table>" if (link_pix or link_boleto) else ""}
+
+  <p style="color:#475467;font-size:13px;margin:24px 0 0;line-height:1.6;">
+    Qualquer dúvida, nossa equipe está à disposição.<br>
+    <strong>Equipe de Atendimento – DDM</strong>
+  </p>
+</td></tr>
+
+<tr><td style="background:#f9fafb;padding:20px 36px;text-align:center;">
+  <p style="color:#98a2b3;font-size:12px;margin:0;">
+    © DDM Assessoria | Este é um e-mail automático, não responda diretamente.
+  </p>
+</td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"Acordo formalizado — {instituicao}"
+    msg["From"]    = SMTP_FROM
+    msg["To"]      = destinatario
+    msg.attach(MIMEText(html, "html"))
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as srv:
+        srv.ehlo()
+        srv.starttls()
+        srv.login(SMTP_USER, SMTP_PASSWORD)
+        srv.sendmail(SMTP_FROM, [destinatario], msg.as_string())
+
+
+@celery.task(bind=True, max_retries=2, name="tasks.formalizar_acordo")
+def formalizar_acordo(self, dados: dict):
+    """
+    Disparada quando a Júlia formaliza um acordo.
+    1. Busca iddev pelo CPF na API DDM
+    2. Busca links de boleto/pix
+    3. Envia email para o devedor
+    4. Registra no Supabase
+    """
+    try:
+        cpf             = dados.get("cpf", "")
+        nome            = dados.get("nome", "Cliente")
+        email           = dados.get("email", "")
+        instituicao     = dados.get("instituicao", "")
+        valor           = dados.get("valor", "")
+        forma_pagamento = dados.get("forma_pagamento", "À vista")
+        vapi_call_id    = dados.get("vapi_call_id", "")
+        campaign_call_id = dados.get("campaign_call_id", "")
+
+        link_boleto = ""
+        link_pix    = ""
+        linha_dig   = ""
+        vencimento  = ""
+
+        # 1. Busca iddev e links de pagamento na API DDM
+        if cpf:
+            try:
+                iddev = _ddm_get_iddev(cpf)
+                if iddev:
+                    pagamentos = _ddm_get_payment_links(iddev)
+                    link_boleto = pagamentos["link_boleto"]
+                    link_pix    = pagamentos["link_pix"]
+                    linha_dig   = pagamentos["linha_dig"]
+                    vencimento  = pagamentos["vencimento"]
+            except Exception as e:
+                # Não bloqueia o envio do email se a API DDM falhar
+                pass
+
+        # 2. Envia email para o devedor
+        email_enviado = False
+        if email:
+            try:
+                _enviar_email_acordo(
+                    destinatario    = email,
+                    nome            = nome,
+                    instituicao     = instituicao,
+                    valor           = valor,
+                    forma_pagamento = forma_pagamento,
+                    link_boleto     = link_boleto,
+                    link_pix        = link_pix,
+                    linha_dig       = linha_dig,
+                    vencimento      = vencimento,
+                )
+                email_enviado = True
+            except Exception as e:
+                pass
+
+        # 3. Registra acordo no Supabase
+        try:
+            supabase.table("acordos_formalizados").insert({
+                "cpf":             cpf,
+                "nome":            nome,
+                "email":           email,
+                "instituicao":     instituicao,
+                "valor":           valor,
+                "forma_pagamento": forma_pagamento,
+                "link_boleto":     link_boleto,
+                "link_pix":        link_pix,
+                "email_enviado":   email_enviado,
+                "vapi_call_id":    vapi_call_id,
+                "campaign_call_id": campaign_call_id,
+            }).execute()
+        except Exception:
+            pass  # tabela pode não existir ainda
+
+        return {
+            "ok":            True,
+            "email_enviado": email_enviado,
+            "link_pix":      link_pix,
+            "link_boleto":   link_boleto,
+        }
+
+    except Exception as exc:
+        raise self.retry(exc=exc, countdown=30)
+
 @celery.task(bind=True, name="tasks.process_import")
 def process_import(self, job_id: str, rows: list):
     processed = 0
@@ -532,13 +798,8 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
             timeout=15,
         )
         sign_resp.raise_for_status()
-        sign_raw = sign_resp.json()
-        # API REST pode retornar dict ou lista com um item — normaliza para dict
-        if isinstance(sign_raw, list):
-            sign_data = sign_raw[0] if sign_raw else {}
-        else:
-            sign_data = sign_raw
-        # Retorna: {"signedURL": "/storage/v1/object/sign/...?token=..."}
+        sign_data = sign_resp.json()
+        # API REST retorna: {"signedURL": "/storage/v1/object/sign/...?token=..."}
         signed_path = sign_data.get("signedURL") or sign_data.get("signedUrl") or sign_data.get("signed_url", "")
         if not signed_path:
             raise Exception(f"Storage API nao retornou URL. Resposta: {sign_data}")
@@ -583,14 +844,8 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
             pass  # não crítico
 
     except Exception as exc:
-        err_msg = str(exc)
-        _set_job_error(job_id, err_msg)
-        # Só faz retry em erros transitórios (rede, storage)
-        transient_keywords = ("timeout", "connection", "502", "503", "504", "reset", "storage")
-        is_transient = any(kw in err_msg.lower() for kw in transient_keywords)
-        if is_transient and self.request.retries < self.max_retries:
-            raise self.retry(exc=exc, countdown=30)
-        # Erro permanente — não retry
+        _set_job_error(job_id, str(exc))
+        raise self.retry(exc=exc, countdown=30)
 
 
 def _process_dataframe(job_id: str, df, fname: str):
@@ -617,6 +872,8 @@ def _process_dataframe(job_id: str, df, fname: str):
     rows      = []
 
     for _, r in df.iterrows():
+        # Converte row para dict simples garantindo que todos os valores sao strings
+        r = {k: (str(v) if not isinstance(v, (list, dict)) else "") for k, v in r.items()}
         cpf_raw  = str(r.get(cpf_col, "") or "").strip()
         cpf_norm = _norm_cpf(cpf_raw)
         if not cpf_norm:
@@ -664,6 +921,7 @@ def _process_dataframe(job_id: str, df, fname: str):
                     "uf":      str(r.get("uf", "") or "").strip(),
                     "cidade":  str(r.get("cidade", "") or "").strip(),
                     "all_phones": phones,
+                    "email":      str(r.get("email", "") or "").strip(),
                 }
                 rows.append({
                     "cpf":      cpf_norm,

@@ -2,11 +2,12 @@ from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 import requests
 import os
+import re
 import time
 import uuid
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from tasks import celery, make_call_task, process_import, process_file, process_import_from_storage
+from tasks import celery, make_call_task, process_import, process_file, process_import_from_storage, formalizar_acordo
 
 app = Flask(__name__)
 CORS(app)
@@ -23,7 +24,6 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY
 SUPABASE_BUCKET   = os.getenv("SUPABASE_BUCKET", "imports")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-# Cliente com service_role para operações de storage (presigned URL)
 supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 WAVOIP_VAPI_MAP = {
@@ -134,6 +134,43 @@ def vapi_call(phone: str) -> dict:
             continue
 
     raise Exception(f"Todas as linhas falharam. Último erro: {last_error}")
+
+
+def _detectar_acordo_formalizado(transcript: str) -> bool:
+    """
+    Detecta se houve formalização de acordo na transcrição.
+    Busca as frases que a Júlia usa ao formalizar.
+    """
+    if not transcript:
+        return False
+    t = transcript.lower()
+    frases = [
+        "acordo formalizado",
+        "negociação concluída",
+        "negociacao concluida",
+        "acordo fechado",
+        "formalizado com sucesso",
+        "vou formalizar agora",
+    ]
+    return any(f in t for f in frases)
+
+
+def _extrair_forma_pagamento(transcript: str) -> str:
+    if not transcript:
+        return "À vista"
+    t = transcript.lower()
+    if "boleto" in t:
+        return "Boleto"
+    if "cartão" in t or "cartao" in t:
+        return "Cartão"
+    return "À vista"
+
+
+def _extrair_valor(summary: str) -> str:
+    if not summary:
+        return ""
+    match = re.search(r'R\$\s*([\d.,]+)', summary)
+    return match.group(1) if match else ""
 
 
 # ── ROTAS ─────────────────────────────────────────────────────
@@ -430,10 +467,22 @@ def vapi_webhook():
         if not res.data:
             return jsonify({"ok": True}), 200
 
-        row          = res.data[0]
-        campaign_id  = row["campaign_id"]
+        row         = res.data[0]
+        campaign_id = row["campaign_id"]
+        debito      = row.get("debito_data") or {}
+
         ended_reason = body.get("message", {}).get("endedReason") or body.get("endedReason", "")
         duration     = body.get("message", {}).get("durationSeconds") or body.get("durationSeconds", 0)
+        transcript   = (
+            body.get("message", {}).get("artifact", {}).get("transcript") or
+            body.get("artifact", {}).get("transcript") or
+            ""
+        )
+        summary = (
+            body.get("message", {}).get("analysis", {}).get("summary") or
+            body.get("analysis", {}).get("summary") or
+            ""
+        )
 
         supabase.table("campaign_calls").update({
             "status":   "finalizado",
@@ -441,6 +490,30 @@ def vapi_webhook():
             "duration": duration,
         }).eq("id", row["id"]).execute()
 
+        # ── Detecta acordo formalizado e dispara task de email ──────────
+        if _detectar_acordo_formalizado(transcript):
+            try:
+                cpf         = row.get("cpf", "")
+                nome        = row.get("name", "")
+                email       = debito.get("email", "")
+                instituicao = debito.get("instituicao", "")
+                valor       = _extrair_valor(summary)
+                forma_pag   = _extrair_forma_pagamento(transcript)
+
+                formalizar_acordo.delay({
+                    "cpf":              cpf,
+                    "nome":             nome,
+                    "email":            email,
+                    "instituicao":      instituicao,
+                    "valor":            valor,
+                    "forma_pagamento":  forma_pag,
+                    "vapi_call_id":     call_id,
+                    "campaign_call_id": row["id"],
+                })
+            except Exception:
+                pass  # não bloqueia o fluxo principal
+
+        # ── Avança fila da campanha ─────────────────────────────────────
         camp = supabase.table("campaigns").select("*").eq("id", campaign_id).execute().data
         if camp:
             camp = camp[0]
@@ -483,14 +556,10 @@ def vapi_webhook():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-# ── IMPORT: legado Redis (mantido para arquivos pequenos / compatibilidade) ────
+# ── IMPORT: legado Redis ───────────────────────────────────────
 
 @app.route("/api/import/upload", methods=["POST"])
 def import_upload():
-    """
-    Rota legada — mantida para arquivos pequenos (< 20k linhas).
-    Para arquivos grandes, use o fluxo presigned: /api/upload/presigned → PUT → /api/import/from-storage
-    """
     try:
         if "file" not in request.files:
             return jsonify({"ok": False, "error": "Nenhum arquivo enviado"}), 400
@@ -518,40 +587,31 @@ def import_upload():
 
         process_file.delay(job["id"], file_id, fname)
 
-        return jsonify({
-            "ok":     True,
-            "mode":   "async",
-            "job_id": job["id"],
-        })
+        return jsonify({"ok": True, "mode": "async", "job_id": job["id"]})
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-# ── IMPORT: novo fluxo via Supabase Storage (arquivos grandes) ─────────────────
+# ── IMPORT: Supabase Storage ───────────────────────────────────
 
 @app.route("/api/upload/presigned", methods=["GET"])
 def get_presigned_url():
-    """
-    Etapa 1 — retorna presigned URL para upload DIRETO do browser ao Supabase Storage.
-    O arquivo nunca passa pelo Gunicorn, eliminando o timeout 522.
-    """
     try:
         ext       = request.args.get("ext", "csv").lstrip(".")
         file_path = f"uploads/{uuid.uuid4()}.{ext}"
 
         res = supabase_admin.storage.from_(SUPABASE_BUCKET).create_signed_upload_url(file_path)
 
-        # SDK v2 pode retornar objeto (atributos) ou dict — normaliza para dict
         if isinstance(res, dict):
             res_dict = res
         else:
             res_dict = vars(res) if hasattr(res, "__dict__") else {}
 
         upload_url = (
-            res_dict.get("signed_url")
-            or res_dict.get("signedUrl")
-            or res_dict.get("signedURL", "")
+            res_dict.get("signed_url") or
+            res_dict.get("signedUrl") or
+            res_dict.get("signedURL", "")
         )
         if not upload_url:
             raise Exception(f"SDK não retornou URL de upload. Resposta: {res_dict}")
@@ -568,10 +628,6 @@ def get_presigned_url():
 
 @app.route("/api/import/from-storage", methods=["POST"])
 def import_from_storage():
-    """
-    Etapa 3 — recebe o path do arquivo já no bucket e enfileira o worker Celery.
-    Operação instantânea: só cria o job e dispara a task.
-    """
     try:
         data         = request.json or {}
         storage_path = data.get("path")
@@ -595,11 +651,7 @@ def import_from_storage():
 
         process_import_from_storage.delay(job["id"], storage_path, fname)
 
-        return jsonify({
-            "ok":     True,
-            "job_id": job["id"],
-            "status": "queued",
-        })
+        return jsonify({"ok": True, "job_id": job["id"], "status": "queued"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -612,7 +664,6 @@ def import_status(job_id):
             return jsonify({"ok": False, "error": "Job não encontrado"}), 404
         job = job[0]
 
-        # result pode ser lista (legado) ou dict (novo fluxo storage)
         result_preview = None
         if job["status"] == "done" and job["result"]:
             if isinstance(job["result"], list):
@@ -621,13 +672,13 @@ def import_status(job_id):
                 result_preview = job["result"]
 
         return jsonify({
-            "ok":        True,
-            "status":    job["status"],
-            "total":     job["total"],
-            "processed": job["processed"],
-            "with_debt": job["with_debt"],
+            "ok":         True,
+            "status":     job["status"],
+            "total":      job["total"],
+            "processed":  job["processed"],
+            "with_debt":  job["with_debt"],
             "session_id": job["id"] if job["status"] == "done" else None,
-            "result":    result_preview,
+            "result":     result_preview,
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
