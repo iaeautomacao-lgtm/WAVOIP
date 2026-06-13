@@ -33,6 +33,7 @@ SMTP_PASSWORD = env("SMTP_PASSWORD")
 SMTP_FROM     = env("SMTP_FROM", "atendimento@ddm.adv.br")
 SMTP_TIMEOUT  = int(env("SMTP_TIMEOUT", "10"))
 SMTP_SECURITY = env("SMTP_SECURITY", "starttls").lower()
+SMTP_FORCE_IPV4 = env("SMTP_FORCE_IPV4", "true").lower() in ("1", "true", "yes", "sim")
 
 # ── DDM Acordos ───────────────────────────────────────────────
 DDM_TOKEN    = env("DDM_TOKEN", "2e30b68c0feda298f9d6d40ab36c1a09")
@@ -517,6 +518,7 @@ def _enviar_email_acordo(
     vencimento: str,
 ):
     """Envia email de formalização de acordo para o devedor."""
+    import socket
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
@@ -608,7 +610,27 @@ def _enviar_email_acordo(
     msg["To"]      = destinatario
     msg.attach(MIMEText(html, "html"))
 
-    if SMTP_SECURITY == "ssl":
+    if SMTP_FORCE_IPV4 and SMTP_SECURITY != "ssl":
+        class SMTPIPv4(smtplib.SMTP):
+            def _get_socket(self, host, port, timeout):
+                last_error = None
+                for family, socktype, proto, _, sockaddr in socket.getaddrinfo(
+                    host, port, socket.AF_INET, socket.SOCK_STREAM
+                ):
+                    sock = socket.socket(family, socktype, proto)
+                    try:
+                        sock.settimeout(timeout)
+                        sock.connect(sockaddr)
+                        return sock
+                    except OSError as exc:
+                        last_error = exc
+                        sock.close()
+                if last_error:
+                    raise last_error
+                raise OSError(f"Nenhum endereco IPv4 encontrado para {host}")
+
+        srv = SMTPIPv4(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
+    elif SMTP_SECURITY == "ssl":
         srv = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
     else:
         srv = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
