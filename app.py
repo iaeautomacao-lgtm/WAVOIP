@@ -549,6 +549,8 @@ def vapi_webhook():
                     "nome":             row.get("name", ""),
                     "email":            debito.get("email", ""),
                     "instituicao":      debito.get("instituicao", ""),
+                    "idcalc":           debito.get("idcalc", ""),
+                    "debito":           debito,
                     "valor":            _extrair_valor(summary),
                     "forma_pagamento":  _extrair_forma_pagamento(transcript),
                     "vapi_call_id":     call_id,

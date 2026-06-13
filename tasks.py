@@ -37,6 +37,7 @@ SMTP_FORCE_IPV4 = env("SMTP_FORCE_IPV4", "true").lower() in ("1", "true", "yes",
 
 # ── DDM Acordos ───────────────────────────────────────────────
 DDM_TOKEN    = env("DDM_TOKEN", "2e30b68c0feda298f9d6d40ab36c1a09")
+DDM_AGREEMENT_TOKEN = env("DDM_AGREEMENT_TOKEN", "")
 DDM_BASE     = "https://ddmacordos.com"
 
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -452,12 +453,37 @@ def _check_campaign_completion(campaign_id: str):
 
 def _ddm_get_iddev(cpf: str) -> str:
     """Busca o iddev pelo CPF na API DDM."""
+    cpf = _norm_cpf(cpf)
     url = f"{DDM_BASE}/calc/localiza_dev.php?tk={DDM_TOKEN}&cpf={cpf}"
     r = requests.get(url, timeout=15)
     r.raise_for_status()
     data = r.json()
-    # Retorna o iddev/idcalc
-    return str(data.get("idcalc") or data.get("iddev") or data.get("id") or "")
+    # A DDM pode retornar um objeto ou uma lista com o devedor.
+    return _ddm_find_first(data, {"idcalc", "iddev", "id"})
+
+
+def _ddm_find_first(obj, names: set) -> str:
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            key_norm = str(key).lower().replace("_", "").replace("-", "")
+            if key_norm in names:
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+                if isinstance(value, (int, float)) and value:
+                    return str(value)
+                if isinstance(value, dict):
+                    nested = _ddm_find_first(value, {"link", "url", "href"})
+                    if nested:
+                        return nested
+            nested = _ddm_find_first(value, names)
+            if nested:
+                return nested
+    elif isinstance(obj, list):
+        for item in obj:
+            nested = _ddm_find_first(item, names)
+            if nested:
+                return nested
+    return ""
 
 
 def _ddm_get_payment_links(iddev: str) -> dict:
@@ -466,6 +492,7 @@ def _ddm_get_payment_links(iddev: str) -> dict:
     r = requests.get(url, timeout=15)
     r.raise_for_status()
     data = r.json()
+    data_items = data if isinstance(data, list) else [data]
 
     # Navega pela estrutura de Acordos para encontrar acordo_pagamento
     link_boleto = ""
@@ -473,7 +500,11 @@ def _ddm_get_payment_links(iddev: str) -> dict:
     linha_dig   = ""
     vencimento  = ""
 
-    acordos_raw = data.get("Acordos", [])
+    acordos_raw = []
+    for item in data_items:
+        if isinstance(item, dict) and item.get("Acordos") is not None:
+            acordos_raw = item.get("Acordos") or []
+            break
     if isinstance(acordos_raw, dict):
         acordos_raw = [acordos_raw]
 
@@ -489,20 +520,75 @@ def _ddm_get_payment_links(iddev: str) -> dict:
             link_pix    = link_pix    or str(pag.get("pix")    or "").strip()
 
     # Fallback: campos diretos
+    first_dict = next((item for item in data_items if isinstance(item, dict)), {})
+
     if not link_boleto:
-        boleto_obj = data.get("boleto", {})
+        boleto_obj = first_dict.get("boleto", {})
         link_boleto = str(boleto_obj.get("link") or "").strip()
         linha_dig   = str(boleto_obj.get("linhaDigitavel") or "").strip()
         vencimento  = str(boleto_obj.get("vencimento") or "").strip()
     if not link_pix:
-        pix_obj = data.get("pix", {})
+        pix_obj = first_dict.get("pix", {})
         link_pix = str(pix_obj.get("link") or "").strip()
+
+    link_boleto = link_boleto or _ddm_find_first(data, {
+        "boleto", "linkboleto", "urlboleto", "boletourl"
+    })
+    link_pix = link_pix or _ddm_find_first(data, {
+        "pix", "linkpix", "urlpix", "pixurl", "qrcodepix", "qrcode"
+    })
+    linha_dig = linha_dig or _ddm_find_first(data, {
+        "linhadigitavel", "linhadig", "digitalline", "digitableline"
+    })
+    vencimento = vencimento or _ddm_find_first(data, {
+        "vencimento", "datavencimento", "duedate"
+    })
 
     return {
         "link_boleto": link_boleto,
         "link_pix":    link_pix,
         "linha_dig":   linha_dig,
         "vencimento":  vencimento,
+    }
+
+
+def _ddm_formalizar_acordo(cpf: str) -> dict:
+    """Formaliza acordo na DDM seguindo o fluxo oficial do n8n."""
+    if not DDM_AGREEMENT_TOKEN:
+        raise RuntimeError("DDM_AGREEMENT_TOKEN nao configurado")
+
+    cpf = _norm_cpf(cpf)
+    url = "https://www.ddmacordos.com/ws_ddm/ws/CalculaDebitos.php"
+    r = requests.get(url, params={
+        "tk": DDM_AGREEMENT_TOKEN,
+        "OpcaoAcordo": "1",
+        "TipoAcordo": "1",
+        "Doc": cpf,
+    }, timeout=30)
+    r.raise_for_status()
+    data = r.json()
+
+    link_boleto = _ddm_find_first(data, {"linkboleto", "boletourl", "urlboleto"})
+    link_pix    = _ddm_find_first(data, {"linkpix", "pixurl", "urlpix", "qrcodepix", "qrcode"})
+    linha_dig   = _ddm_find_first(data, {"linhaboleto", "linhadigitavel", "linhadig", "digitalline", "digitableline"})
+    vencimento  = _ddm_find_first(data, {"vencimento", "datavencimento", "duedate"})
+    nr_acordo   = _ddm_find_first(data, {"nracordo", "numeroacordo", "acordo"})
+    idcalc      = _ddm_find_first(data, {"idcalc", "calculoid"})
+    nome        = _ddm_find_first(data, {"nomedev", "nomedevedor"})
+    documento   = _ddm_find_first(data, {"documento", "cpf"})
+    email       = _ddm_find_first(data, {"email"})
+
+    return {
+        "raw": data,
+        "link_boleto": link_boleto,
+        "link_pix": link_pix,
+        "linha_dig": linha_dig,
+        "vencimento": vencimento,
+        "nr_acordo": nr_acordo,
+        "idcalc": idcalc,
+        "nome": nome,
+        "cpf": documento,
+        "email": email,
     }
 
 
@@ -534,15 +620,20 @@ def _enviar_email_acordo(
       </td>
     </tr>""" if link_pix else ""
 
+    boleto_html = (
+        f'<a href="{link_boleto}" style="color:#FF5706;">{link_boleto}</a>'
+        if link_boleto else
+        '<span style="color:#667085;">Link de boleto indisponivel.</span>'
+    )
     secao_boleto = f"""
     <tr>
       <td style="padding:8px 0;">
         <b style="color:#101828;">Boleto:</b><br>
-        <a href="{link_boleto}" style="color:#FF5706;">{link_boleto}</a>
+        {boleto_html}
         {f'<br><span style="color:#667085;font-size:13px;">Linha digitável: {linha_dig}</span>' if linha_dig else ""}
         {f'<br><span style="color:#667085;font-size:13px;">Vencimento: {vencimento}</span>' if vencimento else ""}
       </td>
-    </tr>""" if link_boleto else ""
+    </tr>""" if (link_boleto or linha_dig) else ""
 
     html = f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -584,7 +675,7 @@ def _enviar_email_acordo(
   </table>
 
   <!-- Links de pagamento -->
-  {"<p style='color:#101828;font-weight:bold;margin:0 0 12px;'>Links para pagamento:</p><table width='100%' cellpadding='0' cellspacing='0'>" + secao_pix + secao_boleto + "</table>" if (link_pix or link_boleto) else ""}
+  {"<p style='color:#101828;font-weight:bold;margin:0 0 12px;'>Links para pagamento:</p><table width='100%' cellpadding='0' cellspacing='0'>" + secao_pix + secao_boleto + "</table>" if (link_pix or link_boleto or linha_dig) else ""}
 
   <p style="color:#475467;font-size:13px;margin:24px 0 0;line-height:1.6;">
     Qualquer dúvida, nossa equipe está à disposição.<br>
@@ -662,14 +753,32 @@ def formalizar_acordo(self, dados: dict):
         forma_pagamento = dados.get("forma_pagamento", "À vista")
         vapi_call_id    = dados.get("vapi_call_id", "")
         campaign_call_id = dados.get("campaign_call_id", "")
+        debito          = dados.get("debito") or {}
 
         link_boleto = ""
         link_pix    = ""
         linha_dig   = ""
         vencimento  = ""
+        nr_acordo   = ""
+
+        if cpf:
+            try:
+                acordo = _ddm_formalizar_acordo(cpf)
+                link_boleto = acordo.get("link_boleto") or ""
+                link_pix    = acordo.get("link_pix") or ""
+                linha_dig   = acordo.get("linha_dig") or ""
+                vencimento  = acordo.get("vencimento") or ""
+                nr_acordo   = acordo.get("nr_acordo") or ""
+                if acordo.get("email") and not email:
+                    email = acordo["email"]
+                if acordo.get("nome") and nome == "Cliente":
+                    nome = acordo["nome"]
+            except Exception as e:
+                import logging
+                logging.warning("[DDM] erro ao formalizar acordo cpf_final=%s erro=%s", _norm_cpf(cpf)[-4:], e)
 
         # 1. Busca iddev e links de pagamento na API DDM
-        if cpf:
+        if cpf and not (link_boleto or link_pix):
             try:
                 iddev = _ddm_get_iddev(cpf)
                 if iddev:
@@ -681,6 +790,32 @@ def formalizar_acordo(self, dados: dict):
             except Exception as e:
                 # Não bloqueia o envio do email se a API DDM falhar
                 pass
+
+        if cpf and not (link_boleto or link_pix):
+            try:
+                iddev = str(
+                    dados.get("idcalc") or
+                    dados.get("iddev") or
+                    debito.get("idcalc") or
+                    debito.get("iddev") or
+                    ""
+                ).strip()
+                if not iddev:
+                    debito_recalculado = _processar_debito(_norm_cpf(cpf))
+                    if debito_recalculado:
+                        iddev = str(debito_recalculado.get("idcalc") or "").strip()
+                if iddev:
+                    pagamentos = _ddm_get_payment_links(iddev)
+                    link_boleto = pagamentos["link_boleto"]
+                    link_pix    = pagamentos["link_pix"]
+                    linha_dig   = pagamentos["linha_dig"]
+                    vencimento  = pagamentos["vencimento"]
+                if not (link_boleto or link_pix):
+                    import logging
+                    logging.warning("[DDM] sem link de pagamento cpf_final=%s id=%s", _norm_cpf(cpf)[-4:], iddev)
+            except Exception as e:
+                import logging
+                logging.warning("[DDM] erro no fallback de boleto cpf_final=%s erro=%s", _norm_cpf(cpf)[-4:], e)
 
         # 2. Envia email para o devedor
         email_enviado = False
@@ -725,6 +860,8 @@ def formalizar_acordo(self, dados: dict):
             "email_enviado": email_enviado,
             "link_pix":      link_pix,
             "link_boleto":   link_boleto,
+            "linha_boleto":  linha_dig,
+            "nr_acordo":     nr_acordo,
         }
 
     except Exception as exc:
@@ -966,6 +1103,8 @@ def _process_dataframe(job_id: str, df, fname: str):
                         "ValorFinal":   val_str.replace(".", ","),
                     },
                     # Metadados adicionais para referência
+                    "idcalc":  str(r.get("idcalc", "") or "").strip(),
+                    "iddev":   str(r.get("iddev", "") or "").strip(),
                     "idcrm":   str(r.get("idcrm", "") or "").strip(),
                     "uf":      str(r.get("uf", "") or "").strip(),
                     "cidade":  str(r.get("cidade", "") or "").strip(),
