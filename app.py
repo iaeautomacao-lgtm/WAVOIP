@@ -8,7 +8,7 @@ import uuid
 import logging
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from tasks import celery, make_call_task, process_import, process_file, process_import_from_storage, formalizar_acordo
+from tasks import process_file, process_import_from_storage, formalizar_acordo, fill_campaign_capacity, fill_campaign_capacity_task
 
 app = Flask(__name__)
 CORS(app)
@@ -398,38 +398,29 @@ def start_campaign(campaign_id):
             "status": "em_andamento", "updated_at": "now()"
         }).eq("id", campaign_id).execute()
 
-        pending = supabase.table("campaign_calls")\
-            .select("*")\
+        pending_count = supabase.table("campaign_calls")\
+            .select("id", count="exact")\
             .eq("campaign_id", campaign_id)\
-            .in_("status", ["pendente", "enfileirado"])\
-            .order("order_idx")\
-            .execute().data
+            .eq("status", "pendente")\
+            .execute()
 
-        if not pending:
+        if not (pending_count.count or 0):
             supabase.table("campaigns").update({"status": "finalizada"}).eq("id", campaign_id).execute()
             return jsonify({"ok": True, "fired": 0, "message": "Nenhum pendente"})
 
-        try:
-            healthy = get_healthy_lines()
-            window  = max(1, len(healthy))
-        except Exception:
-            window = 1
+        result = fill_campaign_capacity(campaign_id)
+        if not result.get("ok"):
+            return jsonify({"ok": False, "error": result.get("error", "erro ao iniciar campanha")}), 500
 
-        fired = 0
-        for row in pending[:window]:
-            supabase.table("campaign_calls").update({"status": "enfileirado"})\
-                .eq("id", row["id"]).execute()
-            make_call_task.delay(campaign_id, {
-                "row_id":      row["id"],
-                "cpf":         row["cpf"],
-                "phone":       row["phone"],
-                "name":        row.get("name", ""),
-                "debito_data": row.get("debito_data"),
-            })
-            fired += 1
-
-        supabase.table("campaigns").update({"fired": fired}).eq("id", campaign_id).execute()
-        return jsonify({"ok": True, "fired": fired, "window": window, "total": len(pending)})
+        return jsonify({
+            "ok": True,
+            "fired": result.get("fired", 0),
+            "capacity": result.get("capacity", 0),
+            "active": result.get("active", 0),
+            "healthy_lines": result.get("healthy_lines", 0),
+            "line_max_concurrent": result.get("line_max_concurrent", 2),
+            "total": pending_count.count or 0,
+        })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -574,28 +565,7 @@ def vapi_webhook():
                         "status": "finalizada", "updated_at": "now()"
                     }).eq("id", campaign_id).execute()
                 else:
-                    next_res = supabase.table("campaign_calls")\
-                        .select("*")\
-                        .eq("campaign_id", campaign_id)\
-                        .eq("status", "pendente")\
-                        .order("order_idx")\
-                        .limit(1).execute()
-
-                    if next_res.data:
-                        next_row = next_res.data[0]
-                        supabase.table("campaign_calls").update({"status": "enfileirado"})\
-                            .eq("id", next_row["id"]).execute()
-                        make_call_task.delay(campaign_id, {
-                            "row_id":      next_row["id"],
-                            "cpf":         next_row["cpf"],
-                            "phone":       next_row["phone"],
-                            "name":        next_row.get("name", ""),
-                            "debito_data": next_row.get("debito_data"),
-                        })
-                    else:
-                        supabase.table("campaigns").update({
-                            "status": "finalizada", "updated_at": "now()"
-                        }).eq("id", campaign_id).execute()
+                    fill_campaign_capacity_task.delay(campaign_id)
 
         return jsonify({"ok": True}), 200
     except Exception as e:

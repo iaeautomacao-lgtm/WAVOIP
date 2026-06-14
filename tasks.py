@@ -2,6 +2,7 @@ import os
 import re
 import io
 import time
+import uuid
 import requests
 from celery import Celery
 from supabase import create_client
@@ -45,6 +46,9 @@ supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 WATCHDOG_TIMEOUT_MIN = int(os.getenv("WATCHDOG_TIMEOUT_MIN", "8"))   # minutos sem webhook → re-dispara
 WATCHDOG_MAX_RETRIES = int(os.getenv("WATCHDOG_MAX_RETRIES", "3"))    # tentativas antes de marcar erro
+LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "2")))
+LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
+ACTIVE_CALL_STATUSES = ["enfileirado", "em_andamento", "atendido"]
 
 celery = Celery("tasks", broker=REDIS_URL, backend=REDIS_URL)
 celery.conf.update(
@@ -106,6 +110,45 @@ def wavoip_get_devices(token: str) -> list:
     return res.json().get("data", [])
 
 
+_redis_client = None
+
+
+def redis_client():
+    global _redis_client
+    if _redis_client is None:
+        import redis as redis_lib
+        _redis_client = redis_lib.from_url(REDIS_URL)
+    return _redis_client
+
+
+def _line_name(line: dict) -> str:
+    return str(line.get("name") or line.get("phone") or line.get("token") or "linha")
+
+
+def _line_phone_id(line: dict) -> str:
+    return WAVOIP_VAPI_MAP.get(line.get("token")) or ""
+
+
+def _line_cooldown_key(line_token: str) -> str:
+    return f"dialer:line_cooldown:{line_token}"
+
+
+def _is_line_in_cooldown(line_token: str) -> bool:
+    try:
+        return bool(redis_client().exists(_line_cooldown_key(line_token)))
+    except Exception:
+        return False
+
+
+def _cooldown_line(line_token: str, reason: str = ""):
+    if not line_token:
+        return
+    try:
+        redis_client().setex(_line_cooldown_key(line_token), LINE_COOLDOWN_SECONDS, reason or "call_failed")
+    except Exception:
+        pass
+
+
 def get_healthy_lines() -> list:
     token      = wavoip_login()
     devices    = wavoip_get_devices(token)
@@ -118,11 +161,98 @@ def get_healthy_lines() -> list:
         if d.get("disabled") != 0:     continue
         if d.get("phone") is None:     continue
         if not WAVOIP_VAPI_MAP.get(t): continue
+        if _is_line_in_cooldown(t):     continue
         healthy.append(d)
     return healthy
 
 
-def vapi_call(phone: str, cpf: str = "", name: str = "", debito: dict = None) -> Dict:
+def _dialer_meta(line: dict) -> dict:
+    return {
+        "line_token":      line.get("token") or "",
+        "line_name":       _line_name(line),
+        "phone_number_id": _line_phone_id(line),
+        "reserved_at":     int(time.time()),
+        "max_concurrent":  LINE_MAX_CONCURRENT,
+    }
+
+
+def _with_dialer_meta(debito: dict, line: dict) -> dict:
+    base = dict(debito or {})
+    base["_dialer"] = _dialer_meta(line)
+    return base
+
+
+def _active_line_counts(line_tokens: list) -> dict:
+    counts = {token: 0 for token in line_tokens}
+    if not line_tokens:
+        return counts
+
+    try:
+        rows = supabase.table("campaign_calls") \
+            .select("id, status, debito_data") \
+            .in_("status", ACTIVE_CALL_STATUSES) \
+            .execute().data or []
+    except Exception:
+        return counts
+
+    unknown_active = 0
+    for row in rows:
+        debito = row.get("debito_data") or {}
+        meta = debito.get("_dialer") if isinstance(debito, dict) else None
+        token = (meta or {}).get("line_token")
+        if token in counts:
+            counts[token] += 1
+        else:
+            unknown_active += 1
+
+    for idx in range(unknown_active):
+        token = line_tokens[idx % len(line_tokens)]
+        counts[token] += 1
+    return counts
+
+
+def _available_line_slots(healthy: list, counts: dict) -> list:
+    slots = []
+    added = {line.get("token"): 0 for line in healthy}
+    for _ in range(max(1, LINE_MAX_CONCURRENT)):
+        for line in healthy:
+            token = line.get("token")
+            if not token:
+                continue
+            used = counts.get(token, 0) + added.get(token, 0)
+            if used < LINE_MAX_CONCURRENT:
+                slots.append(line)
+                added[token] = added.get(token, 0) + 1
+    return slots
+
+
+def _acquire_scheduler_lock() -> tuple:
+    token = str(uuid.uuid4())
+    try:
+        ok = redis_client().set("dialer:scheduler_lock", token, nx=True, ex=30)
+        return bool(ok), token
+    except Exception:
+        return True, token
+
+
+def _release_scheduler_lock(token: str):
+    try:
+        r = redis_client()
+        if r.get("dialer:scheduler_lock") == token.encode():
+            r.delete("dialer:scheduler_lock")
+    except Exception:
+        pass
+
+
+def vapi_call(
+    phone: str,
+    cpf: str = "",
+    name: str = "",
+    debito: dict = None,
+    line_token: str = "",
+    phone_number_id: str = "",
+    line_name: str = "",
+) -> Dict:
     digits = ''.join(filter(str.isdigit, phone))
     if not digits.startswith("55"):
         digits = "55" + digits
@@ -132,14 +262,22 @@ def vapi_call(phone: str, cpf: str = "", name: str = "", debito: dict = None) ->
     if not healthy:
         raise Exception("Nenhuma linha disponível")
 
-    global _rr_idx
-    start    = _rr_idx % len(healthy)
-    _rr_idx += 1
+    if line_token and phone_number_id:
+        healthy_map = {line.get("token"): line for line in healthy}
+        line = healthy_map.get(line_token)
+        if not line:
+            raise Exception(f"Linha reservada indisponivel: {line_name or line_token}")
+        candidates = [line]
+    else:
+        global _rr_idx
+        start    = _rr_idx % len(healthy)
+        _rr_idx += 1
+        candidates = [healthy[(start + i) % len(healthy)] for i in range(len(healthy))]
+
     last_err = None
 
-    for i in range(len(healthy)):
-        line     = healthy[(start + i) % len(healthy)]
-        phone_id = WAVOIP_VAPI_MAP.get(line.get("token"))
+    for line in candidates:
+        phone_id = phone_number_id or WAVOIP_VAPI_MAP.get(line.get("token"))
         if not phone_id:
             continue
 
@@ -169,7 +307,14 @@ def vapi_call(phone: str, cpf: str = "", name: str = "", debito: dict = None) ->
                     "Content-Type":  "application/json"
                 }, timeout=15)
             if r.ok:
-                return r.json()
+                data = r.json()
+                if isinstance(data, dict):
+                    data["_dialer"] = {
+                        "line_token":      line.get("token") or line_token,
+                        "line_name":       _line_name(line) or line_name,
+                        "phone_number_id": phone_id,
+                    }
+                return data
             try:    detail = r.json()
             except: detail = r.text
             last_err = f"{line.get('name')} — {r.status_code}: {detail}"
@@ -240,12 +385,38 @@ def _set_job_error(job_id: str, error_msg: str):
 
 # ── TASKS ─────────────────────────────────────────────────────
 
+def _retry_or_fail_call(row_id: str, phone: str, error: str) -> str:
+    try:
+        row = supabase.table("campaign_calls") \
+            .select("watchdog_retries") \
+            .eq("id", row_id) \
+            .execute().data
+        retries = (row[0].get("watchdog_retries") or 0) if row else 0
+        if retries >= WATCHDOG_MAX_RETRIES:
+            _update_result(row_id, "erro", None, phone, error)
+            return "erro"
+
+        supabase.table("campaign_calls").update({
+            "status": "pendente",
+            "watchdog_retries": retries + 1,
+            "error": error,
+        }).eq("id", row_id).execute()
+        return "pendente"
+    except Exception:
+        _update_result(row_id, "erro", None, phone, error)
+        return "erro"
+
+
 @celery.task(bind=True, max_retries=0, name="tasks.make_call")
 def make_call_task(self, campaign_id: str, contact: dict):
     cpf    = contact.get("cpf", "")
     name   = contact.get("name", "")
     row_id = contact.get("row_id")
     debito = contact.get("debito_data") or {}
+    meta = debito.get("_dialer") if isinstance(debito, dict) else {}
+    line_token = contact.get("line_token") or (meta or {}).get("line_token") or ""
+    line_name = contact.get("line_name") or (meta or {}).get("line_name") or ""
+    phone_number_id = contact.get("phone_number_id") or (meta or {}).get("phone_number_id") or ""
 
     # Monta lista de telefones a tentar em ordem:
     # 1. all_phones do debito_data (FONE1..FONE10 da planilha DDM)
@@ -260,21 +431,22 @@ def make_call_task(self, campaign_id: str, contact: dict):
         _update_result(row_id, "sem_telefone", None, None)
         return
 
-    # Aguarda linha SIP disponivel (max 30min)
-    MAX_WAIT  = 30 * 60
-    CHECK_INT = 30
-    waited    = 0
-    while waited < MAX_WAIT:
-        try:
-            if get_healthy_lines():
-                break
-        except Exception:
-            pass
-        time.sleep(CHECK_INT)
-        waited += CHECK_INT
-    else:
-        _update_result(row_id, "falha_sem_linha", None, None)
-        return
+    # Sem linha reservada, mantem compatibilidade com chamadas antigas/manuais.
+    if not line_token:
+        MAX_WAIT  = 30 * 60
+        CHECK_INT = 30
+        waited    = 0
+        while waited < MAX_WAIT:
+            try:
+                if get_healthy_lines():
+                    break
+            except Exception:
+                pass
+            time.sleep(CHECK_INT)
+            waited += CHECK_INT
+        else:
+            _update_result(row_id, "falha_sem_linha", None, None)
+            return
 
     # Tenta cada telefone em sequencia ate um funcionar
     last_error = None
@@ -283,7 +455,15 @@ def make_call_task(self, campaign_id: str, contact: dict):
         if not phone:
             continue
         try:
-            data    = vapi_call(phone, cpf=cpf, name=name, debito=debito)
+            data    = vapi_call(
+                phone,
+                cpf=cpf,
+                name=name,
+                debito=debito,
+                line_token=line_token,
+                phone_number_id=phone_number_id,
+                line_name=line_name,
+            )
             call_id = data.get("id")
             # Sucesso — registra o telefone que funcionou e encerra
             _update_result(row_id, "em_andamento", call_id, phone)
@@ -295,9 +475,107 @@ def make_call_task(self, campaign_id: str, contact: dict):
             continue
 
     # Todos os telefones falharam
-    _update_result(row_id, "erro", None, phones[0], f"todos os fones falharam — {last_error}")
+    error = f"todos os fones falharam - {last_error}"
+    if line_token:
+        _cooldown_line(line_token, error)
+        status = _retry_or_fail_call(row_id, phones[0], error)
+        if status == "pendente":
+            fill_campaign_capacity_task.delay(campaign_id)
+    else:
+        _update_result(row_id, "erro", None, phones[0], error)
 
 
+
+
+def fill_campaign_capacity(campaign_id: str) -> dict:
+    locked, lock_token = _acquire_scheduler_lock()
+    if not locked:
+        return {"ok": True, "locked": True, "fired": 0}
+
+    try:
+        camp_rows = supabase.table("campaigns") \
+            .select("*") \
+            .eq("id", campaign_id) \
+            .execute().data or []
+        if not camp_rows:
+            return {"ok": False, "error": "campanha nao encontrada", "fired": 0}
+
+        camp = camp_rows[0]
+        if camp.get("status") != "em_andamento":
+            return {"ok": True, "status": camp.get("status"), "fired": 0}
+
+        healthy = get_healthy_lines()
+        line_tokens = [line.get("token") for line in healthy if line.get("token")]
+        counts = _active_line_counts(line_tokens)
+        slots = _available_line_slots(healthy, counts)
+        capacity = len(healthy) * LINE_MAX_CONCURRENT
+        active = sum(counts.values())
+
+        if not slots:
+            return {
+                "ok": True,
+                "fired": 0,
+                "capacity": capacity,
+                "active": active,
+                "healthy_lines": len(healthy),
+                "line_max_concurrent": LINE_MAX_CONCURRENT,
+            }
+
+        pending = supabase.table("campaign_calls") \
+            .select("id, cpf, phone, name, debito_data, order_idx, watchdog_retries") \
+            .eq("campaign_id", campaign_id) \
+            .eq("status", "pendente") \
+            .order("order_idx") \
+            .limit(len(slots)) \
+            .execute().data or []
+
+        fired = 0
+        for row, line in zip(pending, slots):
+            debito = _with_dialer_meta(row.get("debito_data") or {}, line)
+            meta = debito["_dialer"]
+            supabase.table("campaign_calls").update({
+                "status": "enfileirado",
+                "debito_data": debito,
+                "error": f"dialer: reservado {_line_name(line)}",
+            }).eq("id", row["id"]).execute()
+
+            make_call_task.delay(campaign_id, {
+                "row_id":          row["id"],
+                "cpf":             row.get("cpf", ""),
+                "phone":           row.get("phone", ""),
+                "name":            row.get("name", ""),
+                "debito_data":     debito,
+                "line_token":      meta["line_token"],
+                "line_name":       meta["line_name"],
+                "phone_number_id": meta["phone_number_id"],
+            })
+            fired += 1
+
+        if fired:
+            supabase.table("campaigns").update({
+                "fired": (camp.get("fired") or 0) + fired,
+                "updated_at": "now()",
+            }).eq("id", campaign_id).execute()
+        elif not pending:
+            _check_campaign_completion(campaign_id)
+
+        return {
+            "ok": True,
+            "fired": fired,
+            "capacity": capacity,
+            "active": active + fired,
+            "healthy_lines": len(healthy),
+            "line_max_concurrent": LINE_MAX_CONCURRENT,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e), "fired": 0}
+    finally:
+        _release_scheduler_lock(lock_token)
+
+
+@celery.task(name="tasks.fill_campaign_capacity")
+def fill_campaign_capacity_task(campaign_id: str):
+    return fill_campaign_capacity(campaign_id)
 
 
 @celery.task(name="tasks.campaign_watchdog")
@@ -333,7 +611,7 @@ def campaign_watchdog():
                 stuck = supabase.table("campaign_calls") \
                     .select("id, cpf, phone, name, debito_data, order_idx, watchdog_retries") \
                     .eq("campaign_id", campaign_id) \
-                    .in_("status", ["em_andamento", "enfileirado"]) \
+                    .in_("status", ["em_andamento", "enfileirado", "atendido"]) \
                     .lt("updated_at", cutoff) \
                     .order("order_idx") \
                     .execute().data
@@ -350,10 +628,8 @@ def campaign_watchdog():
                         .execute().data
 
                     if pending:
-                        _watchdog_dispatch(campaign_id, pending[0],
-                                           pending[0].get("watchdog_retries") or 0,
-                                           reason="sem_ativa")
-                        rescued += 1
+                        result = fill_campaign_capacity(campaign_id)
+                        rescued += result.get("fired", 0)
                     else:
                         _check_campaign_completion(campaign_id)
                     continue
@@ -382,49 +658,24 @@ def campaign_watchdog():
 
 
 def _watchdog_dispatch(campaign_id: str, row: dict, current_retries: int, reason: str):
-    """Re-enfileira uma chamada travada incrementando o contador de retries."""
+    """Libera uma chamada travada e deixa o scheduler reocupar a capacidade."""
     try:
         supabase.table("campaign_calls").update({
-            "status":           "enfileirado",
+            "status":           "pendente",
             "watchdog_retries": current_retries + 1,
             "error":            f"watchdog/{reason} retry #{current_retries + 1}",
         }).eq("id", row["id"]).execute()
 
-        make_call_task.delay(campaign_id, {
-            "row_id":      row["id"],
-            "cpf":         row.get("cpf", ""),
-            "phone":       row.get("phone", ""),
-            "name":        row.get("name", ""),
-            "debito_data": row.get("debito_data"),
-        })
+        fill_campaign_capacity_task.delay(campaign_id)
     except Exception:
         pass
 
 
 def _advance_campaign(campaign_id: str, current_order_idx: int):
-    """Pula para o proximo contato pendente apos esgotar retries."""
+    """Reocupa slots livres apos erro/timeout."""
     try:
-        next_row = supabase.table("campaign_calls") \
-            .select("id, cpf, phone, name, debito_data, order_idx, watchdog_retries") \
-            .eq("campaign_id", campaign_id) \
-            .eq("status", "pendente") \
-            .gt("order_idx", current_order_idx) \
-            .order("order_idx") \
-            .limit(1) \
-            .execute().data
-
-        if next_row:
-            row = next_row[0]
-            supabase.table("campaign_calls").update({"status": "enfileirado"}) \
-                .eq("id", row["id"]).execute()
-            make_call_task.delay(campaign_id, {
-                "row_id":      row["id"],
-                "cpf":         row.get("cpf", ""),
-                "phone":       row.get("phone", ""),
-                "name":        row.get("name", ""),
-                "debito_data": row.get("debito_data"),
-            })
-        else:
+        result = fill_campaign_capacity(campaign_id)
+        if not result.get("fired"):
             _check_campaign_completion(campaign_id)
     except Exception:
         pass
@@ -436,7 +687,7 @@ def _check_campaign_completion(campaign_id: str):
         remaining = supabase.table("campaign_calls") \
             .select("id", count="exact") \
             .eq("campaign_id", campaign_id) \
-            .in_("status", ["pendente", "enfileirado", "em_andamento"]) \
+            .in_("status", ["pendente", "enfileirado", "em_andamento", "atendido"]) \
             .execute()
 
         if (remaining.count or 0) == 0:
