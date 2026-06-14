@@ -225,6 +225,28 @@
     .campaign-line-option input { accent-color: var(--cyan); }
     .campaign-line-option.disabled { opacity: .45; cursor: not-allowed; }
     .line-slot-meta { margin-top: 8px; font-family: var(--mono); font-size: .58rem; color: var(--muted); letter-spacing: .06em; }
+    .dashboard-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; margin-bottom: 24px; }
+    @media(max-width:1100px){ .dashboard-grid{ grid-template-columns: 1fr; } }
+    .dash-panel { background: var(--s2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; overflow: hidden; }
+    .dash-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .dash-panel-title { font-family: var(--mono); font-size: .62rem; letter-spacing: .16em; text-transform: uppercase; color: var(--muted2); }
+    .dash-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .mini-form { display: grid; grid-template-columns: 180px 1fr auto auto; gap: 8px; align-items: center; margin-bottom: 14px; }
+    @media(max-width:900px){ .mini-form{ grid-template-columns: 1fr; } }
+    .mini-input { background: var(--s3); border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: .68rem; padding: 8px 10px; border-radius: 6px; outline: none; }
+    .mini-input:focus { border-color: var(--cyan); }
+    .mini-select { background: var(--s3); border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: .68rem; padding: 8px 10px; border-radius: 6px; outline: none; }
+    .compact-checks { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .compact-check { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); background: var(--s3); border-radius: 6px; padding: 6px 8px; font-family: var(--mono); font-size: .58rem; color: var(--muted2); }
+    .compact-check input { accent-color: var(--cyan); }
+    .alert-list { display: grid; gap: 8px; }
+    .alert-item { border: 1px solid rgba(255,184,0,.22); background: rgba(255,184,0,.07); color: var(--amber); border-radius: 7px; padding: 10px 12px; font-family: var(--mono); font-size: .64rem; letter-spacing: .04em; }
+    .alert-item.danger { border-color: rgba(255,61,90,.25); background: rgba(255,61,90,.08); color: var(--red); }
+    .alert-item.ok { border-color: rgba(0,255,136,.2); background: rgba(0,255,136,.06); color: var(--green); }
+    .line-card.paused .top-bar { background: var(--amber); }
+    .line-card.paused { border-color: rgba(255,184,0,.2); }
+    .line-controls { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+    .modal.wide { width: min(760px, calc(100vw - 32px)); }
   </style>
 </head>
 <body>
@@ -250,6 +272,7 @@
     <div class="tab" data-tab="monitor"><span>◉</span> Monitor</div>
     <div class="tab" data-tab="campaigns"><span>◑</span> Campanhas</div>
     <div class="tab" data-tab="import"><span>↑</span> Importar</div>
+    <div class="tab" data-tab="dashboard"><span>ADM</span> Dashboard</div>
   </nav>
 
   <main>
@@ -398,6 +421,9 @@
       <!-- Ações: nome da campanha + salvar -->
       <div class="import-actions" id="import-actions" style="display:none">
         <input class="campaign-name-input" type="text" id="campaign-name-input" placeholder="Nome da campanha..." />
+        <select class="mini-select" id="campaign-group-select" onchange="applyCampaignGroupSelection()">
+          <option value="">Grupo de SIPs...</option>
+        </select>
         <button class="btn btn-success" id="btn-save-campaign" onclick="saveCampaign()">💾 &nbsp;Salvar campanha</button>
         <button class="btn btn-danger" onclick="resetImport()">✕ &nbsp;Limpar</button>
         <div class="campaign-line-panel">
@@ -417,6 +443,102 @@
           <table>
             <thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Débito?</th></tr></thead>
             <tbody id="import-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div class="section" id="tab-dashboard">
+      <div class="sec-head">
+        <span class="sec-title">Dashboard operacional</span>
+        <div class="dash-actions">
+          <button class="btn btn-ghost" onclick="loadDashboard()">↻ &nbsp;Atualizar</button>
+        </div>
+      </div>
+
+      <div class="kpi-strip" id="dashboard-kpis">
+        <div class="kpi c"><div class="kpi-label">Campanhas ativas</div><div class="kpi-val" id="dash-active">0</div></div>
+        <div class="kpi g"><div class="kpi-label">Atendidas</div><div class="kpi-val" id="dash-answered">0</div></div>
+        <div class="kpi a"><div class="kpi-label">Formalizadas</div><div class="kpi-val" id="dash-formalized">0</div></div>
+        <div class="kpi r"><div class="kpi-label">Erros</div><div class="kpi-val" id="dash-errors">0</div></div>
+      </div>
+
+      <div class="dashboard-grid">
+        <div class="dash-panel">
+          <div class="dash-panel-head">
+            <span class="dash-panel-title">Alertas de SIP</span>
+          </div>
+          <div class="alert-list" id="dashboard-alerts">
+            <div class="alert-item ok">Carregando linhas...</div>
+          </div>
+        </div>
+
+        <div class="dash-panel">
+          <div class="dash-panel-head">
+            <span class="dash-panel-title">Grupos por carteira</span>
+          </div>
+          <div class="mini-form">
+            <input class="mini-input" id="group-name-input" placeholder="UVA, Cruzeiro..." />
+            <div class="compact-checks" id="group-line-picker"></div>
+            <button class="btn btn-success" onclick="saveSipGroup()">Salvar</button>
+            <button class="btn btn-ghost" onclick="resetGroupForm()">Limpar</button>
+          </div>
+          <div class="table-card">
+            <table>
+              <thead><tr><th>Grupo</th><th>SIPs</th><th>Ações</th></tr></thead>
+              <tbody id="groups-body">
+                <tr><td colspan="3"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-panel" style="margin-bottom:24px">
+        <div class="dash-panel-head">
+          <span class="dash-panel-title">Relatório por carteira/grupo</span>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr><th>Grupo</th><th>Campanhas</th><th>Total</th><th>Ativas</th><th>Atendidas</th><th>Formalizadas</th><th>Erros</th></tr>
+            </thead>
+            <tbody id="dashboard-groups-report-body">
+              <tr><td colspan="7"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="dash-panel" style="margin-bottom:24px">
+        <div class="dash-panel-head">
+          <span class="dash-panel-title">Relatório por campanha</span>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr><th>Campanha</th><th>Status</th><th>Grupo</th><th>SIPs</th><th>Total</th><th>Ativas</th><th>Atendidas</th><th>Formalizadas</th><th>Erros</th><th>Ações</th></tr>
+            </thead>
+            <tbody id="dashboard-campaigns-body">
+              <tr><td colspan="10"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="dash-panel">
+        <div class="dash-panel-head">
+          <span class="dash-panel-title">Relatório e controle por SIP</span>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr><th>SIP</th><th>Grupos</th><th>Slots</th><th>Total</th><th>Ativas</th><th>Atendidas</th><th>Formalizadas</th><th>Erros</th><th>Controle</th></tr>
+            </thead>
+            <tbody id="dashboard-lines-body">
+              <tr><td colspan="9"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+            </tbody>
           </table>
         </div>
       </div>
@@ -450,6 +572,31 @@
   </div>
 </div>
 
+<!-- Modal editar SIPs da campanha -->
+<div class="overlay" id="campaign-lines-modal">
+  <div class="modal wide">
+    <div class="modal-title">SIPs da campanha</div>
+    <div class="modal-field">
+      <span class="modal-label">Campanha</span>
+      <div class="modal-val" id="edit-campaign-name">—</div>
+    </div>
+    <div class="modal-field">
+      <span class="modal-label">Grupo</span>
+      <select class="modal-select" id="edit-campaign-group-select" onchange="applyEditGroupSelection()">
+        <option value="">Sem grupo fixo</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <span class="modal-label">SIPs selecionadas</span>
+      <div class="campaign-line-grid" id="edit-campaign-line-picker"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeCampaignLinesModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveCampaignLines()">Salvar SIPs</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -471,6 +618,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     if (tab.dataset.tab === 'calls'     && !callsLoaded)     loadCalls();
     if (tab.dataset.tab === 'campaigns' && !campaignsLoaded) loadCampaigns();
     if (tab.dataset.tab === 'monitor')  { loadMonitor(); startMonitor(); }
+    if (tab.dataset.tab === 'dashboard') loadDashboard();
   });
 });
 
@@ -485,6 +633,10 @@ function toast(msg, type = 'ok') {
 
 // ── LINHAS ───────────────────────────────────────────────────
 let linesData = [];
+let sipGroups = [];
+let dashboardData = null;
+let editingGroupId = null;
+let editingCampaign = null;
 
 async function loadLines() {
   document.getElementById('lines-grid').innerHTML = '<div class="loader"><div class="spin"></div>Carregando linhas...</div>';
@@ -503,7 +655,7 @@ function renderLines(lines) {
   const grid = document.getElementById('lines-grid');
   if (!lines.length) { grid.innerHTML = '<div class="loader">Nenhuma linha encontrada.</div>'; return; }
   grid.innerHTML = lines.map(l => `
-    <div class="line-card ${l.healthy ? 'healthy' : l.status === 'connecting' ? 'warn' : 'down'}">
+    <div class="line-card ${l.paused ? 'paused' : l.healthy ? 'healthy' : l.status === 'connecting' ? 'warn' : 'down'}">
       <div class="top-bar"></div>
       <div class="line-name">${l.name || 'Dispositivo'}</div>
       <div class="line-number ${!l.phone ? 'empty' : ''}">${l.phone ? l.phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3') : 'Sem número'}</div>
@@ -512,9 +664,16 @@ function renderLines(lines) {
         ${l.disabled ? '<span class="tag tag-red">off</span>' : '<span class="tag tag-cyan">on</span>'}
         ${l.needs_restart ? '<span class="tag tag-amber">restart</span>' : ''}
         ${l.configured ? '<span class="tag tag-cyan">vapi</span>' : '<span class="tag tag-red">sem vapi</span>'}
+        ${l.paused ? '<span class="tag tag-amber">pausada</span>' : ''}
       </div>
       <div class="line-meta">Chamadas: <b>${l.calls_made ?? 0}</b></div>
       <div class="line-slot-meta">Slots: <b>${l.active_calls ?? 0}</b> / ${l.max_concurrent ?? 2}</div>
+      ${l.pause_reason ? `<div class="line-slot-meta">Motivo: ${l.pause_reason}</div>` : ''}
+      <div class="line-controls">
+        ${l.paused
+          ? `<button class="call-btn" onclick="resumeLine('${l.token}')">Retomar</button>`
+          : `<button class="del-btn" onclick="pauseLine('${l.token}', '${(l.name || 'linha').replace(/'/g, "\\'")}')">Pausar</button>`}
+      </div>
     </div>
   `).join('');
   const stats = document.getElementById('lines-stats');
@@ -526,6 +685,7 @@ function renderLines(lines) {
   const ok = lines.filter(l => l.healthy).length;
   document.getElementById('healthy-count').textContent = `${ok}/${lines.length} linhas ok`;
   renderCampaignLinePicker(lines);
+  renderGroupLinePicker();
   if (campaignsLoaded) loadCampaigns();
 }
 
@@ -554,7 +714,7 @@ function renderCampaignLinePicker(lines) {
 }
 
 function getSelectedCampaignLines() {
-  return Array.from(document.querySelectorAll('.campaign-line-check:checked')).map(el => el.value);
+  return Array.from(document.querySelectorAll('.campaign-line-check:checked:not(:disabled)')).map(el => el.value);
 }
 
 function lineLabelByToken(token) {
@@ -568,6 +728,192 @@ function campaignLinesLabel(tokens) {
   const labels = tokens.map(lineLabelByToken);
   if (labels.length <= 2) return labels.join(', ');
   return `${labels.slice(0, 2).join(', ')} +${labels.length - 2}`;
+}
+
+function lineByToken(token) {
+  return linesData.find(l => l.token === token) || {};
+}
+
+function groupById(id) {
+  return sipGroups.find(g => g.id === id);
+}
+
+function setCheckedTokens(containerId, tokens) {
+  const wanted = new Set(tokens || []);
+  document.querySelectorAll(`#${containerId} input[type="checkbox"]`).forEach(input => {
+    input.checked = wanted.has(input.value);
+  });
+}
+
+function checkedTokens(containerId) {
+  return Array.from(document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`)).map(el => el.value);
+}
+
+function renderTokenChecks(containerId, selected = [], onlyHealthy = false, defaultAll = true) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const wanted = new Set(selected || []);
+  const lines = linesData.filter(l => l.configured);
+  if (!lines.length) {
+    el.innerHTML = '<span class="td-dim">Nenhuma SIP com Vapi configurada.</span>';
+    return;
+  }
+  el.innerHTML = lines.map(l => {
+    const disabled = onlyHealthy && !l.healthy;
+    const checked = wanted.size ? wanted.has(l.token) : (defaultAll && (!onlyHealthy || l.healthy));
+    return `<label class="compact-check">
+      <input type="checkbox" value="${l.token}" ${disabled ? 'disabled' : ''} ${checked && !disabled ? 'checked' : ''}>
+      ${l.name || l.phone || 'Linha'}
+    </label>`;
+  }).join('');
+}
+
+function renderGroupLinePicker() {
+  renderTokenChecks('group-line-picker', editingGroupId ? (groupById(editingGroupId)?.line_tokens || []) : [], false, false);
+}
+
+async function loadSipGroups() {
+  try {
+    const res = await fetch(`${API}/api/sip-groups`);
+    const json = await res.json();
+    sipGroups = json.data || [];
+  } catch(e) {
+    sipGroups = [];
+  }
+  renderGroupOptions();
+  renderGroupsTable();
+  renderGroupLinePicker();
+}
+
+function renderGroupOptions() {
+  const selects = [
+    document.getElementById('campaign-group-select'),
+    document.getElementById('edit-campaign-group-select')
+  ].filter(Boolean);
+  selects.forEach(sel => {
+    const current = sel.value;
+    const first = sel.id === 'campaign-group-select' ? 'Grupo de SIPs...' : 'Sem grupo fixo';
+    sel.innerHTML = `<option value="">${first}</option>` + sipGroups.map(g =>
+      `<option value="${g.id}">${g.name}</option>`
+    ).join('');
+    if (current) sel.value = current;
+  });
+}
+
+function renderGroupsTable() {
+  const tbody = document.getElementById('groups-body');
+  if (!tbody) return;
+  if (!sipGroups.length) {
+    tbody.innerHTML = '<tr><td colspan="3"><div class="loader">Nenhum grupo criado.</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = sipGroups.map(g => `
+    <tr>
+      <td>${g.name}</td>
+      <td class="td-mono">${campaignLinesLabel(g.line_tokens)}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          <button class="call-btn" onclick="editSipGroup('${g.id}')">Editar</button>
+          <button class="del-btn" onclick="deleteSipGroup('${g.id}', '${g.name.replace(/'/g, "\\'")}')">Excluir</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function editSipGroup(id) {
+  const group = groupById(id);
+  if (!group) return;
+  editingGroupId = id;
+  document.getElementById('group-name-input').value = group.name;
+  renderTokenChecks('group-line-picker', group.line_tokens || [], false);
+}
+
+function resetGroupForm() {
+  editingGroupId = null;
+  const input = document.getElementById('group-name-input');
+  if (input) input.value = '';
+  renderTokenChecks('group-line-picker', [], false, false);
+}
+
+async function saveSipGroup() {
+  await ensureLinesLoaded();
+  const name = document.getElementById('group-name-input').value.trim();
+  const line_tokens = checkedTokens('group-line-picker');
+  if (!name) { toast('Digite o nome do grupo.', 'err'); return; }
+  if (!line_tokens.length) { toast('Selecione ao menos uma SIP.', 'err'); return; }
+  try {
+    const url = editingGroupId ? `${API}/api/sip-groups/${editingGroupId}` : `${API}/api/sip-groups`;
+    const res = await fetch(url, {
+      method: editingGroupId ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, line_tokens })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    toast('Grupo salvo.', 'ok');
+    resetGroupForm();
+    await loadSipGroups();
+    loadDashboard();
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+  }
+}
+
+async function deleteSipGroup(id, name) {
+  if (!confirm(`Excluir grupo "${name}"?`)) return;
+  try {
+    const res = await fetch(`${API}/api/sip-groups/${id}`, { method: 'DELETE' });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    toast('Grupo excluído.', 'ok');
+    await loadSipGroups();
+    loadDashboard();
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+  }
+}
+
+function applyCampaignGroupSelection() {
+  const group = groupById(document.getElementById('campaign-group-select').value);
+  if (group) setCheckedTokens('campaign-line-picker', group.line_tokens || []);
+}
+
+function applyEditGroupSelection() {
+  const group = groupById(document.getElementById('edit-campaign-group-select').value);
+  if (group) setCheckedTokens('edit-campaign-line-picker', group.line_tokens || []);
+}
+
+async function pauseLine(token, name) {
+  const reason = prompt(`Motivo para pausar ${name || 'linha'}:`, 'pausa operacional');
+  if (reason === null) return;
+  try {
+    const res = await fetch(`${API}/api/lines/${token}/pause`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    toast('SIP pausada.', 'ok');
+    await loadLines();
+    loadDashboard();
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+  }
+}
+
+async function resumeLine(token) {
+  try {
+    const res = await fetch(`${API}/api/lines/${token}/resume`, { method: 'POST' });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    toast('SIP retomada.', 'ok');
+    await loadLines();
+    loadDashboard();
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+  }
 }
 
 function populateModalLines(lines) {
@@ -756,6 +1102,7 @@ function startMonitor() {
 
 // ── CAMPANHAS ────────────────────────────────────────────────
 let campaignsLoaded = false;
+let campaignRows = [];
 
 async function loadCampaigns() {
   campaignsLoaded = true;
@@ -773,6 +1120,7 @@ async function loadCampaigns() {
 }
 
 function renderCampaigns(rows) {
+  campaignRows = rows || [];
   const tbody = document.getElementById('campaigns-body');
   if (!rows.length) {
     tbody.innerHTML = '<tr><td colspan="7"><div class="loader">Nenhuma campanha criada.</div></td></tr>';
@@ -801,6 +1149,7 @@ function renderCampaigns(rows) {
         <div style="display:flex;gap:6px">
           ${canStart ? `<button class="call-btn" onclick="startCampaign('${c.id}')">▶ Iniciar</button>` : ''}
           ${canPause ? `<button class="call-btn" onclick="pauseCampaign('${c.id}')">⏸ Pausar</button>` : ''}
+          <button class="call-btn" onclick="openCampaignLinesModal('${c.id}')">SIPs</button>
           <button class="del-btn" onclick="deleteCampaign('${c.id}','${c.name}')">✕</button>
         </div>
       </td>
@@ -845,6 +1194,161 @@ async function deleteCampaign(id, name) {
   }
 }
 
+async function openCampaignLinesModal(id) {
+  await ensureLinesLoaded();
+  await loadSipGroups();
+  const camp = campaignRows.find(c => c.id === id) || (dashboardData?.campaigns || []).find(c => c.id === id);
+  if (!camp) { toast('Campanha não encontrada na tela.', 'err'); return; }
+  editingCampaign = camp;
+  document.getElementById('edit-campaign-name').textContent = camp.name || '—';
+  document.getElementById('edit-campaign-group-select').value = camp.sip_group_id || '';
+  renderTokenChecks('edit-campaign-line-picker', camp.line_tokens || [], true);
+  document.getElementById('campaign-lines-modal').classList.add('open');
+}
+
+function closeCampaignLinesModal() {
+  document.getElementById('campaign-lines-modal').classList.remove('open');
+  editingCampaign = null;
+}
+
+async function saveCampaignLines() {
+  if (!editingCampaign) return;
+  const line_tokens = checkedTokens('edit-campaign-line-picker');
+  const sip_group_id = document.getElementById('edit-campaign-group-select').value || '';
+  if (!line_tokens.length) { toast('Selecione ao menos uma SIP.', 'err'); return; }
+  try {
+    const res = await fetch(`${API}/api/campaigns/${editingCampaign.id}/lines`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ line_tokens, sip_group_id })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    toast('SIPs da campanha atualizadas.', 'ok');
+    closeCampaignLinesModal();
+    campaignsLoaded = false;
+    await loadCampaigns();
+    loadDashboard();
+  } catch(e) {
+    toast(`Erro: ${e.message}`, 'err');
+  }
+}
+
+async function loadDashboard() {
+  await ensureLinesLoaded();
+  await loadSipGroups();
+  try {
+    const res = await fetch(`${API}/api/dashboard/summary`);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    dashboardData = json;
+    renderDashboard(json);
+  } catch(e) {
+    document.getElementById('dashboard-alerts').innerHTML =
+      `<div class="alert-item danger">Erro ao carregar dashboard: ${e.message}</div>`;
+  }
+}
+
+function renderDashboard(data) {
+  const totals = data.totals || {};
+  document.getElementById('dash-active').textContent = totals.campaigns_active || 0;
+  document.getElementById('dash-answered').textContent = totals.answered || 0;
+  document.getElementById('dash-formalized').textContent = totals.formalized || 0;
+  document.getElementById('dash-errors').textContent = totals.errors || 0;
+  renderDashboardAlerts();
+  renderDashboardGroupsReport(data.groups_report || []);
+  renderDashboardCampaigns(data.campaigns || []);
+  renderDashboardLines(data.lines || []);
+  renderGroupsTable();
+}
+
+function renderDashboardAlerts() {
+  const wrap = document.getElementById('dashboard-alerts');
+  const alerts = [];
+  linesData.forEach(l => {
+    if (l.paused) alerts.push({ type: 'warn', text: `${l.name || 'Linha'} pausada: ${l.pause_reason || 'sem motivo'}` });
+    else if (!l.configured) alerts.push({ type: 'danger', text: `${l.name || 'Linha'} sem phoneNumberId da Vapi configurado` });
+    else if (l.status === 'missing') alerts.push({ type: 'danger', text: `${l.name || 'Linha'} não apareceu no retorno Wavoip` });
+    else if (!l.healthy) alerts.push({ type: 'danger', text: `${l.name || 'Linha'} indisponível (${l.status || 'status desconhecido'})` });
+    else if ((l.free_slots ?? 0) === 0) alerts.push({ type: 'warn', text: `${l.name || 'Linha'} está no limite de slots (${l.active_calls}/${l.max_concurrent})` });
+  });
+  if (!alerts.length) {
+    wrap.innerHTML = '<div class="alert-item ok">Todas as SIPs configuradas estão operacionais.</div>';
+    return;
+  }
+  wrap.innerHTML = alerts.map(a =>
+    `<div class="alert-item ${a.type === 'danger' ? 'danger' : ''}">${a.text}</div>`
+  ).join('');
+}
+
+function renderDashboardCampaigns(rows) {
+  const tbody = document.getElementById('dashboard-campaigns-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="10"><div class="loader">Nenhuma campanha para relatar.</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(c => `
+    <tr>
+      <td>${c.name || '—'}</td>
+      <td><span class="cs ${c.status === 'em_andamento' ? 'cs-in-progress' : c.status === 'finalizada' ? 'cs-ended' : c.status === 'pausada' ? 'cs-failed' : 'cs-queued'}">${c.status || '—'}</span></td>
+      <td class="td-dim">${c.group || '—'}</td>
+      <td class="td-mono">${campaignLinesLabel(c.line_tokens)}</td>
+      <td class="td-mono">${c.total || 0}</td>
+      <td class="td-mono">${c.active || 0}</td>
+      <td class="td-mono">${c.answered || 0}</td>
+      <td class="td-mono">${c.formalized || 0}</td>
+      <td class="td-mono">${c.errors || 0}</td>
+      <td><button class="call-btn" onclick="openCampaignLinesModal('${c.id}')">SIPs</button></td>
+    </tr>
+  `).join('');
+}
+
+function renderDashboardGroupsReport(rows) {
+  const tbody = document.getElementById('dashboard-groups-report-body');
+  if (!tbody) return;
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="loader">Nenhuma carteira para relatar.</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(g => `
+    <tr>
+      <td>${g.name || 'Sem grupo'}</td>
+      <td class="td-mono">${g.campaigns || 0}</td>
+      <td class="td-mono">${g.total || 0}</td>
+      <td class="td-mono">${g.active || 0}</td>
+      <td class="td-mono">${g.answered || 0}</td>
+      <td class="td-mono">${g.formalized || 0}</td>
+      <td class="td-mono">${g.errors || 0}</td>
+    </tr>
+  `).join('');
+}
+
+function renderDashboardLines(rows) {
+  const tbody = document.getElementById('dashboard-lines-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="loader">Nenhuma SIP para relatar.</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const line = lineByToken(r.token);
+    return `<tr>
+      <td>${r.name || line.name || 'Linha'}</td>
+      <td class="td-dim">${(r.groups || []).join(', ') || '—'}</td>
+      <td class="td-mono">${line.active_calls ?? 0}/${line.max_concurrent ?? 2}</td>
+      <td class="td-mono">${r.total || 0}</td>
+      <td class="td-mono">${r.active || 0}</td>
+      <td class="td-mono">${r.answered || 0}</td>
+      <td class="td-mono">${r.formalized || 0}</td>
+      <td class="td-mono">${r.errors || 0}</td>
+      <td>
+        ${line.paused
+          ? `<button class="call-btn" onclick="resumeLine('${r.token}')">Retomar</button>`
+          : `<button class="del-btn" onclick="pauseLine('${r.token}', '${(r.name || 'linha').replace(/'/g, "\\'")}')">Pausar</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
 async function saveCampaign() {
   const name = document.getElementById('campaign-name-input').value.trim();
   if (!name) { toast('Digite um nome para a campanha.', 'err'); return; }
@@ -853,6 +1357,7 @@ async function saveCampaign() {
   }
   await ensureLinesLoaded();
   const line_tokens = getSelectedCampaignLines();
+  const sip_group_id = document.getElementById('campaign-group-select')?.value || '';
   if (!line_tokens.length) {
     toast('Selecione ao menos uma SIP para esta campanha.', 'err');
     return;
@@ -861,8 +1366,8 @@ async function saveCampaign() {
   btn.disabled = true; btn.textContent = 'Salvando…';
   try {
     const body = importSessionId
-      ? { name, session_id: importSessionId, line_tokens }
-      : { name, contacts: importRows.filter(r => r.has_debt && r.phone), line_tokens };
+      ? { name, session_id: importSessionId, line_tokens, sip_group_id }
+      : { name, contacts: importRows.filter(r => r.has_debt && r.phone), line_tokens, sip_group_id };
 
     const res  = await fetch(`${API}/api/campaigns`, {
       method: 'POST',
@@ -918,6 +1423,10 @@ async function confirmCall() {
 
 document.getElementById('call-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeModal();
+});
+
+document.getElementById('campaign-lines-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeCampaignLinesModal();
 });
 
 // ── IMPORTAÇÃO — novo fluxo via Supabase Storage ─────────────
@@ -1169,6 +1678,8 @@ function resetImportUI() {
   document.getElementById('import-table-wrap').style.display = 'none';
   document.getElementById('import-body').innerHTML = '';
   document.getElementById('campaign-name-input').value = '';
+  const groupSelect = document.getElementById('campaign-group-select');
+  if (groupSelect) groupSelect.value = '';
   const picker = document.getElementById('campaign-line-picker');
   if (picker) picker.innerHTML = '<div class="td-dim">Carregando linhas...</div>';
   hideProgress();
@@ -1182,6 +1693,7 @@ function resetImport() {
 
 // ── INIT ─────────────────────────────────────────────────────
 loadLines();
+loadSipGroups();
 setInterval(loadLines, 120_000);
 </script>
 </body>

@@ -110,6 +110,14 @@ def wavoip_get_devices(token: str) -> list:
     return res.json().get("data", [])
 
 
+def _line_overrides_map() -> dict:
+    try:
+        rows = supabase.table("line_overrides").select("*").execute().data or []
+        return {r.get("line_token"): r for r in rows if r.get("line_token")}
+    except Exception:
+        return {}
+
+
 _redis_client = None
 
 
@@ -153,9 +161,11 @@ def get_healthy_lines() -> list:
     token      = wavoip_login()
     devices    = wavoip_get_devices(token)
     device_map = {d.get("token"): d for d in devices}
+    overrides  = _line_overrides_map()
     healthy    = []
     for t in DEVICE_PRIORITY:
         if t not in device_map:         continue
+        if (overrides.get(t) or {}).get("paused"): continue
         d = device_map[t]
         if d.get("status") != "open":  continue
         if d.get("disabled") != 0:     continue

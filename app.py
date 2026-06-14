@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 import logging
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from tasks import process_file, process_import_from_storage, formalizar_acordo, fill_campaign_capacity, fill_campaign_capacity_task
@@ -16,6 +17,10 @@ CORS(app)
 def env(name: str, default: str = "") -> str:
     value = os.getenv(name, default)
     return value.strip().strip('"').strip("'") if isinstance(value, str) else value
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 WAVOIP_EMAIL      = env("WAVOIP_EMAIL")
@@ -85,9 +90,11 @@ def get_healthy_lines() -> list:
     token      = wavoip_login()
     devices    = wavoip_get_devices(token)
     device_map = {d.get("token"): d for d in devices}
+    overrides  = _line_overrides_map()
     healthy    = []
     for t in DEVICE_PRIORITY:
         if t not in device_map:          continue
+        if (overrides.get(t) or {}).get("paused"): continue
         d = device_map[t]
         if d.get("status") != "open":   continue
         if d.get("disabled") != 0:      continue
@@ -141,6 +148,39 @@ def _active_line_counts(line_tokens: list) -> dict:
         if token in counts:
             counts[token] += 1
     return counts
+
+
+def _line_overrides_map() -> dict:
+    try:
+        rows = supabase.table("line_overrides").select("*").execute().data or []
+        return {r.get("line_token"): r for r in rows if r.get("line_token")}
+    except Exception:
+        return {}
+
+
+def _is_line_paused(token: str) -> bool:
+    return bool((_line_overrides_map().get(token) or {}).get("paused"))
+
+
+def _line_name_map() -> dict:
+    names = {}
+    try:
+        token = wavoip_login()
+        devices = wavoip_get_devices(token)
+        names.update({d.get("token"): (d.get("name") or d.get("phone") or d.get("token")) for d in devices})
+    except Exception:
+        pass
+    for idx, token in enumerate(DEVICE_PRIORITY):
+        names.setdefault(token, f"Linha {idx + 1}")
+    return names
+
+
+def _group_map() -> dict:
+    try:
+        rows = supabase.table("sip_groups").select("*").execute().data or []
+        return {r.get("id"): r for r in rows if r.get("id")}
+    except Exception:
+        return {}
 
 
 def vapi_call(phone: str) -> dict:
@@ -253,6 +293,7 @@ def get_lines():
         devices = wavoip_get_devices(token)
         device_map = {d.get("token"): d for d in devices}
         active_counts = _active_line_counts(DEVICE_PRIORITY)
+        overrides = _line_overrides_map()
         lines   = [{
             "id":              (device_map.get(t) or {}).get("id"),
             "name":            (device_map.get(t) or {}).get("name") or f"Linha {idx + 1}",
@@ -267,13 +308,108 @@ def get_lines():
             "max_concurrent":  LINE_MAX_CONCURRENT,
             "active_calls":    active_counts.get(t, 0),
             "free_slots":      max(0, LINE_MAX_CONCURRENT - active_counts.get(t, 0)),
+            "paused":          bool((overrides.get(t) or {}).get("paused")),
+            "pause_reason":    (overrides.get(t) or {}).get("reason", ""),
             "healthy":         t in device_map
                                and (device_map[t].get("status") == "open")
                                and device_map[t].get("disabled") == 0
                                and device_map[t].get("phone") is not None
-                               and bool(WAVOIP_VAPI_MAP.get(t)),
+                               and bool(WAVOIP_VAPI_MAP.get(t))
+                               and not bool((overrides.get(t) or {}).get("paused")),
         } for idx, t in enumerate(DEVICE_PRIORITY)]
         return jsonify({"ok": True, "data": lines})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/lines/<line_token>/pause", methods=["POST"])
+def pause_line(line_token):
+    try:
+        if line_token not in _known_line_tokens():
+            return jsonify({"ok": False, "error": "Linha desconhecida"}), 404
+        body = request.json or {}
+        payload = {
+            "line_token": line_token,
+            "paused": True,
+            "reason": (body.get("reason") or "pausada pelo dashboard").strip(),
+            "updated_at": now_iso(),
+        }
+        supabase.table("line_overrides").upsert(payload, on_conflict="line_token").execute()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/lines/<line_token>/resume", methods=["POST"])
+def resume_line(line_token):
+    try:
+        if line_token not in _known_line_tokens():
+            return jsonify({"ok": False, "error": "Linha desconhecida"}), 404
+        payload = {
+            "line_token": line_token,
+            "paused": False,
+            "reason": "",
+            "updated_at": now_iso(),
+        }
+        supabase.table("line_overrides").upsert(payload, on_conflict="line_token").execute()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/sip-groups", methods=["GET"])
+def list_sip_groups():
+    try:
+        rows = supabase.table("sip_groups").select("*").order("name").execute().data or []
+        return jsonify({"ok": True, "data": rows})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "data": []}), 200
+
+
+@app.route("/api/sip-groups", methods=["POST"])
+def create_sip_group():
+    try:
+        body = request.json or {}
+        name = (body.get("name") or "").strip()
+        line_tokens = _clean_line_tokens(body.get("line_tokens", []))
+        if not name:
+            return jsonify({"ok": False, "error": "Nome do grupo obrigatorio"}), 400
+        if not line_tokens:
+            return jsonify({"ok": False, "error": "Selecione ao menos uma SIP"}), 400
+        row = supabase.table("sip_groups").insert({
+            "name": name,
+            "line_tokens": line_tokens,
+        }).execute().data[0]
+        return jsonify({"ok": True, "group": row})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/sip-groups/<group_id>", methods=["PUT"])
+def update_sip_group(group_id):
+    try:
+        body = request.json or {}
+        name = (body.get("name") or "").strip()
+        line_tokens = _clean_line_tokens(body.get("line_tokens", []))
+        if not name:
+            return jsonify({"ok": False, "error": "Nome do grupo obrigatorio"}), 400
+        if not line_tokens:
+            return jsonify({"ok": False, "error": "Selecione ao menos uma SIP"}), 400
+        supabase.table("sip_groups").update({
+            "name": name,
+            "line_tokens": line_tokens,
+            "updated_at": now_iso(),
+        }).eq("id", group_id).execute()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/sip-groups/<group_id>", methods=["DELETE"])
+def delete_sip_group(group_id):
+    try:
+        supabase.table("sip_groups").delete().eq("id", group_id).execute()
+        return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -397,6 +533,122 @@ def list_campaigns():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/dashboard/summary", methods=["GET"])
+def dashboard_summary():
+    try:
+        campaigns = supabase.table("campaigns")\
+            .select("*").order("created_at", desc=True).limit(100).execute().data or []
+        calls = supabase.table("campaign_calls")\
+            .select("*").order("created_at", desc=True).limit(5000).execute().data or []
+
+        try:
+            accords = supabase.table("acordos_formalizados")\
+                .select("*").order("created_at", desc=True).limit(5000).execute().data or []
+        except Exception:
+            accords = []
+
+        line_names = _line_name_map()
+        groups = _group_map()
+        groups_by_token = {}
+        for group in groups.values():
+            for token in group.get("line_tokens") or []:
+                groups_by_token.setdefault(token, []).append(group.get("name"))
+
+        formalized_call_ids = {a.get("campaign_call_id") for a in accords if a.get("campaign_call_id")}
+        email_sent = sum(1 for a in accords if a.get("email_enviado"))
+        campaign_map = {c["id"]: c for c in campaigns}
+
+        totals = {
+            "campaigns": len(campaigns),
+            "campaigns_active": sum(1 for c in campaigns if c.get("status") == "em_andamento"),
+            "campaigns_finished": sum(1 for c in campaigns if c.get("status") == "finalizada"),
+            "campaigns_paused": sum(1 for c in campaigns if c.get("status") == "pausada"),
+            "calls": len(calls),
+            "pending": sum(1 for r in calls if r.get("status") == "pendente"),
+            "active": sum(1 for r in calls if r.get("status") in ("enfileirado", "em_andamento", "atendido")),
+            "answered": sum(1 for r in calls if r.get("answered") or r.get("status") == "atendido"),
+            "finished": sum(1 for r in calls if r.get("status") == "finalizado"),
+            "errors": sum(1 for r in calls if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
+            "formalized": len(accords),
+            "email_sent": email_sent,
+        }
+
+        by_campaign = []
+        calls_by_campaign = {}
+        for row in calls:
+            calls_by_campaign.setdefault(row.get("campaign_id"), []).append(row)
+
+        for camp in campaigns:
+            rows = calls_by_campaign.get(camp.get("id"), [])
+            camp_formalized = sum(1 for r in rows if r.get("id") in formalized_call_ids)
+            by_campaign.append({
+                "id": camp.get("id"),
+                "name": camp.get("name"),
+                "status": camp.get("status"),
+                "line_tokens": camp.get("line_tokens") or [],
+                "sip_group_id": camp.get("sip_group_id") or "",
+                "group": (groups.get(camp.get("sip_group_id")) or {}).get("name", ""),
+                "total": camp.get("total") or len(rows),
+                "finished": camp.get("finished") or sum(1 for r in rows if r.get("status") == "finalizado"),
+                "active": sum(1 for r in rows if r.get("status") in ("enfileirado", "em_andamento", "atendido")),
+                "answered": sum(1 for r in rows if r.get("answered") or r.get("status") == "atendido"),
+                "errors": sum(1 for r in rows if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
+                "formalized": camp_formalized,
+                "created_at": camp.get("created_at"),
+            })
+
+        by_group_map = {}
+        for row in by_campaign:
+            group_id = row.get("sip_group_id") or "sem-grupo"
+            group_name = row.get("group") or "Sem grupo"
+            item = by_group_map.setdefault(group_id, {
+                "id": group_id,
+                "name": group_name,
+                "campaigns": 0,
+                "total": 0,
+                "active": 0,
+                "answered": 0,
+                "formalized": 0,
+                "errors": 0,
+            })
+            item["campaigns"] += 1
+            item["total"] += row.get("total") or 0
+            item["active"] += row.get("active") or 0
+            item["answered"] += row.get("answered") or 0
+            item["formalized"] += row.get("formalized") or 0
+            item["errors"] += row.get("errors") or 0
+
+        by_line = []
+        for token in DEVICE_PRIORITY:
+            rows = []
+            for row in calls:
+                meta = _line_meta_from_debito(row)
+                if (row.get("line_token") or (meta or {}).get("line_token")) == token:
+                    rows.append(row)
+            by_line.append({
+                "token": token,
+                "name": line_names.get(token, token[:6]),
+                "groups": groups_by_token.get(token, []),
+                "total": len(rows),
+                "active": sum(1 for r in rows if r.get("status") in ("enfileirado", "em_andamento", "atendido")),
+                "answered": sum(1 for r in rows if r.get("answered") or r.get("status") == "atendido"),
+                "finished": sum(1 for r in rows if r.get("status") == "finalizado"),
+                "errors": sum(1 for r in rows if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
+                "formalized": sum(1 for r in rows if r.get("id") in formalized_call_ids),
+            })
+
+        return jsonify({
+            "ok": True,
+            "totals": totals,
+            "campaigns": by_campaign,
+            "groups_report": list(by_group_map.values()),
+            "lines": by_line,
+            "groups": list(groups.values()),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/campaigns", methods=["POST"])
 def create_campaign():
     try:
@@ -405,6 +657,7 @@ def create_campaign():
         session_id = body.get("session_id")
         contacts   = body.get("contacts", [])
         line_tokens = _clean_line_tokens(body.get("line_tokens", []))
+        sip_group_id = (body.get("sip_group_id") or "").strip()
 
         if not name:
             return jsonify({"ok": False, "error": "Nome obrigatório"}), 400
@@ -425,10 +678,13 @@ def create_campaign():
             "total":  len(contacts),
             "line_tokens": line_tokens,
         }
+        if sip_group_id:
+            camp_payload["sip_group_id"] = sip_group_id
         try:
             camp = supabase.table("campaigns").insert(camp_payload).execute().data[0]
         except Exception:
             camp_payload.pop("line_tokens", None)
+            camp_payload.pop("sip_group_id", None)
             camp = supabase.table("campaigns").insert(camp_payload).execute().data[0]
 
         campaign_id = camp["id"]
@@ -447,6 +703,37 @@ def create_campaign():
             supabase.table("campaign_calls").insert(rows[i:i+500]).execute()
 
         return jsonify({"ok": True, "campaign": camp})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/campaigns/<campaign_id>/lines", methods=["PUT"])
+def update_campaign_lines(campaign_id):
+    try:
+        body = request.json or {}
+        line_tokens = _clean_line_tokens(body.get("line_tokens", []))
+        sip_group_id = (body.get("sip_group_id") or "").strip()
+        if not line_tokens:
+            return jsonify({"ok": False, "error": "Selecione ao menos uma SIP"}), 400
+
+        update = {
+            "line_tokens": line_tokens,
+            "updated_at": now_iso(),
+        }
+        if "sip_group_id" in body:
+            update["sip_group_id"] = sip_group_id or None
+
+        try:
+            supabase.table("campaigns").update(update).eq("id", campaign_id).execute()
+        except Exception:
+            update.pop("sip_group_id", None)
+            supabase.table("campaigns").update(update).eq("id", campaign_id).execute()
+
+        camp = supabase.table("campaigns").select("status").eq("id", campaign_id).execute().data
+        if camp and camp[0].get("status") == "em_andamento":
+            fill_campaign_capacity_task.delay(campaign_id)
+
+        return jsonify({"ok": True, "line_tokens": line_tokens, "sip_group_id": sip_group_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -542,10 +829,14 @@ def vapi_webhook():
         if msg_type == "status-update":
             if msg.get("status") == "in-progress" and call_id:
                 try:
-                    supabase.table("campaign_calls").update({"status": "atendido"})\
+                    supabase.table("campaign_calls").update({"status": "atendido", "answered": True})\
                         .eq("vapi_call_id", call_id).execute()
                 except Exception:
-                    pass
+                    try:
+                        supabase.table("campaign_calls").update({"status": "atendido"})\
+                            .eq("vapi_call_id", call_id).execute()
+                    except Exception:
+                        pass
             return jsonify({"ok": True}), 200
 
         # ── ignora eventos que não são fim de chamada ─────────────────
