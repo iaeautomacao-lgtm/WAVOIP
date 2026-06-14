@@ -218,6 +218,13 @@
     .campaign-name-input { background: var(--s3); border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: .72rem; padding: 7px 12px; border-radius: 6px; outline: none; width: 280px; transition: border-color .2s; letter-spacing: .04em; }
     .campaign-name-input:focus { border-color: var(--cyan); }
     .campaign-name-input::placeholder { color: var(--muted); }
+    .campaign-line-panel { width: 100%; background: var(--s2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+    .campaign-line-title { font-family: var(--mono); font-size: .58rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+    .campaign-line-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+    .campaign-line-option { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--s3); border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: .62rem; color: var(--text); cursor: pointer; }
+    .campaign-line-option input { accent-color: var(--cyan); }
+    .campaign-line-option.disabled { opacity: .45; cursor: not-allowed; }
+    .line-slot-meta { margin-top: 8px; font-family: var(--mono); font-size: .58rem; color: var(--muted); letter-spacing: .06em; }
   </style>
 </head>
 <body>
@@ -329,10 +336,10 @@
       <div class="table-card">
         <table>
           <thead>
-            <tr><th>CPF</th><th>Telefone</th><th>Status</th><th>Campanhas</th><th>Iniciada</th></tr>
+            <tr><th>CPF</th><th>Telefone</th><th>Status</th><th>SIP</th><th>Campanhas</th><th>Iniciada</th></tr>
           </thead>
           <tbody id="monitor-body">
-            <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+            <tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -347,10 +354,10 @@
       <div class="table-card">
         <table>
           <thead>
-            <tr><th>Nome</th><th>Status</th><th>Total</th><th>Finalizadas</th><th>Criada em</th><th>Ações</th></tr>
+            <tr><th>Nome</th><th>Status</th><th>SIPs</th><th>Total</th><th>Finalizadas</th><th>Criada em</th><th>Ações</th></tr>
           </thead>
           <tbody id="campaigns-body">
-            <tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+            <tr><td colspan="7"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -393,6 +400,12 @@
         <input class="campaign-name-input" type="text" id="campaign-name-input" placeholder="Nome da campanha..." />
         <button class="btn btn-success" id="btn-save-campaign" onclick="saveCampaign()">💾 &nbsp;Salvar campanha</button>
         <button class="btn btn-danger" onclick="resetImport()">✕ &nbsp;Limpar</button>
+        <div class="campaign-line-panel">
+          <div class="campaign-line-title">SIPs desta campanha</div>
+          <div class="campaign-line-grid" id="campaign-line-picker">
+            <div class="td-dim">Carregando linhas...</div>
+          </div>
+        </div>
       </div>
 
       <!-- Preview da tabela -->
@@ -498,8 +511,10 @@ function renderLines(lines) {
         <span class="tag ${l.status==='open'?'tag-green':l.status==='connecting'?'tag-amber':'tag-red'}">${l.status}</span>
         ${l.disabled ? '<span class="tag tag-red">off</span>' : '<span class="tag tag-cyan">on</span>'}
         ${l.needs_restart ? '<span class="tag tag-amber">restart</span>' : ''}
+        ${l.configured ? '<span class="tag tag-cyan">vapi</span>' : '<span class="tag tag-red">sem vapi</span>'}
       </div>
       <div class="line-meta">Chamadas: <b>${l.calls_made ?? 0}</b></div>
+      <div class="line-slot-meta">Slots: <b>${l.active_calls ?? 0}</b> / ${l.max_concurrent ?? 2}</div>
     </div>
   `).join('');
   const stats = document.getElementById('lines-stats');
@@ -510,6 +525,49 @@ function renderLines(lines) {
   document.getElementById('stat-calls').textContent   = lines.reduce((a,l) => a + (l.calls_made||0), 0);
   const ok = lines.filter(l => l.healthy).length;
   document.getElementById('healthy-count').textContent = `${ok}/${lines.length} linhas ok`;
+  renderCampaignLinePicker(lines);
+  if (campaignsLoaded) loadCampaigns();
+}
+
+async function ensureLinesLoaded() {
+  if (!linesData.length) await loadLines();
+}
+
+function renderCampaignLinePicker(lines) {
+  const picker = document.getElementById('campaign-line-picker');
+  if (!picker) return;
+  const previous = getSelectedCampaignLines();
+  const usable = lines.filter(l => l.configured);
+  if (!usable.length) {
+    picker.innerHTML = '<div class="td-dim">Nenhuma SIP com phoneNumberId configurado.</div>';
+    return;
+  }
+  picker.innerHTML = usable.map(l => {
+    const disabled = !l.healthy;
+    const checked = !disabled && (previous.length ? previous.includes(l.token) : true);
+    const label = `${l.name || 'Linha'} · ${l.phone || 'sem numero'} · ${l.active_calls ?? 0}/${l.max_concurrent ?? 2}`;
+    return `<label class="campaign-line-option ${disabled ? 'disabled' : ''}">
+      <input type="checkbox" class="campaign-line-check" value="${l.token}" ${disabled ? 'disabled' : ''} ${checked ? 'checked' : ''}>
+      <span>${label}</span>
+    </label>`;
+  }).join('');
+}
+
+function getSelectedCampaignLines() {
+  return Array.from(document.querySelectorAll('.campaign-line-check:checked')).map(el => el.value);
+}
+
+function lineLabelByToken(token) {
+  const line = linesData.find(l => l.token === token);
+  if (!line) return token ? token.slice(0, 6) : 'linha';
+  return line.name || line.phone || token.slice(0, 6);
+}
+
+function campaignLinesLabel(tokens) {
+  if (!Array.isArray(tokens) || !tokens.length) return 'todas';
+  const labels = tokens.map(lineLabelByToken);
+  if (labels.length <= 2) return labels.join(', ');
+  return `${labels.slice(0, 2).join(', ')} +${labels.length - 2}`;
 }
 
 function populateModalLines(lines) {
@@ -666,7 +724,7 @@ function renderMonitor(rows, stats) {
   document.getElementById('mon-erro').textContent      = stats.erro;
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Nenhuma chamada ativa.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="loader">Nenhuma chamada ativa.</div></td></tr>';
     return;
   }
   const statusMap = {
@@ -684,6 +742,7 @@ function renderMonitor(rows, stats) {
       <td class="td-mono">${cpf}</td>
       <td class="td-mono">${tel}</td>
       <td><span class="cs ${s.cls}">${s.label}</span></td>
+      <td class="td-dim">${r.line_name || '—'}</td>
       <td class="td-dim">${r.campaign}</td>
       <td class="td-dim">${date}</td>
     </tr>`;
@@ -701,7 +760,7 @@ let campaignsLoaded = false;
 async function loadCampaigns() {
   campaignsLoaded = true;
   document.getElementById('campaigns-body').innerHTML =
-    '<tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+    '<tr><td colspan="7"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
   try {
     const res  = await fetch(`${API}/api/campaigns`);
     const json = await res.json();
@@ -709,14 +768,14 @@ async function loadCampaigns() {
     renderCampaigns(json.data);
   } catch(e) {
     document.getElementById('campaigns-body').innerHTML =
-      `<tr><td colspan="6"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+      `<tr><td colspan="7"><div class="loader">Erro: ${e.message}</div></td></tr>`;
   }
 }
 
 function renderCampaigns(rows) {
   const tbody = document.getElementById('campaigns-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6"><div class="loader">Nenhuma campanha criada.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="loader">Nenhuma campanha criada.</div></td></tr>';
     return;
   }
   const statusMap = {
@@ -728,11 +787,13 @@ function renderCampaigns(rows) {
   tbody.innerHTML = rows.map(c => {
     const s    = statusMap[c.status] || { cls: 'cs-queued', label: c.status };
     const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
+    const sipLabel = campaignLinesLabel(c.line_tokens);
     const canStart = c.status === 'rascunho' || c.status === 'pausada';
     const canPause = c.status === 'em_andamento';
     return `<tr>
       <td>${c.name}</td>
       <td><span class="cs ${s.cls}">${s.label}</span></td>
+      <td class="td-mono">${sipLabel}</td>
       <td class="td-mono">${c.total ?? 0}</td>
       <td class="td-mono">${c.finished ?? 0} / ${c.total ?? 0}</td>
       <td class="td-dim">${date}</td>
@@ -790,12 +851,18 @@ async function saveCampaign() {
   if (!importSessionId && !importRows.filter(r => r.has_debt && r.phone).length) {
     toast('Nenhum contato com débito e telefone.', 'err'); return;
   }
+  await ensureLinesLoaded();
+  const line_tokens = getSelectedCampaignLines();
+  if (!line_tokens.length) {
+    toast('Selecione ao menos uma SIP para esta campanha.', 'err');
+    return;
+  }
   const btn = document.getElementById('btn-save-campaign');
   btn.disabled = true; btn.textContent = 'Salvando…';
   try {
     const body = importSessionId
-      ? { name, session_id: importSessionId }
-      : { name, contacts: importRows.filter(r => r.has_debt && r.phone) };
+      ? { name, session_id: importSessionId, line_tokens }
+      : { name, contacts: importRows.filter(r => r.has_debt && r.phone), line_tokens };
 
     const res  = await fetch(`${API}/api/campaigns`, {
       method: 'POST',
@@ -1072,6 +1139,8 @@ function renderImportPreview(data) {
   document.getElementById('imp-no-debt').textContent = (data.without_debt || 0).toLocaleString('pt-BR');
   document.getElementById('import-summary').classList.add('visible');
   document.getElementById('import-actions').style.display = 'flex';
+  if (linesData.length) renderCampaignLinePicker(linesData);
+  else loadLines();
 
   const rows = data.rows || [];
   if (rows.length) {
@@ -1100,6 +1169,8 @@ function resetImportUI() {
   document.getElementById('import-table-wrap').style.display = 'none';
   document.getElementById('import-body').innerHTML = '';
   document.getElementById('campaign-name-input').value = '';
+  const picker = document.getElementById('campaign-line-picker');
+  if (picker) picker.innerHTML = '<div class="td-dim">Carregando linhas...</div>';
   hideProgress();
 }
 

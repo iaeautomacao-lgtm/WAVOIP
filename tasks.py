@@ -189,26 +189,51 @@ def _active_line_counts(line_tokens: list) -> dict:
 
     try:
         rows = supabase.table("campaign_calls") \
-            .select("id, status, debito_data") \
+            .select("id, status, line_token, debito_data") \
             .in_("status", ACTIVE_CALL_STATUSES) \
             .execute().data or []
     except Exception:
-        return counts
+        try:
+            rows = supabase.table("campaign_calls") \
+                .select("id, status, debito_data") \
+                .in_("status", ACTIVE_CALL_STATUSES) \
+                .execute().data or []
+        except Exception:
+            return counts
 
     unknown_active = 0
     for row in rows:
         debito = row.get("debito_data") or {}
         meta = debito.get("_dialer") if isinstance(debito, dict) else None
-        token = (meta or {}).get("line_token")
+        token = row.get("line_token") or (meta or {}).get("line_token")
         if token in counts:
             counts[token] += 1
-        else:
+        elif not token:
             unknown_active += 1
 
     for idx in range(unknown_active):
         token = line_tokens[idx % len(line_tokens)]
         counts[token] += 1
     return counts
+
+
+def _campaign_line_tokens(camp: dict) -> list:
+    raw = camp.get("line_tokens") or []
+    if isinstance(raw, str):
+        raw = [x.strip() for x in raw.split(",") if x.strip()]
+    if not isinstance(raw, list):
+        return []
+    allowed = [str(x).strip() for x in raw if str(x).strip()]
+    known = set(DEVICE_PRIORITY)
+    return [token for token in allowed if token in known]
+
+
+def _filter_campaign_lines(healthy: list, camp: dict) -> list:
+    allowed = _campaign_line_tokens(camp)
+    if not allowed:
+        return healthy
+    allowed_set = set(allowed)
+    return [line for line in healthy if line.get("token") in allowed_set]
 
 
 def _available_line_slots(healthy: list, counts: dict) -> list:
@@ -504,7 +529,7 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
         if camp.get("status") != "em_andamento":
             return {"ok": True, "status": camp.get("status"), "fired": 0}
 
-        healthy = get_healthy_lines()
+        healthy = _filter_campaign_lines(get_healthy_lines(), camp)
         line_tokens = [line.get("token") for line in healthy if line.get("token")]
         counts = _active_line_counts(line_tokens)
         slots = _available_line_slots(healthy, counts)
@@ -519,6 +544,7 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
                 "active": active,
                 "healthy_lines": len(healthy),
                 "line_max_concurrent": LINE_MAX_CONCURRENT,
+                "selected_lines": len(_campaign_line_tokens(camp)) or len(healthy),
             }
 
         pending = supabase.table("campaign_calls") \
@@ -533,11 +559,21 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
         for row, line in zip(pending, slots):
             debito = _with_dialer_meta(row.get("debito_data") or {}, line)
             meta = debito["_dialer"]
-            supabase.table("campaign_calls").update({
+            update = {
                 "status": "enfileirado",
                 "debito_data": debito,
+                "line_token": meta["line_token"],
+                "line_name": meta["line_name"],
+                "phone_number_id": meta["phone_number_id"],
                 "error": f"dialer: reservado {_line_name(line)}",
-            }).eq("id", row["id"]).execute()
+            }
+            try:
+                supabase.table("campaign_calls").update(update).eq("id", row["id"]).execute()
+            except Exception:
+                update.pop("line_token", None)
+                update.pop("line_name", None)
+                update.pop("phone_number_id", None)
+                supabase.table("campaign_calls").update(update).eq("id", row["id"]).execute()
 
             make_call_task.delay(campaign_id, {
                 "row_id":          row["id"],
@@ -566,6 +602,7 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
             "active": active + fired,
             "healthy_lines": len(healthy),
             "line_max_concurrent": LINE_MAX_CONCURRENT,
+            "selected_lines": len(_campaign_line_tokens(camp)) or len(healthy),
         }
     except Exception as e:
         return {"ok": False, "error": str(e), "fired": 0}

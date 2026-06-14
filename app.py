@@ -28,6 +28,7 @@ SUPABASE_URL      = env("SUPABASE_URL")
 SUPABASE_KEY      = env("SUPABASE_KEY")
 SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
 SUPABASE_BUCKET   = env("SUPABASE_BUCKET", "imports")
+LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "2")))
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -94,6 +95,52 @@ def get_healthy_lines() -> list:
         if not WAVOIP_VAPI_MAP.get(t):  continue
         healthy.append(d)
     return healthy
+
+
+def _known_line_tokens() -> set:
+    return set(DEVICE_PRIORITY)
+
+
+def _clean_line_tokens(tokens) -> list:
+    if isinstance(tokens, str):
+        tokens = [x.strip() for x in tokens.split(",") if x.strip()]
+    if not isinstance(tokens, list):
+        return []
+    known = _known_line_tokens()
+    cleaned = []
+    for token in tokens:
+        token = str(token).strip()
+        if token and token in known and token not in cleaned:
+            cleaned.append(token)
+    return cleaned
+
+
+def _line_meta_from_debito(row: dict) -> dict:
+    debito = row.get("debito_data") or {}
+    return debito.get("_dialer") if isinstance(debito, dict) else {}
+
+
+def _active_line_counts(line_tokens: list) -> dict:
+    counts = {token: 0 for token in line_tokens}
+    if not line_tokens:
+        return counts
+    try:
+        rows = supabase.table("campaign_calls")\
+            .select("id, status, line_token, debito_data")\
+            .in_("status", ["enfileirado", "em_andamento", "atendido"])\
+            .execute().data or []
+    except Exception:
+        rows = supabase.table("campaign_calls")\
+            .select("id, status, debito_data")\
+            .in_("status", ["enfileirado", "em_andamento", "atendido"])\
+            .execute().data or []
+
+    for row in rows:
+        meta = _line_meta_from_debito(row)
+        token = row.get("line_token") or (meta or {}).get("line_token")
+        if token in counts:
+            counts[token] += 1
+    return counts
 
 
 def vapi_call(phone: str) -> dict:
@@ -204,19 +251,28 @@ def get_lines():
     try:
         token   = wavoip_login()
         devices = wavoip_get_devices(token)
+        device_map = {d.get("token"): d for d in devices}
+        active_counts = _active_line_counts(DEVICE_PRIORITY)
         lines   = [{
-            "id":            d.get("id"),
-            "name":          d.get("name"),
-            "phone":         d.get("phone"),
-            "status":        d.get("status"),
-            "disabled":      d.get("disabled"),
-            "calls_made":    d.get("calls_made"),
-            "needs_restart": d.get("needs_restart"),
-            "token":         d.get("token"),
-            "healthy":       d.get("status") == "open"
-                             and d.get("disabled") == 0
-                             and d.get("phone") is not None
-        } for d in devices]
+            "id":              (device_map.get(t) or {}).get("id"),
+            "name":            (device_map.get(t) or {}).get("name") or f"Linha {idx + 1}",
+            "phone":           (device_map.get(t) or {}).get("phone"),
+            "status":          (device_map.get(t) or {}).get("status") or "missing",
+            "disabled":        (device_map.get(t) or {}).get("disabled"),
+            "calls_made":      (device_map.get(t) or {}).get("calls_made"),
+            "needs_restart":   (device_map.get(t) or {}).get("needs_restart"),
+            "token":           t,
+            "phone_number_id": WAVOIP_VAPI_MAP.get(t) or "",
+            "configured":      bool(WAVOIP_VAPI_MAP.get(t)),
+            "max_concurrent":  LINE_MAX_CONCURRENT,
+            "active_calls":    active_counts.get(t, 0),
+            "free_slots":      max(0, LINE_MAX_CONCURRENT - active_counts.get(t, 0)),
+            "healthy":         t in device_map
+                               and (device_map[t].get("status") == "open")
+                               and device_map[t].get("disabled") == 0
+                               and device_map[t].get("phone") is not None
+                               and bool(WAVOIP_VAPI_MAP.get(t)),
+        } for idx, t in enumerate(DEVICE_PRIORITY)]
         return jsonify({"ok": True, "data": lines})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -306,14 +362,20 @@ def monitor():
             .order("created_at", desc=True)\
             .limit(100).execute()
 
-        rows = [{
-            "id":         r["id"],
-            "cpf":        r["cpf"],
-            "phone":      r["phone"],
-            "status":     r["status"],
-            "campaign":   camp_map.get(r["campaign_id"], "—"),
-            "created_at": r["created_at"],
-        } for r in result.data]
+        rows = []
+        for r in result.data:
+            meta = _line_meta_from_debito(r)
+            rows.append({
+                "id":              r["id"],
+                "cpf":             r["cpf"],
+                "phone":           r["phone"],
+                "status":          r["status"],
+                "campaign":        camp_map.get(r["campaign_id"], "—"),
+                "created_at":      r["created_at"],
+                "line_token":      r.get("line_token") or (meta or {}).get("line_token", ""),
+                "line_name":       r.get("line_name") or (meta or {}).get("line_name", ""),
+                "phone_number_id": r.get("phone_number_id") or (meta or {}).get("phone_number_id", ""),
+            })
 
         stats = {
             "em_andamento": sum(1 for r in rows if r["status"] in ("em_andamento", "enfileirado")),
@@ -342,6 +404,7 @@ def create_campaign():
         name       = body.get("name", "").strip()
         session_id = body.get("session_id")
         contacts   = body.get("contacts", [])
+        line_tokens = _clean_line_tokens(body.get("line_tokens", []))
 
         if not name:
             return jsonify({"ok": False, "error": "Nome obrigatório"}), 400
@@ -356,11 +419,17 @@ def create_campaign():
         if not contacts:
             return jsonify({"ok": False, "error": "Nenhum contato com débito e telefone"}), 400
 
-        camp = supabase.table("campaigns").insert({
+        camp_payload = {
             "name":   name,
             "status": "rascunho",
             "total":  len(contacts),
-        }).execute().data[0]
+            "line_tokens": line_tokens,
+        }
+        try:
+            camp = supabase.table("campaigns").insert(camp_payload).execute().data[0]
+        except Exception:
+            camp_payload.pop("line_tokens", None)
+            camp = supabase.table("campaigns").insert(camp_payload).execute().data[0]
 
         campaign_id = camp["id"]
 
@@ -419,6 +488,7 @@ def start_campaign(campaign_id):
             "active": result.get("active", 0),
             "healthy_lines": result.get("healthy_lines", 0),
             "line_max_concurrent": result.get("line_max_concurrent", 2),
+            "selected_lines": result.get("selected_lines", 0),
             "total": pending_count.count or 0,
         })
     except Exception as e:
