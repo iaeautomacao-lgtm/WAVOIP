@@ -1425,7 +1425,7 @@ def _process_dataframe(job_id: str, df, fname: str):
     except Exception:
         pass
 
-    validate_import_ddm_task.delay(job_id)
+    validate_import_ddm_task.apply_async(args=[job_id], queue="imports")
 
 
 def _validate_import_rows(job_id: str):
@@ -1559,6 +1559,7 @@ def _validate_import_rows(job_id: str):
         recheck_import_errors_task.apply_async(
             args=[job_id, DDM_ERROR_RECHECK_ROUNDS],
             countdown=DDM_ERROR_RECHECK_DELAY_SECONDS,
+            queue="imports",
         )
 
 
@@ -1641,6 +1642,7 @@ def recheck_import_errors_task(job_id: str, rounds_left: int = 1):
         recheck_import_errors_task.apply_async(
             args=[job_id, rounds_left - 1],
             countdown=DDM_ERROR_RECHECK_DELAY_SECONDS,
+            queue="imports",
         )
 
     return {"ok": True, "rechecked": len(error_rows), "errors": remaining_errors}

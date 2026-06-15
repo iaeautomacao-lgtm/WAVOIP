@@ -968,7 +968,7 @@ def import_upload():
             "processed": 0,
         }).execute().data[0]
 
-        process_file.delay(job["id"], file_id, fname)
+        process_file.apply_async(args=[job["id"], file_id, fname], queue="imports")
 
         return jsonify({"ok": True, "mode": "async", "job_id": job["id"]})
 
@@ -1041,7 +1041,7 @@ def import_from_storage():
             "result":    {"filename": filename, "storage_path": storage_path, "size_bytes": size_bytes},
         }).execute().data[0]
 
-        process_import_from_storage.delay(job["id"], storage_path, fname)
+        process_import_from_storage.apply_async(args=[job["id"], storage_path, fname], queue="imports")
 
         return jsonify({"ok": True, "job_id": job["id"], "status": "queued"})
     except Exception as e:
