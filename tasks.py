@@ -1489,52 +1489,52 @@ def _validate_import_rows(job_id: str):
         return debito
 
     first_by_cpf = {}
+    rows_by_cpf = {}
     for item in pending_rows:
         first_by_cpf.setdefault(item["cpf"], item)
+        rows_by_cpf.setdefault(item["cpf"], []).append(item)
 
     unique_items = list(first_by_cpf.values())
     worker_count = min(DDM_IMPORT_CONCURRENCY, len(unique_items))
-    by_cpf = {}
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        futures = [executor.submit(validate_contact, item) for item in unique_items]
+        futures = {executor.submit(validate_contact, item): item["cpf"] for item in unique_items}
         for future in as_completed(futures):
             row = future.result()
-            by_cpf[row["cpf"]] = {
+            validation = {
                 "debito": row.get("debito"),
                 "ddm_error": row.get("ddm_error", ""),
             }
+            for item in rows_by_cpf.get(row["cpf"], []):
+                debito = merge_row_debito(item, validation.get("debito"))
+                result_row = {
+                    "idx":      item["idx"],
+                    "cpf":      item["cpf"],
+                    "name":     item["name"],
+                    "phone":    item["phone"],
+                    "has_debt": debito is not None,
+                    "debito":   debito,
+                    "ddm_error": validation.get("ddm_error", ""),
+                    "validation_status": "done" if validation.get("ddm_error", "") == "" else "error",
+                }
+                results.append(result_row)
+                processed += 1
+                if result_row["has_debt"]:
+                    with_debt += 1
 
-    for item in pending_rows:
-        validation = by_cpf.get(item["cpf"]) or {}
-        debito = merge_row_debito(item, validation.get("debito"))
-        row = {
-            "idx":      item["idx"],
-            "cpf":      item["cpf"],
-            "name":     item["name"],
-            "phone":    item["phone"],
-            "has_debt": debito is not None,
-            "debito":   debito,
-            "ddm_error": validation.get("ddm_error", ""),
-            "validation_status": "done" if validation.get("ddm_error", "") == "" else "error",
-        }
-        results.append(row)
-        processed += 1
-        if row["has_debt"]:
-            with_debt += 1
-        if processed % DDM_IMPORT_PROGRESS_EVERY == 0 or processed == total:
-            preview = sorted(results, key=lambda r: r["idx"])[:200]
-            try:
-                supabase.table("import_jobs").update({
-                    "total":     total,
-                    "processed": processed,
-                    "with_debt": with_debt,
-                    "result":    {
-                        "rows": pending_rows,
-                        "sample": preview,
-                    },
-                }).eq("id", job_id).execute()
-            except Exception:
-                _update_job_progress(job_id, total, processed, with_debt)
+            if processed % DDM_IMPORT_PROGRESS_EVERY == 0 or processed == total:
+                preview = sorted(results, key=lambda r: r["idx"])[:200]
+                try:
+                    supabase.table("import_jobs").update({
+                        "total":     total,
+                        "processed": processed,
+                        "with_debt": with_debt,
+                        "result":    {
+                            "rows": pending_rows,
+                            "sample": preview,
+                        },
+                    }).eq("id", job_id).execute()
+                except Exception:
+                    _update_job_progress(job_id, total, processed, with_debt)
 
     rows = sorted(results, key=lambda r: r["idx"])
     for row in rows:
@@ -1555,4 +1555,8 @@ def _validate_import_rows(job_id: str):
 
 @celery.task(name="tasks.validate_import_ddm")
 def validate_import_ddm_task(job_id: str):
-    return _validate_import_rows(job_id)
+    try:
+        return _validate_import_rows(job_id)
+    except Exception as exc:
+        _set_job_error(job_id, f"Erro validando DDM: {exc}")
+        raise
