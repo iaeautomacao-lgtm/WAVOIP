@@ -525,8 +525,6 @@ def make_call_task(self, campaign_id: str, contact: dict):
     else:
         _update_result(row_id, "erro", None, phones[0], error)
 
-
-x
 def fill_campaign_capacity(campaign_id: str) -> dict:
     locked, lock_token = _acquire_scheduler_lock()
     if not locked:
