@@ -4,7 +4,7 @@ import os
 from typing import Optional, Dict, Any
 
 DDM_TOKEN    = os.getenv("DDM_TOKEN", "").strip()
-DDM_TIMEOUT_SECONDS = float(os.getenv("DDM_TIMEOUT_SECONDS", "12"))
+DDM_TIMEOUT_SECONDS = float(os.getenv("DDM_TIMEOUT_SECONDS", "15"))
 DDM_BASE_URL = "https://www.ddmacordos.com"
 DDM_CALCULA  = f"{DDM_BASE_URL}/ws_ddm/ws/CalculaDebitos.php"
 

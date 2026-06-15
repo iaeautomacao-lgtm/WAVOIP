@@ -42,12 +42,13 @@ SMTP_FORCE_IPV4 = env("SMTP_FORCE_IPV4", "true").lower() in ("1", "true", "yes",
 DDM_TOKEN    = env("DDM_TOKEN")
 DDM_AGREEMENT_TOKEN = env("DDM_AGREEMENT_TOKEN", "")
 DDM_BASE     = "https://ddmacordos.com"
-DDM_IMPORT_CONCURRENCY = max(1, int(env("DDM_IMPORT_CONCURRENCY", "20")))
-DDM_IMPORT_RATE_PER_SEC = max(0.1, float(env("DDM_IMPORT_RATE_PER_SEC", "10")))
+DDM_IMPORT_CONCURRENCY = max(1, int(env("DDM_IMPORT_CONCURRENCY", "12")))
+DDM_IMPORT_RATE_PER_SEC = max(0.1, float(env("DDM_IMPORT_RATE_PER_SEC", "6")))
 DDM_IMPORT_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_PROGRESS_EVERY", "25")))
-DDM_IMPORT_RETRIES = max(0, int(env("DDM_IMPORT_RETRIES", "2")))
+DDM_IMPORT_RETRIES = max(0, int(env("DDM_IMPORT_RETRIES", "1")))
 DDM_ERROR_RECHECK_ROUNDS = max(0, int(env("DDM_ERROR_RECHECK_ROUNDS", "1")))
 DDM_ERROR_RECHECK_DELAY_SECONDS = max(0, int(env("DDM_ERROR_RECHECK_DELAY_SECONDS", "20")))
+DDM_ERROR_RECHECK_CONCURRENCY = max(1, int(env("DDM_ERROR_RECHECK_CONCURRENCY", "4")))
 
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -1569,7 +1570,7 @@ def _validate_import_rows(job_id: str):
             break
 
         rechecked = {}
-        worker_count = min(DDM_IMPORT_CONCURRENCY, len(error_by_cpf))
+        worker_count = min(DDM_ERROR_RECHECK_CONCURRENCY, len(error_by_cpf))
         with ThreadPoolExecutor(max_workers=worker_count) as executor:
             futures = {executor.submit(validate_contact, item): item["cpf"] for item in error_by_cpf.values()}
             for future in as_completed(futures):

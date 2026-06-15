@@ -1604,8 +1604,9 @@ async function pollImportJob(jobId) {
           // Processamento ocupa 75% a 98% da barra
           const pct = Math.round(75 + (processed / total) * 23);
           const pctStr = Math.round((processed / total) * 100);
+          const stageLabel = json.status === 'rechecking_ddm' ? 'Rechecando erros DDM' : 'Processando';
           setProgress(pct,
-            `Processando ${processed.toLocaleString('pt-BR')} / ${total.toLocaleString('pt-BR')} linhas (${pctStr}%)`,
+            `${stageLabel} ${processed.toLocaleString('pt-BR')} / ${total.toLocaleString('pt-BR')} linhas (${pctStr}%)`,
             ''
           );
           setDropState('uploading',
