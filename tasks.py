@@ -4,6 +4,8 @@ import io
 import time
 import uuid
 import requests
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from celery import Celery
 from supabase import create_client
 from typing import Optional, Dict, Any
@@ -37,9 +39,12 @@ SMTP_SECURITY = env("SMTP_SECURITY", "starttls").lower()
 SMTP_FORCE_IPV4 = env("SMTP_FORCE_IPV4", "true").lower() in ("1", "true", "yes", "sim")
 
 # ── DDM Acordos ───────────────────────────────────────────────
-DDM_TOKEN    = env("DDM_TOKEN", "2e30b68c0feda298f9d6d40ab36c1a09")
+DDM_TOKEN    = env("DDM_TOKEN")
 DDM_AGREEMENT_TOKEN = env("DDM_AGREEMENT_TOKEN", "")
 DDM_BASE     = "https://ddmacordos.com"
+DDM_IMPORT_CONCURRENCY = max(1, int(env("DDM_IMPORT_CONCURRENCY", "20")))
+DDM_IMPORT_RATE_PER_SEC = max(0.1, float(env("DDM_IMPORT_RATE_PER_SEC", "10")))
+DDM_IMPORT_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_PROGRESS_EVERY", "25")))
 
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -1351,11 +1356,8 @@ def _process_dataframe(job_id: str, df, fname: str):
         _set_job_error(job_id, f"Colunas obrigatórias não encontradas. Colunas detectadas: {cols}")
         return
 
-    total     = 0
-    with_debt = 0
-    rows      = []
-
-    for _, r in df.iterrows():
+    pending = []
+    for idx, r in df.iterrows():
         # Converte row para dict simples garantindo que todos os valores sao strings
         r = {k: (str(v) if not isinstance(v, (list, dict)) else "") for k, v in r.items()}
         cpf_raw  = str(r.get(cpf_col, "") or "").strip()
@@ -1364,78 +1366,106 @@ def _process_dataframe(job_id: str, df, fname: str):
             continue
 
         nome = str(r.get(nome_col, "") or "").strip()
-        total += 1
 
         if is_ddm:
-            # ── Planilha DDM: dados de débito já estão na planilha ──────────────
-            val_str = str(r.get(val_col, "0") or "0").strip().replace(",", ".")
-            try:
-                tem_debito = float(val_str) > 0
-            except Exception:
-                tem_debito = False
-
+            # Planilha DDM traz telefones/metadados, mas o debito precisa ser validado online.
             phones = _get_phones_ddm(r)
             phone  = phones[0] if phones else ""
-
-            if tem_debito and phone:
-                with_debt += 1
-                debito = {
-                    "instituicao":    str(r.get("carteira", "") or "").strip(),
-                    "nome_devedor":   nome,
-                    "numero_debitos": str(r.get("parcelas", "1") or "1").strip(),
-                    "PgtoAvista": {
-                        "ValorTotal":    str(r.get("val_nominal", "0,00") or "0,00").strip(),
-                        "PercDesconto":  "0",
-                        "ValorDesconto": "0,00",
-                        "ValorFinal":    val_str.replace(".", ","),
-                    },
-                    "CalculoBoleto": {
-                        "SubtotalBoleto":    val_str.replace(".", ","),
-                        "HonorarioBoleto":   "0,00",
-                        "ValorCobrarBoleto": "0,00",
-                    },
-                    "ParcelasBoleto": str(r.get("parcelas", "1") or "1").strip(),
-                    "PgtoParceladoCartao": {
-                        "Parcelas":     str(r.get("parcelas", "1") or "1").strip(),
-                        "ValorParcela": "0,00",
-                        "ValorFinal":   val_str.replace(".", ","),
-                    },
-                    # Metadados adicionais para referência
-                    "idcalc":  str(r.get("idcalc", "") or "").strip(),
-                    "iddev":   str(r.get("iddev", "") or "").strip(),
-                    "idcrm":   str(r.get("idcrm", "") or "").strip(),
-                    "uf":      str(r.get("uf", "") or "").strip(),
-                    "cidade":  str(r.get("cidade", "") or "").strip(),
-                    "all_phones": phones,
-                    "email":      str(r.get("email", "") or "").strip(),
-                }
-                rows.append({
-                    "cpf":      cpf_norm,
-                    "name":     nome,
-                    "phone":    phone,
-                    "has_debt": True,
-                    "debito":   debito,
-                })
+            meta = {
+                "planilha_carteira": str(r.get("carteira", "") or "").strip(),
+                "iddev":             str(r.get("iddev", "") or "").strip(),
+                "idcrm":             str(r.get("idcrm", "") or "").strip(),
+                "uf":                str(r.get("uf", "") or "").strip(),
+                "cidade":            str(r.get("cidade", "") or "").strip(),
+                "all_phones":        phones,
+                "email":             str(r.get("email", "") or "").strip(),
+            }
 
         else:
             # ── Planilha genérica: consulta API DDM por CPF ─────────────────────
             phone  = _get_phone(r, cols)
-            debito = _processar_debito(cpf_norm)
+            meta = {}
 
-            if debito:
+        if phone:
+            pending.append({
+                "idx": idx,
+                "cpf": cpf_norm,
+                "name": nome,
+                "phone": phone,
+                "meta": meta,
+            })
+
+    total     = len(pending)
+    processed = 0
+    with_debt = 0
+    results   = []
+    rate_lock = threading.Lock()
+    next_call = {"at": 0.0}
+    min_gap   = 1.0 / DDM_IMPORT_RATE_PER_SEC
+
+    def validate_contact(item: dict) -> dict:
+        with rate_lock:
+            now = time.monotonic()
+            wait = next_call["at"] - now
+            if wait > 0:
+                time.sleep(wait)
+                now = time.monotonic()
+            next_call["at"] = now + min_gap
+
+        return {
+            "idx":      item["idx"],
+            "cpf":      item["cpf"],
+            "name":     item["name"],
+            "phone":    item["phone"],
+            "debito":   _processar_debito(item["cpf"]),
+        }
+
+    def merge_row_debito(item: dict, base_debito: dict) -> dict:
+        if not base_debito:
+            return None
+        debito = dict(base_debito)
+        meta = item.get("meta") or {}
+        if meta:
+            iddev_planilha = meta.get("iddev") or ""
+            debito.update(meta)
+            if iddev_planilha:
+                debito["iddev"] = iddev_planilha
+        return debito
+
+    if total:
+        first_by_cpf = {}
+        for item in pending:
+            first_by_cpf.setdefault(item["cpf"], item)
+
+        unique_items = list(first_by_cpf.values())
+        worker_count = min(DDM_IMPORT_CONCURRENCY, len(unique_items))
+        by_cpf = {}
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [executor.submit(validate_contact, item) for item in unique_items]
+            for future in as_completed(futures):
+                row = future.result()
+                by_cpf[row["cpf"]] = row.get("debito")
+
+        for item in pending:
+            debito = merge_row_debito(item, by_cpf.get(item["cpf"]))
+            row = {
+                "idx":      item["idx"],
+                "cpf":      item["cpf"],
+                "name":     item["name"],
+                "phone":    item["phone"],
+                "has_debt": debito is not None,
+                "debito":   debito,
+            }
+            results.append(row)
+            processed += 1
+            if row["has_debt"]:
                 with_debt += 1
-            if phone:
-                rows.append({
-                    "cpf":      cpf_norm,
-                    "name":     nome,
-                    "phone":    phone,
-                    "has_debt": debito is not None,
-                    "debito":   debito,
-                })
+            if processed % DDM_IMPORT_PROGRESS_EVERY == 0 or processed == total:
+                _update_job_progress(job_id, total, processed, with_debt)
 
-        # Progresso a cada 1000 linhas
-        if total % 1000 == 0:
-            _update_job_progress(job_id, total, total, with_debt)
+    rows = sorted(results, key=lambda r: r["idx"])
+    for row in rows:
+        row.pop("idx", None)
 
     # Finaliza job
     try:
