@@ -46,8 +46,8 @@ DDM_IMPORT_CONCURRENCY = max(1, int(env("DDM_IMPORT_CONCURRENCY", "12")))
 DDM_IMPORT_RATE_PER_SEC = max(0.1, float(env("DDM_IMPORT_RATE_PER_SEC", "6")))
 DDM_IMPORT_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_PROGRESS_EVERY", "25")))
 DDM_IMPORT_RETRIES = max(0, int(env("DDM_IMPORT_RETRIES", "1")))
-DDM_ERROR_RECHECK_ROUNDS = max(0, int(env("DDM_ERROR_RECHECK_ROUNDS", "1")))
-DDM_ERROR_RECHECK_DELAY_SECONDS = max(0, int(env("DDM_ERROR_RECHECK_DELAY_SECONDS", "20")))
+DDM_ERROR_RECHECK_ROUNDS = max(0, int(env("DDM_ERROR_RECHECK_ROUNDS", "0")))
+DDM_ERROR_RECHECK_DELAY_SECONDS = max(0, int(env("DDM_ERROR_RECHECK_DELAY_SECONDS", "60")))
 DDM_ERROR_RECHECK_CONCURRENCY = max(1, int(env("DDM_ERROR_RECHECK_CONCURRENCY", "4")))
 
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -1539,87 +1539,6 @@ def _validate_import_rows(job_id: str):
                 except Exception:
                     _update_job_progress(job_id, total, processed, with_debt)
 
-    item_by_idx = {item["idx"]: item for item in pending_rows}
-    for round_idx in range(DDM_ERROR_RECHECK_ROUNDS):
-        error_rows = [row for row in results if row.get("ddm_error")]
-        if not error_rows:
-            break
-
-        if DDM_ERROR_RECHECK_DELAY_SECONDS:
-            try:
-                supabase.table("import_jobs").update({
-                    "status": "rechecking_ddm",
-                    "result": {
-                        "rows": pending_rows,
-                        "sample": sorted(results, key=lambda r: r["idx"])[:200],
-                        "recheck_round": round_idx + 1,
-                        "recheck_errors": len(error_rows),
-                    },
-                }).eq("id", job_id).execute()
-            except Exception:
-                pass
-            time.sleep(DDM_ERROR_RECHECK_DELAY_SECONDS)
-
-        error_by_cpf = {}
-        for row in error_rows:
-            item = item_by_idx.get(row["idx"])
-            if item:
-                error_by_cpf.setdefault(item["cpf"], item)
-
-        if not error_by_cpf:
-            break
-
-        rechecked = {}
-        worker_count = min(DDM_ERROR_RECHECK_CONCURRENCY, len(error_by_cpf))
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            futures = {executor.submit(validate_contact, item): item["cpf"] for item in error_by_cpf.values()}
-            for future in as_completed(futures):
-                row = future.result()
-                rechecked[row["cpf"]] = {
-                    "debito": row.get("debito"),
-                    "ddm_error": row.get("ddm_error", ""),
-                }
-
-        updated_results = []
-        for row in results:
-            if not row.get("ddm_error"):
-                updated_results.append(row)
-                continue
-
-            item = item_by_idx.get(row["idx"])
-            validation = rechecked.get(row.get("cpf")) if item else None
-            if not validation or validation.get("ddm_error"):
-                updated_results.append(row)
-                continue
-
-            debito = merge_row_debito(item, validation.get("debito"))
-            updated_results.append({
-                "idx": row["idx"],
-                "cpf": row["cpf"],
-                "name": row["name"],
-                "phone": row["phone"],
-                "has_debt": debito is not None,
-                "debito": debito,
-                "ddm_error": "",
-                "validation_status": "done",
-            })
-
-        results = updated_results
-        with_debt = sum(1 for row in results if row.get("has_debt"))
-        try:
-            supabase.table("import_jobs").update({
-                "processed": total,
-                "with_debt": with_debt,
-                "result": {
-                    "rows": pending_rows,
-                    "sample": sorted(results, key=lambda r: r["idx"])[:200],
-                    "recheck_round": round_idx + 1,
-                    "recheck_errors": sum(1 for row in results if row.get("ddm_error")),
-                },
-            }).eq("id", job_id).execute()
-        except Exception:
-            pass
-
     rows = sorted(results, key=lambda r: r["idx"])
     for row in rows:
         row.pop("idx", None)
@@ -1636,6 +1555,12 @@ def _validate_import_rows(job_id: str):
     except Exception:
         pass
 
+    if DDM_ERROR_RECHECK_ROUNDS and any(row.get("ddm_error") for row in rows):
+        recheck_import_errors_task.apply_async(
+            args=[job_id, DDM_ERROR_RECHECK_ROUNDS],
+            countdown=DDM_ERROR_RECHECK_DELAY_SECONDS,
+        )
+
 
 @celery.task(name="tasks.validate_import_ddm")
 def validate_import_ddm_task(job_id: str):
@@ -1644,3 +1569,78 @@ def validate_import_ddm_task(job_id: str):
     except Exception as exc:
         _set_job_error(job_id, f"Erro validando DDM: {exc}")
         raise
+
+
+@celery.task(name="tasks.recheck_import_errors")
+def recheck_import_errors_task(job_id: str, rounds_left: int = 1):
+    if rounds_left <= 0:
+        return {"ok": True, "rechecked": 0, "remaining_rounds": 0}
+
+    job = supabase.table("import_jobs").select("*").eq("id", job_id).execute().data
+    if not job:
+        return {"ok": False, "error": "job nao encontrado"}
+
+    rows = job[0].get("result") or []
+    if not isinstance(rows, list):
+        return {"ok": False, "error": "resultado do job nao e lista"}
+
+    error_rows = [row for row in rows if row.get("ddm_error") and row.get("cpf")]
+    if not error_rows:
+        return {"ok": True, "rechecked": 0, "errors": 0}
+
+    def recheck(row: dict) -> dict:
+        result = {"ok": False, "error": "DDM nao consultada", "debito": None}
+        for attempt in range(DDM_IMPORT_RETRIES + 1):
+            result = _processar_debito_result(row["cpf"])
+            if result.get("ok"):
+                break
+            if attempt < DDM_IMPORT_RETRIES:
+                time.sleep(0.5 * (attempt + 1))
+        return {
+            "cpf": row["cpf"],
+            "debito": result.get("debito"),
+            "ddm_error": "" if result.get("ok") else result.get("error", "erro DDM"),
+        }
+
+    checked = {}
+    worker_count = min(DDM_ERROR_RECHECK_CONCURRENCY, len(error_rows))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [executor.submit(recheck, row) for row in error_rows]
+        for future in as_completed(futures):
+            result = future.result()
+            checked[result["cpf"]] = result
+
+    updated = []
+    for row in rows:
+        result = checked.get(row.get("cpf"))
+        if not result:
+            updated.append(row)
+            continue
+
+        if result.get("ddm_error"):
+            updated.append(row)
+            continue
+
+        debito = result.get("debito")
+        updated.append({
+            **row,
+            "has_debt": debito is not None,
+            "debito": debito,
+            "ddm_error": "",
+            "validation_status": "done",
+        })
+
+    with_debt = sum(1 for row in updated if row.get("has_debt"))
+    remaining_errors = sum(1 for row in updated if row.get("ddm_error"))
+    supabase.table("import_jobs").update({
+        "with_debt": with_debt,
+        "result": updated,
+    }).eq("id", job_id).execute()
+
+    if remaining_errors and rounds_left > 1:
+        recheck_import_errors_task.apply_async(
+            args=[job_id, rounds_left - 1],
+            countdown=DDM_ERROR_RECHECK_DELAY_SECONDS,
+        )
+
+    return {"ok": True, "rechecked": len(error_rows), "errors": remaining_errors}
