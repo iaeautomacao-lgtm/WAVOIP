@@ -828,6 +828,52 @@ def _ddm_get_iddev(cpf: str) -> str:
     return _ddm_find_first(data, {"idcalc", "iddev", "id"})
 
 
+def _valid_email(value: str) -> str:
+    value = str(value or "").strip()
+    if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value):
+        return value
+    return ""
+
+
+def _ddm_get_email(cpf: str, iddev: str = "") -> str:
+    """Busca email no cadastro DDM por CPF/iddev, sem depender da planilha."""
+    cpf = _norm_cpf(cpf)
+    iddev = str(iddev or "").strip()
+    email_keys = {"email", "emaildev", "emaildevedor", "mail"}
+
+    if not DDM_TOKEN:
+        return ""
+
+    try:
+        res = requests.get(
+            f"{DDM_BASE}/calc/localiza_dev.php",
+            params={"tk": DDM_TOKEN, "cpf": cpf},
+            timeout=15,
+        )
+        res.raise_for_status()
+        data = res.json()
+        email = _valid_email(_ddm_find_first(data, email_keys))
+        if email:
+            return email
+        iddev = iddev or _ddm_find_first(data, {"idcalc", "iddev", "id"})
+    except Exception:
+        pass
+
+    if not iddev:
+        return ""
+
+    try:
+        res = requests.get(
+            f"{DDM_BASE}/calc/",
+            params={"tk": DDM_TOKEN, "idDev": iddev, "cli": "ddm"},
+            timeout=15,
+        )
+        res.raise_for_status()
+        return _valid_email(_ddm_find_first(res.json(), email_keys))
+    except Exception:
+        return ""
+
+
 def _ddm_find_first(obj, names: set) -> str:
     if isinstance(obj, dict):
         for key, value in obj.items():
@@ -1125,6 +1171,13 @@ def formalizar_acordo(self, dados: dict):
         linha_dig   = ""
         vencimento  = ""
         nr_acordo   = ""
+        idcalc       = str(
+            dados.get("idcalc") or
+            dados.get("iddev") or
+            debito.get("idcalc") or
+            debito.get("iddev") or
+            ""
+        ).strip()
 
         if cpf:
             try:
@@ -1134,6 +1187,7 @@ def formalizar_acordo(self, dados: dict):
                 linha_dig   = acordo.get("linha_dig") or ""
                 vencimento  = acordo.get("vencimento") or ""
                 nr_acordo   = acordo.get("nr_acordo") or ""
+                idcalc      = acordo.get("idcalc") or idcalc
                 if acordo.get("email") and not email:
                     email = acordo["email"]
                 if acordo.get("nome") and nome == "Cliente":
@@ -1147,6 +1201,7 @@ def formalizar_acordo(self, dados: dict):
             try:
                 iddev = _ddm_get_iddev(cpf)
                 if iddev:
+                    idcalc = iddev
                     pagamentos = _ddm_get_payment_links(iddev)
                     link_boleto = pagamentos["link_boleto"]
                     link_pix    = pagamentos["link_pix"]
@@ -1158,18 +1213,13 @@ def formalizar_acordo(self, dados: dict):
 
         if cpf and not (link_boleto or link_pix):
             try:
-                iddev = str(
-                    dados.get("idcalc") or
-                    dados.get("iddev") or
-                    debito.get("idcalc") or
-                    debito.get("iddev") or
-                    ""
-                ).strip()
+                iddev = idcalc
                 if not iddev:
                     debito_recalculado = _processar_debito(_norm_cpf(cpf))
                     if debito_recalculado:
                         iddev = str(debito_recalculado.get("idcalc") or "").strip()
                 if iddev:
+                    idcalc = iddev
                     pagamentos = _ddm_get_payment_links(iddev)
                     link_boleto = pagamentos["link_boleto"]
                     link_pix    = pagamentos["link_pix"]
@@ -1181,6 +1231,9 @@ def formalizar_acordo(self, dados: dict):
             except Exception as e:
                 import logging
                 logging.warning("[DDM] erro no fallback de boleto cpf_final=%s erro=%s", _norm_cpf(cpf)[-4:], e)
+
+        if cpf and not email:
+            email = _ddm_get_email(cpf, idcalc)
 
         # 2. Envia email para o devedor
         email_enviado = False
