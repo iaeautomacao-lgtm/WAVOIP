@@ -3,6 +3,7 @@ import re
 import io
 import time
 import uuid
+import json
 import requests
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -45,10 +46,12 @@ DDM_BASE     = "https://ddmacordos.com"
 DDM_IMPORT_CONCURRENCY = max(1, int(env("DDM_IMPORT_CONCURRENCY", "12")))
 DDM_IMPORT_RATE_PER_SEC = max(0.1, float(env("DDM_IMPORT_RATE_PER_SEC", "6")))
 DDM_IMPORT_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_PROGRESS_EVERY", "25")))
+DDM_IMPORT_DB_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_DB_PROGRESS_EVERY", "250")))
 DDM_IMPORT_RETRIES = max(0, int(env("DDM_IMPORT_RETRIES", "1")))
 DDM_ERROR_RECHECK_ROUNDS = max(0, int(env("DDM_ERROR_RECHECK_ROUNDS", "0")))
 DDM_ERROR_RECHECK_DELAY_SECONDS = max(0, int(env("DDM_ERROR_RECHECK_DELAY_SECONDS", "60")))
 DDM_ERROR_RECHECK_CONCURRENCY = max(1, int(env("DDM_ERROR_RECHECK_CONCURRENCY", "4")))
+IMPORT_REDIS_TTL_SECONDS = max(3600, int(env("IMPORT_REDIS_TTL_SECONDS", "86400")))
 
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -136,6 +139,64 @@ def redis_client():
         import redis as redis_lib
         _redis_client = redis_lib.from_url(REDIS_URL)
     return _redis_client
+
+
+def _import_state_key(job_id: str) -> str:
+    return f"import_job:{job_id}"
+
+
+def _import_rows_key(job_id: str) -> str:
+    return f"import_job:{job_id}:rows"
+
+
+def _set_import_state(job_id: str, state: dict):
+    try:
+        redis_client().setex(
+            _import_state_key(job_id),
+            IMPORT_REDIS_TTL_SECONDS,
+            json.dumps(state, ensure_ascii=False),
+        )
+    except Exception:
+        pass
+
+
+def _get_import_state(job_id: str) -> dict:
+    try:
+        raw = redis_client().get(_import_state_key(job_id))
+        if not raw:
+            return {}
+        return json.loads(raw)
+    except Exception:
+        return {}
+
+
+def _set_import_rows(job_id: str, rows: list):
+    try:
+        redis_client().setex(
+            _import_rows_key(job_id),
+            IMPORT_REDIS_TTL_SECONDS,
+            json.dumps(rows, ensure_ascii=False),
+        )
+    except Exception:
+        pass
+
+
+def _get_import_rows(job_id: str) -> list:
+    try:
+        raw = redis_client().get(_import_rows_key(job_id))
+        if not raw:
+            return []
+        rows = json.loads(raw)
+        return rows if isinstance(rows, list) else []
+    except Exception:
+        return []
+
+
+def _delete_import_state(job_id: str):
+    try:
+        redis_client().delete(_import_state_key(job_id), _import_rows_key(job_id))
+    except Exception:
+        pass
 
 
 def _line_name(line: dict) -> str:
@@ -425,6 +486,7 @@ def _set_job_error(job_id: str, error_msg: str):
         }).eq("id", job_id).execute()
     except Exception:
         pass
+    _delete_import_state(job_id)
 
 
 # ── TASKS ─────────────────────────────────────────────────────
@@ -1410,6 +1472,15 @@ def _process_dataframe(job_id: str, df, fname: str):
             "meta": item.get("meta") or {},
         })
 
+    _set_import_rows(job_id, pending_rows)
+    _set_import_state(job_id, {
+        "status": "validating",
+        "total": total,
+        "processed": 0,
+        "with_debt": 0,
+        "sample": pending_rows[:200],
+    })
+
     try:
         supabase.table("import_jobs").update({
             "status":    "validating",
@@ -1417,8 +1488,8 @@ def _process_dataframe(job_id: str, df, fname: str):
             "processed": 0,
             "with_debt": 0,
             "result":    {
-                "rows": pending_rows,
                 "sample": pending_rows[:200],
+                "source": "redis",
             },
         }).eq("id", job_id).execute()
     except Exception:
@@ -1428,12 +1499,17 @@ def _process_dataframe(job_id: str, df, fname: str):
 
 
 def _validate_import_rows(job_id: str):
+    state = _get_import_state(job_id)
+    pending_rows = _get_import_rows(job_id)
     job = supabase.table("import_jobs").select("*").eq("id", job_id).execute().data
     if not job:
         return
     job = job[0]
     result = job.get("result") or {}
-    pending_rows = result.get("rows") if isinstance(result, dict) else []
+    if not pending_rows and isinstance(state, dict):
+        pending_rows = state.get("rows") or []
+    if not pending_rows:
+        pending_rows = result.get("rows") if isinstance(result, dict) else []
     if not pending_rows:
         supabase.table("import_jobs").update({
             "status":    "done",
@@ -1525,14 +1601,24 @@ def _validate_import_rows(job_id: str):
 
             if processed % DDM_IMPORT_PROGRESS_EVERY == 0 or processed == total:
                 preview = sorted(results, key=lambda r: r["idx"])[:200]
+                _set_import_state(job_id, {
+                    "status": "validating",
+                    "total": total,
+                    "processed": processed,
+                    "with_debt": with_debt,
+                    "sample": preview,
+                })
+
+            if processed % DDM_IMPORT_DB_PROGRESS_EVERY == 0 or processed == total:
+                preview = sorted(results, key=lambda r: r["idx"])[:200]
                 try:
                     supabase.table("import_jobs").update({
                         "total":     total,
                         "processed": processed,
                         "with_debt": with_debt,
                         "result":    {
-                            "rows": pending_rows,
                             "sample": preview,
+                            "source": "redis",
                         },
                     }).eq("id", job_id).execute()
                 except Exception:
@@ -1553,6 +1639,7 @@ def _validate_import_rows(job_id: str):
         }).eq("id", job_id).execute()
     except Exception:
         pass
+    _delete_import_state(job_id)
 
     if DDM_ERROR_RECHECK_ROUNDS and any(row.get("ddm_error") for row in rows):
         recheck_import_errors_task.apply_async(

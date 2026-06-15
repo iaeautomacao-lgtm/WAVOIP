@@ -5,6 +5,7 @@ import os
 import re
 import time
 import uuid
+import json
 import logging
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -33,6 +34,7 @@ SUPABASE_URL      = env("SUPABASE_URL")
 SUPABASE_KEY      = env("SUPABASE_KEY")
 SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
 SUPABASE_BUCKET   = env("SUPABASE_BUCKET", "imports")
+REDIS_URL         = env("REDIS_URL", "redis://localhost:6379/0")
 LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "2")))
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -58,6 +60,29 @@ _round_robin_idx = 0
 _wavoip_token    = None
 _wavoip_token_ts = 0
 TOKEN_TTL        = 600
+_redis_client    = None
+
+
+def redis_client():
+    global _redis_client
+    if _redis_client is None:
+        import redis as redis_lib
+        _redis_client = redis_lib.from_url(REDIS_URL)
+    return _redis_client
+
+
+def _import_state_key(job_id: str) -> str:
+    return f"import_job:{job_id}"
+
+
+def _get_import_state(job_id: str) -> dict:
+    try:
+        raw = redis_client().get(_import_state_key(job_id))
+        if not raw:
+            return {}
+        return json.loads(raw)
+    except Exception:
+        return {}
 
 
 def wavoip_login() -> str:
@@ -953,12 +978,10 @@ def import_upload():
         if not (fname.endswith(".csv") or fname.endswith(".xlsx") or fname.endswith(".xls")):
             return jsonify({"ok": False, "error": "Formato inválido. Use .csv ou .xlsx"}), 400
 
-        import redis as redis_lib
-
         file_bytes = file.read()
         file_id    = str(uuid.uuid4())
 
-        r = redis_lib.from_url(os.getenv("REDIS_URL"))
+        r = redis_client()
         r.setex(f"import:{file_id}", 3600, file_bytes)
 
         job = supabase.table("import_jobs").insert({
@@ -1055,6 +1078,20 @@ def import_status(job_id):
         if not job:
             return jsonify({"ok": False, "error": "Job não encontrado"}), 404
         job = job[0]
+
+        live_state = {}
+        if job.get("status") not in ("done", "error"):
+            live_state = _get_import_state(job_id)
+        if live_state:
+            return jsonify({
+                "ok":         True,
+                "status":     live_state.get("status") or job["status"],
+                "total":      live_state.get("total", job["total"]),
+                "processed":  live_state.get("processed", job["processed"]),
+                "with_debt":  live_state.get("with_debt", job["with_debt"]),
+                "session_id": None,
+                "result":     live_state.get("sample") or [],
+            })
 
         result_preview = None
         if job["result"]:
