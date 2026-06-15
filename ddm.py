@@ -1,7 +1,7 @@
 import re
 import requests
 import os
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 
 DDM_TOKEN    = os.getenv("DDM_TOKEN", "").strip()
 DDM_TIMEOUT_SECONDS = float(os.getenv("DDM_TIMEOUT_SECONDS", "12"))
@@ -39,12 +39,7 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
         return {"ERRO": str(e)}
 
 
-def processar_debito(cpf: str) -> Optional[Dict]:
-    dados = consultar_debitos_cpf(cpf)
-
-    if dados.get("ERRO"):
-        return None
-
+def _montar_debito(dados: Dict[str, Any]) -> Optional[Dict]:
     idcalc = dados.get("idcalc")
     if not idcalc:
         return None
@@ -93,3 +88,17 @@ def processar_debito(cpf: str) -> Optional[Dict]:
             "ValorFinal":   valor_avista,
         },
     }
+
+
+def processar_debito_result(cpf: str) -> Dict[str, Any]:
+    dados = consultar_debitos_cpf(cpf)
+
+    if dados.get("ERRO"):
+        return {"ok": False, "error": str(dados.get("ERRO") or "erro DDM"), "debito": None}
+
+    return {"ok": True, "error": "", "debito": _montar_debito(dados)}
+
+
+def processar_debito(cpf: str) -> Optional[Dict]:
+    result = processar_debito_result(cpf)
+    return result.get("debito") if result.get("ok") else None

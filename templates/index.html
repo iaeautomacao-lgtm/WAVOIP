@@ -192,6 +192,7 @@
     .import-actions { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
     .debt-yes { font-family: var(--mono); font-size: .62rem; color: var(--green); letter-spacing: .06em; }
     .debt-no  { font-family: var(--mono); font-size: .62rem; color: var(--muted); letter-spacing: .06em; }
+    .debt-error { font-family: var(--mono); font-size: .62rem; color: var(--amber); letter-spacing: .06em; }
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.75); backdrop-filter: blur(8px); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; }
     .overlay.open { opacity: 1; pointer-events: all; }
     .modal { background: var(--s1); border: 1px solid var(--border2); border-radius: 14px; padding: 32px; width: 400px; transform: translateY(12px) scale(.98); transition: transform .25s cubic-bezier(.34,1.56,.64,1); position: relative; overflow: hidden; }
@@ -601,6 +602,13 @@
 
 <script>
 const API = '';
+const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;'
+}[ch]));
 
 // ── CLOCK ────────────────────────────────────────────────────
 setInterval(() => {
@@ -1663,7 +1671,9 @@ function renderImportPreview(data) {
         <td class="td-mono">${r.phone || '—'}</td>
         <td>${r.has_debt
           ? '<span class="debt-yes">✓ sim</span>'
-          : '<span class="debt-no">— não</span>'}</td>
+          : r.ddm_error
+            ? `<span class="debt-error" title="${escapeHtml(r.ddm_error)}">! erro DDM</span>`
+            : '<span class="debt-no">— não</span>'}</td>
       </tr>`).join('');
   }
 }

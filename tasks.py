@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from celery import Celery
 from supabase import create_client
 from typing import Optional, Dict, Any
-from ddm import processar_debito as _processar_debito
+from ddm import processar_debito as _processar_debito, processar_debito_result as _processar_debito_result
 
 def env(name: str, default: str = "") -> str:
     value = os.getenv(name, default)
@@ -45,6 +45,7 @@ DDM_BASE     = "https://ddmacordos.com"
 DDM_IMPORT_CONCURRENCY = max(1, int(env("DDM_IMPORT_CONCURRENCY", "20")))
 DDM_IMPORT_RATE_PER_SEC = max(0.1, float(env("DDM_IMPORT_RATE_PER_SEC", "10")))
 DDM_IMPORT_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_PROGRESS_EVERY", "25")))
+DDM_IMPORT_RETRIES = max(0, int(env("DDM_IMPORT_RETRIES", "2")))
 
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -1412,12 +1413,21 @@ def _process_dataframe(job_id: str, df, fname: str):
                 now = time.monotonic()
             next_call["at"] = now + min_gap
 
+        result = {"ok": False, "error": "DDM nao consultada", "debito": None}
+        for attempt in range(DDM_IMPORT_RETRIES + 1):
+            result = _processar_debito_result(item["cpf"])
+            if result.get("ok"):
+                break
+            if attempt < DDM_IMPORT_RETRIES:
+                time.sleep(0.5 * (attempt + 1))
+
         return {
             "idx":      item["idx"],
             "cpf":      item["cpf"],
             "name":     item["name"],
             "phone":    item["phone"],
-            "debito":   _processar_debito(item["cpf"]),
+            "debito":   result.get("debito"),
+            "ddm_error": "" if result.get("ok") else result.get("error", "erro DDM"),
         }
 
     def merge_row_debito(item: dict, base_debito: dict) -> dict:
@@ -1444,10 +1454,14 @@ def _process_dataframe(job_id: str, df, fname: str):
             futures = [executor.submit(validate_contact, item) for item in unique_items]
             for future in as_completed(futures):
                 row = future.result()
-                by_cpf[row["cpf"]] = row.get("debito")
+                by_cpf[row["cpf"]] = {
+                    "debito": row.get("debito"),
+                    "ddm_error": row.get("ddm_error", ""),
+                }
 
         for item in pending:
-            debito = merge_row_debito(item, by_cpf.get(item["cpf"]))
+            validation = by_cpf.get(item["cpf"]) or {}
+            debito = merge_row_debito(item, validation.get("debito"))
             row = {
                 "idx":      item["idx"],
                 "cpf":      item["cpf"],
@@ -1455,6 +1469,7 @@ def _process_dataframe(job_id: str, df, fname: str):
                 "phone":    item["phone"],
                 "has_debt": debito is not None,
                 "debito":   debito,
+                "ddm_error": validation.get("ddm_error", ""),
             }
             results.append(row)
             processed += 1
