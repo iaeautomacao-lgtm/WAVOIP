@@ -1360,6 +1360,7 @@ function renderDashboardLines(rows) {
 async function saveCampaign() {
   const name = document.getElementById('campaign-name-input').value.trim();
   if (!name) { toast('Digite um nome para a campanha.', 'err'); return; }
+  if (!importSessionId) { toast('Aguarde a validacao DDM terminar.', 'err'); return; }
   if (!importSessionId && !importRows.filter(r => r.has_debt && r.phone).length) {
     toast('Nenhum contato com débito e telefone.', 'err'); return;
   }
@@ -1613,6 +1614,18 @@ async function pollImportJob(jobId) {
           );
         }
 
+        const previewRows = Array.isArray(json.result) ? json.result : [];
+        if (total > 0 && previewRows.length) {
+          importRows = previewRows;
+          renderImportPreview({
+            rows: previewRows,
+            total,
+            with_debt: withDebt,
+            without_debt: total - withDebt,
+            validating: json.status !== 'done'
+          });
+        }
+
         if (json.status === 'done') {
           clearInterval(_pollTimer);
           importSessionId = jobId;
@@ -1655,7 +1668,7 @@ function renderImportPreview(data) {
   document.getElementById('imp-debt').textContent    = (data.with_debt || 0).toLocaleString('pt-BR');
   document.getElementById('imp-no-debt').textContent = (data.without_debt || 0).toLocaleString('pt-BR');
   document.getElementById('import-summary').classList.add('visible');
-  document.getElementById('import-actions').style.display = 'flex';
+  document.getElementById('import-actions').style.display = data.validating ? 'none' : 'flex';
   if (linesData.length) renderCampaignLinePicker(linesData);
   else loadLines();
 

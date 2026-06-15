@@ -526,8 +526,7 @@ def make_call_task(self, campaign_id: str, contact: dict):
         _update_result(row_id, "erro", None, phones[0], error)
 
 
-
-
+x
 def fill_campaign_capacity(campaign_id: str) -> dict:
     locked, lock_token = _acquire_scheduler_lock()
     if not locked:
@@ -1396,10 +1395,59 @@ def _process_dataframe(job_id: str, df, fname: str):
                 "meta": meta,
             })
 
-    total     = len(pending)
+    total = len(pending)
+    pending_rows = []
+    for item in pending:
+        pending_rows.append({
+            "idx": item["idx"],
+            "cpf": item["cpf"],
+            "name": item["name"],
+            "phone": item["phone"],
+            "has_debt": False,
+            "debito": None,
+            "ddm_error": "",
+            "validation_status": "pending",
+            "meta": item.get("meta") or {},
+        })
+
+    try:
+        supabase.table("import_jobs").update({
+            "status":    "validating",
+            "total":     total,
+            "processed": 0,
+            "with_debt": 0,
+            "result":    {
+                "rows": pending_rows,
+                "sample": pending_rows[:200],
+            },
+        }).eq("id", job_id).execute()
+    except Exception:
+        pass
+
+    validate_import_ddm_task.delay(job_id)
+
+
+def _validate_import_rows(job_id: str):
+    job = supabase.table("import_jobs").select("*").eq("id", job_id).execute().data
+    if not job:
+        return
+    job = job[0]
+    result = job.get("result") or {}
+    pending_rows = result.get("rows") if isinstance(result, dict) else []
+    if not pending_rows:
+        supabase.table("import_jobs").update({
+            "status":    "done",
+            "total":     0,
+            "processed": 0,
+            "with_debt": 0,
+            "result":    [],
+        }).eq("id", job_id).execute()
+        return
+
+    total = len(pending_rows)
     processed = 0
     with_debt = 0
-    results   = []
+    results = []
     rate_lock = threading.Lock()
     next_call = {"at": 0.0}
     min_gap   = 1.0 / DDM_IMPORT_RATE_PER_SEC
@@ -1442,47 +1490,59 @@ def _process_dataframe(job_id: str, df, fname: str):
                 debito["iddev"] = iddev_planilha
         return debito
 
-    if total:
-        first_by_cpf = {}
-        for item in pending:
-            first_by_cpf.setdefault(item["cpf"], item)
+    first_by_cpf = {}
+    for item in pending_rows:
+        first_by_cpf.setdefault(item["cpf"], item)
 
-        unique_items = list(first_by_cpf.values())
-        worker_count = min(DDM_IMPORT_CONCURRENCY, len(unique_items))
-        by_cpf = {}
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            futures = [executor.submit(validate_contact, item) for item in unique_items]
-            for future in as_completed(futures):
-                row = future.result()
-                by_cpf[row["cpf"]] = {
-                    "debito": row.get("debito"),
-                    "ddm_error": row.get("ddm_error", ""),
-                }
-
-        for item in pending:
-            validation = by_cpf.get(item["cpf"]) or {}
-            debito = merge_row_debito(item, validation.get("debito"))
-            row = {
-                "idx":      item["idx"],
-                "cpf":      item["cpf"],
-                "name":     item["name"],
-                "phone":    item["phone"],
-                "has_debt": debito is not None,
-                "debito":   debito,
-                "ddm_error": validation.get("ddm_error", ""),
+    unique_items = list(first_by_cpf.values())
+    worker_count = min(DDM_IMPORT_CONCURRENCY, len(unique_items))
+    by_cpf = {}
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [executor.submit(validate_contact, item) for item in unique_items]
+        for future in as_completed(futures):
+            row = future.result()
+            by_cpf[row["cpf"]] = {
+                "debito": row.get("debito"),
+                "ddm_error": row.get("ddm_error", ""),
             }
-            results.append(row)
-            processed += 1
-            if row["has_debt"]:
-                with_debt += 1
-            if processed % DDM_IMPORT_PROGRESS_EVERY == 0 or processed == total:
+
+    for item in pending_rows:
+        validation = by_cpf.get(item["cpf"]) or {}
+        debito = merge_row_debito(item, validation.get("debito"))
+        row = {
+            "idx":      item["idx"],
+            "cpf":      item["cpf"],
+            "name":     item["name"],
+            "phone":    item["phone"],
+            "has_debt": debito is not None,
+            "debito":   debito,
+            "ddm_error": validation.get("ddm_error", ""),
+            "validation_status": "done" if validation.get("ddm_error", "") == "" else "error",
+        }
+        results.append(row)
+        processed += 1
+        if row["has_debt"]:
+            with_debt += 1
+        if processed % DDM_IMPORT_PROGRESS_EVERY == 0 or processed == total:
+            preview = sorted(results, key=lambda r: r["idx"])[:200]
+            try:
+                supabase.table("import_jobs").update({
+                    "total":     total,
+                    "processed": processed,
+                    "with_debt": with_debt,
+                    "result":    {
+                        "rows": pending_rows,
+                        "sample": preview,
+                    },
+                }).eq("id", job_id).execute()
+            except Exception:
                 _update_job_progress(job_id, total, processed, with_debt)
 
     rows = sorted(results, key=lambda r: r["idx"])
     for row in rows:
         row.pop("idx", None)
+        row.pop("meta", None)
 
-    # Finaliza job
     try:
         supabase.table("import_jobs").update({
             "status":    "done",
@@ -1493,3 +1553,8 @@ def _process_dataframe(job_id: str, df, fname: str):
         }).eq("id", job_id).execute()
     except Exception:
         pass
+
+
+@celery.task(name="tasks.validate_import_ddm")
+def validate_import_ddm_task(job_id: str):
+    return _validate_import_rows(job_id)

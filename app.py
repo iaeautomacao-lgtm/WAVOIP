@@ -664,10 +664,15 @@ def create_campaign():
 
         if session_id:
             job = supabase.table("import_jobs")\
-                .select("result, with_debt").eq("id", session_id).execute().data
+                .select("status, result, with_debt").eq("id", session_id).execute().data
             if not job:
                 return jsonify({"ok": False, "error": "Sessão não encontrada"}), 404
-            contacts = [r for r in job[0]["result"] if r.get("has_debt") and r.get("phone")]
+            if job[0].get("status") != "done":
+                return jsonify({"ok": False, "error": "Importacao ainda validando DDM"}), 400
+            result_rows = job[0].get("result") or []
+            if isinstance(result_rows, dict):
+                result_rows = result_rows.get("rows") or []
+            contacts = [r for r in result_rows if r.get("has_debt") and r.get("phone")]
 
         if not contacts:
             return jsonify({"ok": False, "error": "Nenhum contato com débito e telefone"}), 400
@@ -1052,11 +1057,11 @@ def import_status(job_id):
         job = job[0]
 
         result_preview = None
-        if job["status"] == "done" and job["result"]:
+        if job["result"]:
             if isinstance(job["result"], list):
                 result_preview = job["result"][:200]
             elif isinstance(job["result"], dict):
-                result_preview = job["result"]
+                result_preview = job["result"].get("sample") or (job["result"].get("rows") or [])[:200]
 
         return jsonify({
             "ok":         True,
