@@ -46,6 +46,8 @@ DDM_IMPORT_CONCURRENCY = max(1, int(env("DDM_IMPORT_CONCURRENCY", "20")))
 DDM_IMPORT_RATE_PER_SEC = max(0.1, float(env("DDM_IMPORT_RATE_PER_SEC", "10")))
 DDM_IMPORT_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_PROGRESS_EVERY", "25")))
 DDM_IMPORT_RETRIES = max(0, int(env("DDM_IMPORT_RETRIES", "2")))
+DDM_ERROR_RECHECK_ROUNDS = max(0, int(env("DDM_ERROR_RECHECK_ROUNDS", "1")))
+DDM_ERROR_RECHECK_DELAY_SECONDS = max(0, int(env("DDM_ERROR_RECHECK_DELAY_SECONDS", "20")))
 
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -1535,6 +1537,87 @@ def _validate_import_rows(job_id: str):
                     }).eq("id", job_id).execute()
                 except Exception:
                     _update_job_progress(job_id, total, processed, with_debt)
+
+    item_by_idx = {item["idx"]: item for item in pending_rows}
+    for round_idx in range(DDM_ERROR_RECHECK_ROUNDS):
+        error_rows = [row for row in results if row.get("ddm_error")]
+        if not error_rows:
+            break
+
+        if DDM_ERROR_RECHECK_DELAY_SECONDS:
+            try:
+                supabase.table("import_jobs").update({
+                    "status": "rechecking_ddm",
+                    "result": {
+                        "rows": pending_rows,
+                        "sample": sorted(results, key=lambda r: r["idx"])[:200],
+                        "recheck_round": round_idx + 1,
+                        "recheck_errors": len(error_rows),
+                    },
+                }).eq("id", job_id).execute()
+            except Exception:
+                pass
+            time.sleep(DDM_ERROR_RECHECK_DELAY_SECONDS)
+
+        error_by_cpf = {}
+        for row in error_rows:
+            item = item_by_idx.get(row["idx"])
+            if item:
+                error_by_cpf.setdefault(item["cpf"], item)
+
+        if not error_by_cpf:
+            break
+
+        rechecked = {}
+        worker_count = min(DDM_IMPORT_CONCURRENCY, len(error_by_cpf))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {executor.submit(validate_contact, item): item["cpf"] for item in error_by_cpf.values()}
+            for future in as_completed(futures):
+                row = future.result()
+                rechecked[row["cpf"]] = {
+                    "debito": row.get("debito"),
+                    "ddm_error": row.get("ddm_error", ""),
+                }
+
+        updated_results = []
+        for row in results:
+            if not row.get("ddm_error"):
+                updated_results.append(row)
+                continue
+
+            item = item_by_idx.get(row["idx"])
+            validation = rechecked.get(row.get("cpf")) if item else None
+            if not validation or validation.get("ddm_error"):
+                updated_results.append(row)
+                continue
+
+            debito = merge_row_debito(item, validation.get("debito"))
+            updated_results.append({
+                "idx": row["idx"],
+                "cpf": row["cpf"],
+                "name": row["name"],
+                "phone": row["phone"],
+                "has_debt": debito is not None,
+                "debito": debito,
+                "ddm_error": "",
+                "validation_status": "done",
+            })
+
+        results = updated_results
+        with_debt = sum(1 for row in results if row.get("has_debt"))
+        try:
+            supabase.table("import_jobs").update({
+                "processed": total,
+                "with_debt": with_debt,
+                "result": {
+                    "rows": pending_rows,
+                    "sample": sorted(results, key=lambda r: r["idx"])[:200],
+                    "recheck_round": round_idx + 1,
+                    "recheck_errors": sum(1 for row in results if row.get("ddm_error")),
+                },
+            }).eq("id", job_id).execute()
+        except Exception:
+            pass
 
     rows = sorted(results, key=lambda r: r["idx"])
     for row in rows:
