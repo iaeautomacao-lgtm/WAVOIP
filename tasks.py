@@ -798,7 +798,6 @@ def _ddm_get_payment_links(iddev: str) -> dict:
     data = r.json()
     data_items = data if isinstance(data, list) else [data]
 
-    # Navega pela estrutura de Acordos para encontrar acordo_pagamento
     link_boleto = ""
     link_pix    = ""
     linha_dig   = ""
@@ -857,7 +856,7 @@ def _ddm_get_payment_links(iddev: str) -> dict:
 
 
 def _ddm_formalizar_acordo(cpf: str) -> dict:
-    """Formaliza acordo na DDM seguindo o fluxo oficial do n8n."""
+    """Formaliza acordo na DDM"""
     if not DDM_AGREEMENT_TOKEN:
         raise RuntimeError("DDM_AGREEMENT_TOKEN nao configurado")
 
