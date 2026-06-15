@@ -1980,7 +1980,9 @@ function renderImportPreview(data) {
         <td class="td-mono">${r.phone || '—'}</td>
         <td>${r.has_debt
           ? '<span class="debt-yes">✓ sim</span>'
-          : r.ddm_error
+          : r.validation_status === 'pending'
+            ? '<span class="debt-no">validando</span>'
+            : r.ddm_error
             ? `<span class="debt-error" title="${escapeHtml(r.ddm_error)}">! erro DDM</span>`
             : '<span class="debt-no">— não</span>'}</td>
       </tr>`).join('');
