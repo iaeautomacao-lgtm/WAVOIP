@@ -9,6 +9,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from supabase import create_client, Client
 from tasks import process_file, process_import_from_storage, formalizar_acordo, fill_campaign_capacity, fill_campaign_capacity_task
 

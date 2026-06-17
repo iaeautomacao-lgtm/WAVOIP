@@ -9,6 +9,16 @@ DDM_BASE_URL = "https://www.ddmacordos.com"
 DDM_CALCULA  = f"{DDM_BASE_URL}/ws_ddm/ws/CalculaDebitos.php"
 
 
+class DDMSoftError(Exception):
+    """Erro transitório: timeout, 429, 5xx."""
+    pass
+
+
+class DDMHardError(Exception):
+    """Erro definitivo: 401/403, resposta inválida."""
+    pass
+
+
 def _safe_dict(obj) -> dict:
     if isinstance(obj, list):
         return obj[0] if obj and isinstance(obj[0], dict) else {}
@@ -25,18 +35,40 @@ def _safe_list(obj) -> list:
 
 def consultar_debitos_cpf(cpf: str) -> Dict:
     if not DDM_TOKEN:
-        return {"ERRO": "DDM_TOKEN nao configurado"}
+        raise DDMHardError("DDM_TOKEN nao configurado")
 
     try:
         r = requests.get(
             f"{DDM_CALCULA}?tk={DDM_TOKEN}&Doc={cpf}",
-            timeout=DDM_TIMEOUT_SECONDS
+            timeout=DDM_TIMEOUT_SECONDS,
         )
+        if r.status_code == 429 or r.status_code >= 500:
+            raise DDMSoftError(f"DDM indisponivel ({r.status_code})")
+        if r.status_code in (401, 403):
+            raise DDMHardError(f"Token invalido ({r.status_code})")
         r.raise_for_status()
-        raw = r.json()
-        return _safe_dict(raw)
+    except requests.exceptions.Timeout:
+        raise DDMSoftError("timeout")
+    except requests.exceptions.ConnectionError:
+        raise DDMSoftError("conexao caiu")
+    except requests.exceptions.HTTPError as e:
+        code = getattr(getattr(e, "response", None), "status_code", 0)
+        if code in (429, 500, 502, 503, 504):
+            raise DDMSoftError(f"DDM indisponivel ({code})")
+        raise DDMHardError(str(e))
+    except DDMSoftError:
+        raise
+    except DDMHardError:
+        raise
     except Exception as e:
-        return {"ERRO": str(e)}
+        raise DDMSoftError(str(e))
+
+    try:
+        raw = r.json()
+    except Exception as e:
+        raise DDMHardError(f"Resposta invalida: {e}")
+
+    return _safe_dict(raw)
 
 
 def _montar_debito(dados: Dict[str, Any]) -> Optional[Dict]:
@@ -44,27 +76,21 @@ def _montar_debito(dados: Dict[str, Any]) -> Optional[Dict]:
     if not idcalc:
         return None
 
-    # Parcelas — pega só as que têm ValorParcela numérico
     parcelas_raw = _safe_list(_safe_dict(dados.get("ListaParcelas", {})).get("Parcelas", []))
     parcelas = [p for p in parcelas_raw if isinstance(p, dict) and p.get("ValorParcela") and p.get("ValorParcela") != "0,00"]
 
     if not parcelas:
         return None
 
-    # Primeira parcela = à vista
     avista = parcelas[0]
     valor_avista = avista.get("ValorParcela", "0,00")
 
     if valor_avista == "0,00":
         return None
 
-    # Débitos individuais
     lista_debitos = _safe_list(_safe_dict(dados.get("ListaDebitos", {})).get("Debito", []))
-
-    # Nome do cliente sem "NOVO"
     nome_cliente = re.sub(r'\bNOVO\b', '', dados.get("Cliente", ""), flags=re.IGNORECASE).strip()
 
-    # Monta estrutura compatível com o restante do sistema
     return {
         "instituicao":    nome_cliente,
         "nome_devedor":   dados.get("NomeDev", ""),
@@ -90,15 +116,19 @@ def _montar_debito(dados: Dict[str, Any]) -> Optional[Dict]:
     }
 
 
-def processar_debito_result(cpf: str) -> Dict[str, Any]:
-    dados = consultar_debitos_cpf(cpf)
-
-    if dados.get("ERRO"):
-        return {"ok": False, "error": str(dados.get("ERRO") or "erro DDM"), "debito": None}
-
-    return {"ok": True, "error": "", "debito": _montar_debito(dados)}
-
-
 def processar_debito(cpf: str) -> Optional[Dict]:
     result = processar_debito_result(cpf)
     return result.get("debito") if result.get("ok") else None
+
+
+def processar_debito_result(cpf: str) -> Dict[str, Any]:
+    try:
+        dados = consultar_debitos_cpf(cpf)
+        debito = _montar_debito(dados)
+        if debito is None:
+            return {"ok": True, "error": "", "debito": None, "_no_debt": True}
+        return {"ok": True, "error": "", "debito": debito}
+    except DDMSoftError as e:
+        return {"ok": False, "error": str(e), "debito": None, "_soft": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "debito": None, "_soft": False}

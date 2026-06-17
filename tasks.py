@@ -6,11 +6,15 @@ import uuid
 import json
 import requests
 import threading
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from celery import Celery
 from supabase import create_client
 from typing import Optional, Dict, Any
 from ddm import processar_debito as _processar_debito, processar_debito_result as _processar_debito_result
+
+
 
 def env(name: str, default: str = "") -> str:
     value = os.getenv(name, default)
@@ -40,14 +44,15 @@ SMTP_SECURITY = env("SMTP_SECURITY", "starttls").lower()
 SMTP_FORCE_IPV4 = env("SMTP_FORCE_IPV4", "true").lower() in ("1", "true", "yes", "sim")
 
 # ── DDM Acordos ───────────────────────────────────────────────
-DDM_TOKEN    = env("DDM_TOKEN")
+DDM_TOKEN    = env("DDM_TOKEN", "")
 DDM_AGREEMENT_TOKEN = env("DDM_AGREEMENT_TOKEN", "")
 DDM_BASE     = "https://ddmacordos.com"
-DDM_IMPORT_CONCURRENCY = max(1, int(env("DDM_IMPORT_CONCURRENCY", "12")))
-DDM_IMPORT_RATE_PER_SEC = max(0.1, float(env("DDM_IMPORT_RATE_PER_SEC", "6")))
+DDM_TIMEOUT_SECONDS = int(env("DDM_TIMEOUT_SECONDS", "30"))
+DDM_IMPORT_CONCURRENCY = max(1, int(env("DDM_IMPORT_CONCURRENCY", "4")))
+DDM_IMPORT_RATE_PER_SEC = max(0.1, float(env("DDM_IMPORT_RATE_PER_SEC", "3")))
 DDM_IMPORT_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_PROGRESS_EVERY", "25")))
 DDM_IMPORT_DB_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_DB_PROGRESS_EVERY", "250")))
-DDM_IMPORT_RETRIES = max(0, int(env("DDM_IMPORT_RETRIES", "1")))
+DDM_IMPORT_RETRIES = max(1, int(env("DDM_IMPORT_RETRIES", "2")))
 DDM_ERROR_RECHECK_ROUNDS = max(0, int(env("DDM_ERROR_RECHECK_ROUNDS", "0")))
 DDM_ERROR_RECHECK_DELAY_SECONDS = max(0, int(env("DDM_ERROR_RECHECK_DELAY_SECONDS", "60")))
 DDM_ERROR_RECHECK_CONCURRENCY = max(1, int(env("DDM_ERROR_RECHECK_CONCURRENCY", "4")))
@@ -1615,13 +1620,7 @@ def _validate_import_rows(job_id: str):
                 now = time.monotonic()
             next_call["at"] = now + min_gap
 
-        result = {"ok": False, "error": "DDM nao consultada", "debito": None}
-        for attempt in range(DDM_IMPORT_RETRIES + 1):
-            result = _processar_debito_result(item["cpf"])
-            if result.get("ok"):
-                break
-            if attempt < DDM_IMPORT_RETRIES:
-                time.sleep(0.5 * (attempt + 1))
+        result = _processar_debito_result(item["cpf"])
 
         return {
             "idx":      item["idx"],
