@@ -36,6 +36,37 @@ def _safe_list(obj) -> list:
     return []
 
 
+def _norm_key(key: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(key).lower())
+
+
+def _get_any(obj, *names, default=None):
+    if not isinstance(obj, dict):
+        return default
+    wanted = {_norm_key(name) for name in names}
+    for key, value in obj.items():
+        if _norm_key(key) in wanted:
+            return value
+    return default
+
+
+def _find_first(obj, *names) -> str:
+    wanted = {_norm_key(name) for name in names}
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if _norm_key(key) in wanted and value not in (None, ""):
+                return str(value).strip()
+            nested = _find_first(value, *names)
+            if nested:
+                return nested
+    elif isinstance(obj, list):
+        for item in obj:
+            nested = _find_first(item, *names)
+            if nested:
+                return nested
+    return ""
+
+
 def consultar_debitos_cpf(cpf: str) -> Dict:
     if not DDM_TOKEN:
         raise DDMHardError("DDM_TOKEN nao configurado")
@@ -85,32 +116,54 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
 
 
 def _montar_debito(dados: Dict[str, Any]) -> Optional[Dict]:
-    idcalc = dados.get("idcalc")
+    idcalc = _find_first(dados, "idcalc", "id_calc", "idCalculo", "calculoId")
     if not idcalc:
         return None
 
-    parcelas_raw = _safe_list(_safe_dict(dados.get("ListaParcelas", {})).get("Parcelas", []))
-    parcelas = [p for p in parcelas_raw if isinstance(p, dict) and p.get("ValorParcela") and p.get("ValorParcela") != "0,00"]
+    lista_parcelas = _safe_dict(_get_any(dados, "ListaParcelas", "lista_parcelas", "parcelas", default={}))
+    parcelas_raw = _safe_list(_get_any(lista_parcelas, "Parcelas", "Parcela", "parcelas", default=[]))
+    if not parcelas_raw:
+        parcelas_raw = _safe_list(_get_any(dados, "Parcelas", "Parcela", "parcelas", default=[]))
+
+    def parcela_valor(parcela: dict) -> str:
+        return str(_get_any(
+            parcela,
+            "ValorParcela", "valor_parcela", "valor", "ValorFinal", "valorFinal",
+            default=""
+        ) or "").strip()
+
+    parcelas = [
+        p for p in parcelas_raw
+        if isinstance(p, dict) and parcela_valor(p) and parcela_valor(p) != "0,00"
+    ]
 
     if not parcelas:
         return None
 
     avista = parcelas[0]
-    valor_avista = avista.get("ValorParcela", "0,00")
+    valor_avista = parcela_valor(avista) or "0,00"
 
     if valor_avista == "0,00":
         return None
 
-    lista_debitos = _safe_list(_safe_dict(dados.get("ListaDebitos", {})).get("Debito", []))
-    nome_cliente = re.sub(r'\bNOVO\b', '', dados.get("Cliente", ""), flags=re.IGNORECASE).strip()
+    lista_debitos_obj = _safe_dict(_get_any(dados, "ListaDebitos", "lista_debitos", "debitos", default={}))
+    lista_debitos = _safe_list(_get_any(lista_debitos_obj, "Debito", "Debitos", "debito", "debitos", default=[]))
+    nome_cliente = re.sub(
+        r'\bNOVO\b',
+        '',
+        _find_first(dados, "Cliente", "cliente", "Instituicao", "instituicao"),
+        flags=re.IGNORECASE,
+    ).strip()
+    nome_devedor = _find_first(dados, "NomeDev", "nome_dev", "NomeDevedor", "nome_devedor")
+    total_nominal = _find_first(dados, "TotalNominal", "total_nominal", "ValorTotal", "valor_total") or "0,00"
 
     return {
         "instituicao":    nome_cliente,
-        "nome_devedor":   dados.get("NomeDev", ""),
+        "nome_devedor":   nome_devedor,
         "numero_debitos": str(len(lista_debitos)),
         "idcalc":         idcalc,
         "PgtoAvista": {
-            "ValorTotal":    dados.get("TotalNominal", "0,00"),
+            "ValorTotal":    total_nominal,
             "PercDesconto":  "0",
             "ValorDesconto": "0,00",
             "ValorFinal":    valor_avista,
