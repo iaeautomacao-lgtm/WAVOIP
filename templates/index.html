@@ -831,6 +831,10 @@
         </div>
       </div>
 
+      <div id="import-processing-actions" class="import-actions" style="display:none">
+        <button class="btn btn-warn" onclick="stopImport()">⏹ &nbsp;Parar importação</button>
+      </div>
+
       <div id="import-table-wrap" style="display:none">
         <div class="sec-head" style="margin-bottom:12px">
           <span class="sec-title" id="import-table-title">Preview</span>
@@ -2017,6 +2021,7 @@ async function pollImportJob(jobId) {
         const processed = json.processed || 0;
         const withDebt  = json.with_debt || 0;
         if (total > 0) {
+          document.getElementById('import-processing-actions').style.display = 'flex';
           const pct     = Math.round(75 + (processed / total) * 23);
           const pctStr  = Math.round((processed / total) * 100);
           const stageLabel = json.status === 'rechecking_ddm' ? 'Rechecando erros DDM' : 'Processando';
@@ -2135,6 +2140,7 @@ async function stopImport() {
     setTimeout(hideProgress, 3000);
     importSessionId = null;
     document.getElementById('import-actions').style.display = 'flex';
+    document.getElementById('import-processing-actions').style.display = 'none';
   } catch (e) {
     toast(`Erro ao parar: ${e.message}`, 'err');
   }
