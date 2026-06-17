@@ -45,6 +45,7 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
         logger.warning("[DDM_DEBUG] CPF=%s URL=%s", cpf, url)
         r = requests.get(url, timeout=DDM_TIMEOUT_SECONDS)
         logger.warning("[DDM_DEBUG] CPF=%s STATUS=%s BODY=%s", cpf, r.status_code, r.text[:500])
+
         if r.status_code == 429 or r.status_code >= 500:
             raise DDMSoftError(f"DDM indisponivel ({r.status_code})")
         if r.status_code in (401, 403):
@@ -72,6 +73,10 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
         raw = r.json()
     except Exception as e:
         raise DDMHardError(f"Resposta invalida: {e}")
+
+    if isinstance(raw, dict) and raw.get("ERRO") == "ERRO":
+        logger.warning("[DDM_DEBUG] CPF=%s ERRO_GENERICO_RECEBIDO", cpf)
+        raise DDMHardError("ERRO_GENERICO_DDM")
 
     return _safe_dict(raw)
 
