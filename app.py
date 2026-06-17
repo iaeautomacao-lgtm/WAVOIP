@@ -1096,6 +1096,24 @@ def import_from_storage():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/import/stop/<job_id>", methods=["POST"])
+def import_stop(job_id):
+    import tasks as tasks_mod
+    try:
+        celery_app = tasks_mod.celery
+        celery_app.control.revoke(job_id, terminate=True, signal='SIGKILL')
+
+        job = supabase.table("import_jobs").select("*").eq("id", job_id).execute()
+        if job.data:
+            supabase.table("import_jobs").update({
+                "status": "stopped"
+            }).eq("id", job_id).execute()
+    except Exception as e:
+        logging.warning(f"[IMPORT_STOP] erro=%s", e)
+        supabase.table("import_jobs").update({"status": "stopped"}).eq("id", job_id).execute()
+    return jsonify({"ok": True, "status": "stopped"})
+
+
 @app.route("/api/import/status/<job_id>", methods=["GET"])
 def import_status(job_id):
     try:
@@ -1105,7 +1123,7 @@ def import_status(job_id):
         job = job[0]
 
         live_state = {}
-        if job.get("status") not in ("done", "error"):
+        if job.get("status") not in ("done", "error", "stopped"):
             live_state = _get_import_state(job_id)
         if live_state:
             return jsonify({

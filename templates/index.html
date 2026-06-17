@@ -298,6 +298,8 @@
       color: var(--red);
     }
     .btn-danger:hover { background: var(--red-bg); }
+    .btn-warn { background: #f59e0b; color: #fff; }
+    .btn-warn:hover { background: #d97706; }
 
     /* ── TABELAS ── */
     .table-card {
@@ -1989,14 +1991,14 @@ async function handleImportFile(file) {
     toast(`⬆ Upload concluído (${mb} MB). Processando...`, 'warn');
     await pollImportJob(importJson.job_id);
   } catch(e) {
-    setDropState('', 'Erro no upload — clique para tentar novamente', e.message);
-    setProgress(100, `Erro: ${e.message}`, 'red');
-    toast(`Erro: ${e.message}`, 'err');
-    setTimeout(hideProgress, 4000);
-  } finally {
-    fileInput.value = '';
+      setDropState('', 'Erro no upload — clique para tentar novamente', e.message);
+      setProgress(100, `Erro: ${e.message}`, 'red');
+      toast(`Erro: ${e.message}`, 'err');
+      setTimeout(hideProgress, 4000);
+    } finally {
+      fileInput.value = '';
+    }
   }
-}
 
 async function pollImportJob(jobId) {
   if (_pollTimer) clearInterval(_pollTimer);
@@ -2102,6 +2104,40 @@ function resetImportUI() {
   const picker = document.getElementById('campaign-line-picker');
   if (picker) picker.innerHTML = '<div class="td-dim">Carregando linhas...</div>';
   hideProgress();
+}
+
+async function stopImport() {
+  const jobId = importSessionId || (() => {
+    try {
+      const saved = sessionStorage.getItem('import_job_id');
+      return saved ? JSON.parse(saved)?.job_id || null : null;
+    } catch (e) {
+      return null;
+    }
+  })();
+
+  if (!jobId) return;
+
+  const confirmed = confirm('Tem certeza que deseja parar a importação?');
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`${API}/api/import/stop/${jobId}`, { method: 'POST' });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Falha ao parar importação');
+
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+    sessionStorage.removeItem('import_job_id');
+
+    setProgress(100, 'Importação interrompida pelo usuário', 'amber');
+    setDropState('done', 'Importação parada', 'Clique para selecionar outro arquivo');
+    toast('Importação parada', 'warn');
+    setTimeout(hideProgress, 3000);
+    importSessionId = null;
+    document.getElementById('import-actions').style.display = 'flex';
+  } catch (e) {
+    toast(`Erro ao parar: ${e.message}`, 'err');
+  }
 }
 
 function resetImport() {
