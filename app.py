@@ -482,15 +482,30 @@ def get_calls():
             "id, cpf, status, created_at, duration, campaign_id", count="exact"
         ).order("created_at", desc=True).range(offset, offset + per_page - 1).execute()
         rows = []
+        camp_ids = set()
         for row in (result.data or []):
-            rows.append({
+            r = {
                 "id": row.get("id"),
                 "cpf": row.get("cpf"),
                 "status": row.get("status"),
                 "duration": row.get("duration") or row.get("call_duration"),
                 "created_at": row.get("created_at"),
                 "campaign_id": row.get("campaign_id"),
-            })
+            }
+            rows.append(r)
+            cid = r.get("campaign_id")
+            if cid:
+                camp_ids.add(cid)
+        name_map = {}
+        if camp_ids:
+            try:
+                camps = supabase.table("campaigns").select("id, name").in_("id", list(camp_ids)).execute().data or []
+                for c in camps:
+                    name_map[str(c.get("id"))] = c.get("name")
+            except Exception:
+                pass
+        for r in rows:
+            r["campaign_name"] = name_map.get(str(r.get("campaign_id") or "")) or None
         return jsonify({
             "ok": True,
             "data": rows,
