@@ -432,27 +432,42 @@ def vapi_call(
 # ── HELPERS ───────────────────────────────────────────────────
 
 def _norm_cpf(cpf) -> str:
-    return re.sub(r'\D', '', str(cpf)).zfill(11) if cpf else ""
+    try:
+        s = re.sub(r'\D', '', str(cpf) if cpfe else '')
+    except Exception:
+        s = ''
+    return s.zfill(11) if s else ""
 
 
-def _get_phone(row, cols: list) -> str:
-    """Busca o primeiro telefone válido nas colunas da planilha."""
-    for col in ["fone1", "tel", "telefone", "celular", "phone"]:
-        if col in cols:
-            val = str(row.get(col, "") or "").strip()
-            if val and val != "nan":
-                return val
+def _first_phone(row, cols: list) -> str:
+    """Busca o primeiro telefone válido com variações comuns de planilhas legadas."""
+    candidates = [
+        "fone", "fone1", "fone2", "fone3",
+        "tel", "telefone", "telefone1", "telefone2",
+        "celular", "celular1", "celular2",
+        "phone", "phone1", "phone2",
+        "contato", "whatsapp", "whats", "cel",
+    ]
+    cols_lower = {c.lower(): c for c in cols}
+    for cand in candidates:
+        key = cols_lower.get(cand.lower())
+        if key is None:
+            continue
+        val = str(row.get(key, "") or "").strip()
+        if val and val.lower() != "nan":
+            return val
     return ""
 
 
-def _get_phones_ddm(row) -> list:
-    """Extrai todos os telefones FONE1..FONE10 de planilha DDM."""
+def _all_phones_ddm(row, cols: list) -> list:
+    """Extrai telefones para planilha DDM ou qualquer coluna que pareça DDM."""
     phones = []
     for i in range(1, 11):
-        key = f"fone{i}"
-        val = str(row.get(key, "") or "").strip()
-        if val and val != "nan":
-            phones.append(val)
+        for key in (f"fone{i}", f"telefone{i}", f"tel{i}", f"phone{i}"):
+            if key in [c.lower() for c in cols]:
+                val = str(row.get(key, "") or "").strip()
+                if val and val != "nan" and val not in phones:
+                    phones.append(val)
     return phones
 
 
@@ -1484,7 +1499,7 @@ def _process_dataframe(job_id: str, df, fname: str):
 
         if is_ddm:
             # Planilha DDM traz telefones/metadados, mas o debito precisa ser validado online.
-            phones = _get_phones_ddm(r)
+            phones = _all_phones_ddm(r, cols)
             phone  = phones[0] if phones else ""
             meta = {
                 "planilha_carteira": str(r.get("carteira", "") or "").strip(),
@@ -1498,7 +1513,7 @@ def _process_dataframe(job_id: str, df, fname: str):
 
         else:
             # ── Planilha genérica: consulta API DDM por CPF ─────────────────────
-            phone  = _get_phone(r, cols)
+            phone  = _first_phone(r, cols)
             meta = {}
 
         if phone:
