@@ -1376,9 +1376,13 @@ async function loadCalls() {
   try {
     const res  = await fetch(`${API}/api/calls?page=${callsPage_}&per_page=50`);
     const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
+    if (!json.ok) {
+      console.error('loadCalls error', json);
+      throw new Error(json.error);
+    }
     renderCalls(json.data, json.page, json.pages, json.total);
   } catch(e) {
+    console.error('loadCalls failed', e);
     document.getElementById('calls-body').innerHTML =
       `<tr><td colspan="5"><div class="loader">Erro: ${e.message}</div></td></tr>`;
   }
