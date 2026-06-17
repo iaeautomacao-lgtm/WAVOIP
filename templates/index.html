@@ -1975,6 +1975,15 @@ async function handleImportFile(file) {
     });
     const importJson = await importRes.json();
     if (!importJson.ok) throw new Error(importJson.error || 'Falha ao enfileirar processamento');
+    importSessionId = importJson.job_id;
+    try {
+      sessionStorage.setItem('import_job_id', JSON.stringify({
+        job_id: importJson.job_id,
+        status: 'processing',
+      }));
+    } catch (e) {
+      sessionStorage.removeItem('import_job_id');
+    }
     setProgress(75, 'Worker iniciado. Processando planilha...', '');
     setDropState('uploading', `Processando ${file.name}…`, 'Worker Celery em andamento...');
     toast(`⬆ Upload concluído (${mb} MB). Processando...`, 'warn');
@@ -1991,6 +2000,11 @@ async function handleImportFile(file) {
 
 async function pollImportJob(jobId) {
   if (_pollTimer) clearInterval(_pollTimer);
+  try {
+    sessionStorage.setItem('import_job_id', JSON.stringify({ job_id: jobId, status: 'processing' }));
+  } catch (e) {
+    sessionStorage.removeItem('import_job_id');
+  }
   return new Promise((resolve) => {
     _pollTimer = setInterval(async () => {
       try {
