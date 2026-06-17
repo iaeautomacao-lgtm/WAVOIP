@@ -1854,6 +1854,39 @@ let _pollTimer      = null;
 const fileInput  = document.getElementById('file-input');
 const importZone = document.getElementById('import-zone');
 
+function restoreImportState() {
+  try {
+    const saved = sessionStorage.getItem('import_job_id');
+    if (!saved) return;
+    const parsed = JSON.parse(saved);
+    const status = parsed.status;
+    const jobId = parsed.job_id;
+    if (!jobId) return;
+
+    importSessionId = jobId;
+    if (status === 'done') {
+      importRows = parsed.result || [];
+      renderImportPreview({ rows: importRows, total: parsed.total, with_debt: parsed.with_debt, validating: false });
+      setProgress(100, `✓ Concluído — ${(parsed.with_debt || 0).toLocaleString('pt-BR')} contatos com débito`, 'green');
+      setDropState('done', `✓ ${(parsed.total || 0).toLocaleString('pt-BR')} contatos carregados`, `${(parsed.with_debt || 0).toLocaleString('pt-BR')} com débito · clique para trocar o arquivo}`);
+      setTimeout(hideProgress, 3000);
+      sessionStorage.removeItem('import_job_id');
+    } else if (status === 'error') {
+      const errMsg = (parsed.result && parsed.result.error) || 'Erro desconhecido no worker';
+      setProgress(100, `Erro: ${errMsg}`, 'red');
+      setDropState('', 'Erro no processamento — clique para tentar novamente', errMsg);
+      setTimeout(hideProgress, 5000);
+      sessionStorage.removeItem('import_job_id');
+    } else {
+      pollImportJob(jobId);
+    }
+  } catch (e) {
+    sessionStorage.removeItem('import_job_id');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', restoreImportState);
+
 function onDropZoneClick() {
   if (importZone.classList.contains('uploading')) return;
   fileInput.click();
