@@ -41,9 +41,12 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
         raise DDMHardError("DDM_TOKEN nao configurado")
 
     try:
-        url = f"{DDM_CALCULA}?tk={DDM_TOKEN}&Doc={cpf}"
-        logger.warning("[DDM_DEBUG] CPF=%s URL=%s", cpf, url)
-        r = requests.get(url, timeout=DDM_TIMEOUT_SECONDS)
+        logger.warning("[DDM_DEBUG] CPF=%s consultando DDM", cpf)
+        r = requests.get(
+            DDM_CALCULA,
+            params={"tk": DDM_TOKEN, "Doc": cpf},
+            timeout=DDM_TIMEOUT_SECONDS,
+        )
         logger.warning("[DDM_DEBUG] CPF=%s STATUS=%s BODY=%s", cpf, r.status_code, r.text[:500])
 
         if r.status_code == 429 or r.status_code >= 500:

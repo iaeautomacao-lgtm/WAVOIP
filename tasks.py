@@ -44,18 +44,18 @@ SMTP_SECURITY = env("SMTP_SECURITY", "starttls").lower()
 SMTP_FORCE_IPV4 = env("SMTP_FORCE_IPV4", "true").lower() in ("1", "true", "yes", "sim")
 
 # ── DDM Acordos ───────────────────────────────────────────────
-DDM_TOKEN=env("...N", "")
-DDM_AGREEMENT_TOKEN=env("...N", "")
+DDM_TOKEN    = env("DDM_TOKEN")
+DDM_AGREEMENT_TOKEN = env("DDM_AGREEMENT_TOKEN", "")
 DDM_BASE     = "https://ddmacordos.com"
-DDM_TIMEOUT_SECONDS = int(env("DDM_TIMEOUT_SECONDS", "60"))
-DDM_IMPORT_CONCURRENCY = max(1, int(env("DDM_IMPORT_CONCURRENCY", "1")))
-DDM_IMPORT_RATE_PER_SEC = max(0.1, float(env("DDM_IMPORT_RATE_PER_SEC", "0.5")))
-DDM_IMPORT_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_PROGRESS_EVERY", "10")))
-DDM_IMPORT_DB_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_DB_PROGRESS_EVERY", "50")))
-DDM_IMPORT_RETRIES = max(2, int(env("DDM_IMPORT_RETRIES", "5")))
-DDM_ERROR_RECHECK_ROUNDS = max(0, int(env("DDM_IMPORT_RECHECK_ROUNDES_MAX", "3")))
+DDM_TIMEOUT_SECONDS = int(env("DDM_TIMEOUT_SECONDS", "20"))
+DDM_IMPORT_CONCURRENCY = max(1, int(env("DDM_IMPORT_CONCURRENCY", "10")))
+DDM_IMPORT_RATE_PER_SEC = max(0.1, float(env("DDM_IMPORT_RATE_PER_SEC", "5")))
+DDM_IMPORT_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_PROGRESS_EVERY", "25")))
+DDM_IMPORT_DB_PROGRESS_EVERY = max(1, int(env("DDM_IMPORT_DB_PROGRESS_EVERY", "250")))
+DDM_IMPORT_RETRIES = max(0, int(env("DDM_IMPORT_RETRIES", "2")))
+DDM_ERROR_RECHECK_ROUNDS = max(0, int(env("DDM_ERROR_RECHECK_ROUNDS", "0")))
 DDM_ERROR_RECHECK_DELAY_SECONDS = max(0, int(env("DDM_ERROR_RECHECK_DELAY_SECONDS", "60")))
-DDM_ERROR_RECHECK_CONCURRENCY = max(1, int(env("DDM_ERROR_RECHECK_CONCURRENCY", "1")))
+DDM_ERROR_RECHECK_CONCURRENCY = max(1, int(env("DDM_ERROR_RECHECK_CONCURRENCY", "4")))
 IMPORT_REDIS_TTL_SECONDS = max(3600, int(env("IMPORT_REDIS_TTL_SECONDS", "86400")))
 
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -845,8 +845,11 @@ def _check_campaign_completion(campaign_id: str):
 def _ddm_get_iddev(cpf: str) -> str:
     """Busca o iddev pelo CPF na API DDM."""
     cpf = _norm_cpf(cpf)
-    url = f"{DDM_BASE}/calc/localiza_dev.php?tk={DDM_TOKEN}&cpf={cpf}"
-    r = requests.get(url, timeout=15)
+    r = requests.get(
+        f"{DDM_BASE}/calc/localiza_dev.php",
+        params={"tk": DDM_TOKEN, "cpf": cpf},
+        timeout=15,
+    )
     r.raise_for_status()
     data = r.json()
     # A DDM pode retornar um objeto ou uma lista com o devedor.
@@ -925,8 +928,11 @@ def _ddm_find_first(obj, names: set) -> str:
 
 def _ddm_get_payment_links(iddev: str) -> dict:
     """Busca links de boleto/pix pelo iddev."""
-    url = f"{DDM_BASE}/calc/?tk={DDM_TOKEN}&idDev={iddev}&cli=ddm"
-    r = requests.get(url, timeout=15)
+    r = requests.get(
+        f"{DDM_BASE}/calc/",
+        params={"tk": DDM_TOKEN, "idDev": iddev, "cli": "ddm"},
+        timeout=15,
+    )
     r.raise_for_status()
     data = r.json()
     data_items = data if isinstance(data, list) else [data]
