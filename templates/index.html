@@ -2089,7 +2089,7 @@ function renderImportPreview(data) {
           : r.validation_status === 'pending'
             ? '<span class="debt-no">validando</span>'
             : r.ddm_error
-            ? `<span class="debt-error" title="${escapeHtml(r.ddm_error)}">! erro DDM</span>`
+            ? `<span class="debt-error" title="${escapeHtml(r.ddm_error)}">! ${escapeHtml(r.ddm_error || 'erro DDM')}</span>`
             : '<span class="debt-no">— não</span>'}</td>
       </tr>`).join('');
   }

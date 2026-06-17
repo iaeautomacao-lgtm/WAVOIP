@@ -108,7 +108,8 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
     except Exception as e:
         raise DDMHardError(f"Resposta invalida: {e}")
 
-    if isinstance(raw, dict) and raw.get("ERRO") == "ERRO":
+    erro_ddm = _get_any(raw, "ERRO", "erro") if isinstance(raw, dict) else ""
+    if erro_ddm:
         logger.warning("[DDM_DEBUG] CPF=%s ERRO_GENERICO_RECEBIDO", cpf)
         raise DDMHardError("ERRO_GENERICO_DDM")
 
@@ -117,8 +118,6 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
 
 def _montar_debito(dados: Dict[str, Any]) -> Optional[Dict]:
     idcalc = _find_first(dados, "idcalc", "id_calc", "idCalculo", "calculoId")
-    if not idcalc:
-        return None
 
     lista_parcelas = _safe_dict(_get_any(dados, "ListaParcelas", "lista_parcelas", "parcelas", default={}))
     parcelas_raw = _safe_list(_get_any(lista_parcelas, "Parcelas", "Parcela", "parcelas", default=[]))
