@@ -1402,7 +1402,7 @@ function renderCalls(rows, page, pages, total) {
       const cls  = statusMap[c.status] || 'cs-queued';
       const dur  = c.duration ? `${Math.floor(c.duration/60)}m ${c.duration%60}s` : '—';
       const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
-      const camp = c.campaigns?.name || '—';
+      const camp = c.campaign_id ? `Campanha ${String(c.campaign_id).slice(0,8)}` : '—';
       return `<tr>
         <td class="td-mono" style="color:var(--muted)">${(c.id||'').slice(0,8)}…</td>
         <td>${c.cpf || '—'}<br><span class="td-dim">${camp}</span></td>

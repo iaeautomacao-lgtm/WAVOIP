@@ -479,19 +479,17 @@ def get_calls():
         per_page = int(request.args.get("per_page", 50))
         offset   = (page - 1) * per_page
         result   = supabase.table("campaign_calls").select(
-            "*, campaigns(name)", count="exact"
+            "id, cpf, status, created_at, duration, campaign_id", count="exact"
         ).order("created_at", desc=True).range(offset, offset + per_page - 1).execute()
         rows = []
         for row in (result.data or []):
-            camp = row.get("campaigns") or {}
-            camp_name = camp.get("name") if isinstance(camp, dict) else (camp[0].get("name") if isinstance(camp, list) and camp else None)
             rows.append({
                 "id": row.get("id"),
                 "cpf": row.get("cpf"),
                 "status": row.get("status"),
                 "duration": row.get("duration") or row.get("call_duration"),
                 "created_at": row.get("created_at"),
-                "campaign_name": camp_name,
+                "campaign_id": row.get("campaign_id"),
             })
         return jsonify({
             "ok": True,
