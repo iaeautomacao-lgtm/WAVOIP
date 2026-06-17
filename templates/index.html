@@ -1777,9 +1777,8 @@ function renderDashboardLines(rows) {
 async function saveCampaign() {
   const name = document.getElementById('campaign-name-input').value.trim();
   if (!name) { toast('Digite um nome para a campanha.', 'err'); return; }
-  if (!importSessionId) { toast('Aguarde a validacao DDM terminar.', 'err'); return; }
-  if (!importSessionId && !importRows.filter(r => r.has_debt && r.phone).length) {
-    toast('Nenhum contato com débito e telefone.', 'err'); return;
+  if (!importSessionId && !importRows.filter(r => r.phone).length) {
+    toast('Nenhum contato com telefone.', 'err'); return;
   }
   await ensureLinesLoaded();
   const line_tokens = getSelectedCampaignLines();
@@ -1793,7 +1792,7 @@ async function saveCampaign() {
   try {
     const body = importSessionId
       ? { name, session_id: importSessionId, line_tokens, sip_group_id }
-      : { name, contacts: importRows.filter(r => r.has_debt && r.phone), line_tokens, sip_group_id };
+      : { name, contacts: importRows.filter(r => r.phone), line_tokens, sip_group_id };
     const res  = await fetch(`${API}/api/campaigns`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2062,13 +2061,14 @@ async function pollImportJob(jobId) {
 
 function renderImportPreview(data) {
   const rows = data.rows || [];
-  const pendingCount = rows.filter(r => r.validation_status === 'pending').length;
+  let pendingCount = rows.filter(r => r.validation_status === 'pending').length;
   const errorCount = rows.filter(r => r.ddm_error).length;
   const debtCount = rows.filter(r => r.has_debt).length || data.with_debt || 0;
+  if (pendingCount && !debtCount && !errorCount && data.total > rows.length) pendingCount = data.total;
   const noDebtCount = Math.max(0, (data.total || rows.length || 0) - debtCount - pendingCount - errorCount);
   document.getElementById('imp-total').textContent   = (data.total || 0).toLocaleString('pt-BR');
   document.getElementById('imp-debt').textContent    = debtCount.toLocaleString('pt-BR');
-  document.getElementById('imp-no-debt').textContent = data.validating && pendingCount
+  document.getElementById('imp-no-debt').textContent = pendingCount
     ? `${pendingCount.toLocaleString('pt-BR')} pendentes`
     : (errorCount ? `${noDebtCount.toLocaleString('pt-BR')} / ${errorCount.toLocaleString('pt-BR')} erro DDM` : noDebtCount.toLocaleString('pt-BR'));
   document.getElementById('import-summary').classList.add('visible');

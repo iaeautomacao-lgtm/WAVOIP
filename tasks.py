@@ -615,6 +615,44 @@ def make_call_task(self, campaign_id: str, contact: dict):
     else:
         _update_result(row_id, "erro", None, phones[0], error)
 
+
+def _merge_debito_with_import_meta(row: dict, debito: dict) -> dict:
+    merged = dict(debito or {})
+    imported = row.get("debito_data") if isinstance(row.get("debito_data"), dict) else {}
+    for key in ("all_phones", "email", "imported_id", "iddev", "idcrm", "uf", "cidade", "raw_phone_fallback"):
+        if imported.get(key) and not merged.get(key):
+            merged[key] = imported.get(key)
+    return merged
+
+
+def _validate_debt_before_call(row: dict) -> dict:
+    cpf = row.get("cpf", "")
+    if not cpf:
+        supabase.table("campaign_calls").update({
+            "status": "sem_debito",
+            "error": "ddm: cpf vazio",
+        }).eq("id", row["id"]).execute()
+        return {"ok": False, "reason": "cpf vazio"}
+
+    result = _processar_debito_result(cpf)
+    if not result.get("ok"):
+        supabase.table("campaign_calls").update({
+            "status": "erro",
+            "error": f"ddm: {result.get('error', 'erro DDM')}",
+        }).eq("id", row["id"]).execute()
+        return {"ok": False, "reason": result.get("error", "erro DDM")}
+
+    debito = result.get("debito")
+    if not debito:
+        supabase.table("campaign_calls").update({
+            "status": "sem_debito",
+            "error": "ddm: sem debito antes da chamada",
+        }).eq("id", row["id"]).execute()
+        return {"ok": False, "reason": "sem debito"}
+
+    return {"ok": True, "debito": _merge_debito_with_import_meta(row, debito)}
+
+
 def fill_campaign_capacity(campaign_id: str) -> dict:
     locked, lock_token = _acquire_scheduler_lock()
     if not locked:
@@ -650,17 +688,30 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
                 "selected_lines": len(_campaign_line_tokens(camp)) or len(healthy),
             }
 
+        pending_limit = max(len(slots) * 20, 50)
         pending = supabase.table("campaign_calls") \
             .select("id, cpf, phone, name, debito_data, order_idx, watchdog_retries") \
             .eq("campaign_id", campaign_id) \
             .eq("status", "pendente") \
             .order("order_idx") \
-            .limit(len(slots)) \
+            .limit(pending_limit) \
             .execute().data or []
 
         fired = 0
-        for row, line in zip(pending, slots):
-            debito = _with_dialer_meta(row.get("debito_data") or {}, line)
+        skipped = 0
+        slot_index = 0
+        for row in pending:
+            if slot_index >= len(slots):
+                break
+
+            validation = _validate_debt_before_call(row)
+            if not validation.get("ok"):
+                skipped += 1
+                continue
+
+            line = slots[slot_index]
+            slot_index += 1
+            debito = _with_dialer_meta(validation.get("debito") or {}, line)
             meta = debito["_dialer"]
             update = {
                 "status": "enfileirado",
@@ -695,12 +746,17 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
                 "fired": (camp.get("fired") or 0) + fired,
                 "updated_at": "now()",
             }).eq("id", campaign_id).execute()
+        elif skipped and len(pending) >= pending_limit:
+            fill_campaign_capacity_task.apply_async(args=[campaign_id], countdown=2)
+        elif skipped:
+            _check_campaign_completion(campaign_id)
         elif not pending:
             _check_campaign_completion(campaign_id)
 
         return {
             "ok": True,
             "fired": fired,
+            "skipped": skipped,
             "capacity": capacity,
             "active": active + fired,
             "healthy_lines": len(healthy),
@@ -1563,28 +1619,27 @@ def _process_dataframe(job_id: str, df, fname: str):
 
     _set_import_rows(job_id, pending_rows)
     _set_import_state(job_id, {
-        "status": "validating",
+        "status": "done",
         "total": len(pending_rows),
-        "processed": 0,
+        "processed": len(pending_rows),
         "with_debt": 0,
         "sample": pending_rows[:200],
     })
 
     try:
         supabase.table("import_jobs").update({
-            "status": "validating",
+            "status": "done",
             "total": len(pending_rows),
-            "processed": 0,
+            "processed": len(pending_rows),
             "with_debt": 0,
             "result": {
                 "sample": pending_rows[:200],
                 "source": "redis",
+                "validation_mode": "before_call",
             },
         }).eq("id", job_id).execute()
     except Exception:
         pass
-
-    validate_import_ddm_task.apply_async(args=[job_id], queue="imports")
 
 
 def _validate_import_rows(job_id: str):

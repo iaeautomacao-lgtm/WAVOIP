@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from supabase import create_client, Client
-from tasks import process_file, process_import_from_storage, formalizar_acordo, fill_campaign_capacity, fill_campaign_capacity_task
+from tasks import process_file, process_import_from_storage, formalizar_acordo, fill_campaign_capacity, fill_campaign_capacity_task, _get_import_rows
 
 app = Flask(__name__)
 CORS(app)
@@ -719,14 +719,16 @@ def create_campaign():
             if not job:
                 return jsonify({"ok": False, "error": "Sessão não encontrada"}), 404
             if job[0].get("status") != "done":
-                return jsonify({"ok": False, "error": "Importacao ainda validando DDM"}), 400
-            result_rows = job[0].get("result") or []
+                return jsonify({"ok": False, "error": "Importacao ainda processando"}), 400
+            result_rows = _get_import_rows(session_id)
+            if not result_rows:
+                result_rows = job[0].get("result") or []
             if isinstance(result_rows, dict):
-                result_rows = result_rows.get("rows") or []
-            contacts = [r for r in result_rows if r.get("has_debt") and r.get("phone")]
+                result_rows = result_rows.get("rows") or result_rows.get("sample") or []
+            contacts = [r for r in result_rows if r.get("phone")]
 
         if not contacts:
-            return jsonify({"ok": False, "error": "Nenhum contato com débito e telefone"}), 400
+            return jsonify({"ok": False, "error": "Nenhum contato com telefone"}), 400
 
         camp_payload = {
             "name":   name,
@@ -745,15 +747,21 @@ def create_campaign():
 
         campaign_id = camp["id"]
 
-        rows = [{
-            "campaign_id": campaign_id,
-            "cpf":         c.get("cpf", ""),
-            "phone":       c.get("phone", "").strip(),
-            "name":        c.get("name", ""),
-            "status":      "pendente",
-            "order_idx":   i,
-            "debito_data": c.get("debito"),
-        } for i, c in enumerate(contacts)]
+        rows = []
+        for i, c in enumerate(contacts):
+            debito = c.get("debito") if isinstance(c.get("debito"), dict) else {}
+            meta = c.get("meta") if isinstance(c.get("meta"), dict) else {}
+            if meta:
+                debito = {**debito, **meta}
+            rows.append({
+                "campaign_id": campaign_id,
+                "cpf":         c.get("cpf", ""),
+                "phone":       c.get("phone", "").strip(),
+                "name":        c.get("name", ""),
+                "status":      "pendente",
+                "order_idx":   i,
+                "debito_data": debito,
+            })
 
         for i in range(0, len(rows), 500):
             supabase.table("campaign_calls").insert(rows[i:i+500]).execute()
