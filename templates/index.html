@@ -857,6 +857,11 @@
       </div>
 
       <div class="dashboard-grid">
+        <div class="dash-panel" style="min-width:0">
+          <div class="dash-panel-head"><span class="dash-panel-title">Desempenho por campanha</span></div>
+          <div style="padding:10px 12px 10px 12px; color:var(--muted)">Visão executiva do resultado atual.</div>
+          <div id="campaign-viz" style="display:grid; gap:10px; padding: 0 12px 12px;"></div>
+        </div>
         <div class="dash-panel">
           <div class="dash-panel-head"><span class="dash-panel-title">Alertas de SIP</span></div>
           <div class="alert-list" id="dashboard-alerts">
@@ -1627,6 +1632,7 @@ function renderDashboard(data) {
   document.getElementById('dash-formalized').textContent = totals.formalized || 0;
   document.getElementById('dash-errors').textContent     = totals.errors || 0;
   renderDashboardAlerts();
+  renderCampaignViz(data.campaigns || []);
   renderDashboardGroupsReport(data.groups_report || []);
   renderDashboardCampaigns(data.campaigns || []);
   renderDashboardLines(data.lines || []);
@@ -1672,6 +1678,48 @@ function renderDashboardCampaigns(rows) {
       <td><button class="call-btn" onclick="openCampaignLinesModal('${c.id}')">SIPs</button></td>
     </tr>
   `).join('');
+}
+
+function renderCampaignViz(rows) {
+  const wrap = document.getElementById('campaign-viz');
+  if (!wrap) return;
+  if (!rows.length) {
+    wrap.innerHTML = '<div style="color:var(--muted)">Sem campanhas.</div>';
+    return;
+  }
+  const maxTotal = rows.reduce((m, r) => Math.max(m, r.total || 0), 1);
+  const bar = (val, max, cls) => {
+    if (!max) return '<div class="hv" style="height:6px;background:rgba(255,255,255,.08);"></div>';
+    const pct = Math.round((val / max) * 100);
+    const color = cls === 'answered' ? 'var(--green)' : cls === 'formalized' ? 'var(--brand)' : cls === 'errors' ? '#e74c3c' : '#d1d5db';
+    return `<div style="display:flex;align-items:center;gap:8px">
+      <div class="hv" style="flex:1;height:8px;background:rgba(255,255,255,.06);border-radius:999px;overflow:hidden">
+        <div style="width:${pct}%;background:${color};height:100%;border-radius:999px;opacity:.9"></div>
+      </div>
+      <span class="td-dim" style="width:28px;text-align:right">${val}</span>
+    </div>`;
+  };
+  wrap.innerHTML = rows.map(c => {
+    const name = escapeHtml(c.name || '—');
+    const answered = c.answered || 0;
+    const formalized = c.formalized || 0;
+    const errors = c.errors || 0;
+    const total = c.total || 0;
+    return `<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);padding:10px 12px;border-radius:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
+        <div style="font-weight:600;font-size:.92rem;color:var(--text)">${name}</div>
+        <div class="td-dim" style="display:flex; gap:10px;font-size:.8rem">
+          <span>Total <b style="color:var(--text)">${total}</b></span>
+          <span>Atendidas <b style="color:var(--green)">${answered}</b></span>
+          <span>Formalizadas <b style="color:var(--brand)">${formalized}</b></span>
+          <span>Erros <b style="color:#e74c3c">${errors}</b></span>
+        </div>
+      </div>
+      ${bar(answered, maxTotal, 'answered')}
+      ${bar(formalized, maxTotal, 'formalized')}
+      ${bar(errors, maxTotal, 'errors')}
+    </div>`;
+  }).join('');
 }
 
 function renderDashboardGroupsReport(rows) {
