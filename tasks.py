@@ -433,7 +433,7 @@ def vapi_call(
 
 def _norm_cpf(cpf) -> str:
     try:
-        s = re.sub(r'\D', '', str(cpf) if cpfe else '')
+        s = re.sub(r'\D', '', str(cpf))
     except Exception:
         s = ''
     return s.zfill(11) if s else ""
@@ -457,6 +457,11 @@ def _first_phone(row, cols: list) -> str:
         if val and val.lower() != "nan":
             return val
     return ""
+
+
+def _first_phone_hires(row, cols: list) -> str:
+    """Mesmo acesso do parser principal, mantendo nome compatível para o backend."""
+    return _first_phone(row, cols)
 
 
 def _all_phones_ddm(row, cols: list) -> list:
@@ -1469,81 +1474,86 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
 
 def _process_dataframe(job_id: str, df, fname: str):
     """
-    Núcleo de processamento — compartilhado entre process_file e process_import_from_storage.
-    Detecta automaticamente se é planilha DDM (tem VAL_ATUALIZADO_AVISTA) ou formato genérico.
+    Padroniza a planilha para CPF + NOME + identificador + telefone,
+    independentemente do layout original.
     """
     import pandas as pd
 
-    df.columns = [c.strip().lower() for c in df.columns]
-    cols = list(df.columns)
+    df.columns = [str(c).strip() for c in df.columns]
+    cols_lower = [c.lower() for c in df.columns]
 
-    cpf_col  = next((c for c in cols if "cpf" in c or "cpfcgc" in c), None)
-    nome_col = next((c for c in cols if "nome" in c or "name" in c), None)
-    val_col  = next((c for c in cols if "val_atualizado" in c or "val_nominal" in c), None)
-    is_ddm   = val_col is not None
+    def first_col(candidates):
+        for cand in candidates:
+            for c, cl in zip(df.columns, cols_lower):
+                if cand in cl:
+                    return c
+        return None
+
+    cpf_col = first_col(["cpf", "cpfcgc"])
+    nome_col = first_col(["nome", "name"])
+    id_col = first_col(["matricula", "id", "externo", "cliente id", "cliente_id"])
+    phone_col = first_col(
+        ["fone", "fone1", "fone2", "fone3", "tel", "telefone", "celular", "phone", "contato", "whatsapp"]
+    )
+    val_col = first_col(["val_atualizado", "val_nominal"])
+    is_ddm = val_col is not None
 
     if not cpf_col or not nome_col:
-        _set_job_error(job_id, f"Colunas obrigatórias não encontradas. Colunas detectadas: {cols}")
+        _set_job_error(job_id, f"Colunas obrigatórias não encontradas. Colunas detectadas: {list(df.columns)}")
         return
 
-    pending = []
+    pending_rows = []
     for idx, r in df.iterrows():
-        # Converte row para dict simples garantindo que todos os valores sao strings
-        r = {k: (str(v) if not isinstance(v, (list, dict)) else "") for k, v in r.items()}
-        cpf_raw  = str(r.get(cpf_col, "") or "").strip()
-        cpf_norm = _norm_cpf(cpf_raw)
+        row = {str(k): ("" if pd.isna(v) else str(v).strip()) for k, v in r.items()}
+        cpf_norm = _norm_cpf(row.get(cpf_col, ""))
         if not cpf_norm:
             continue
 
-        nome = str(r.get(nome_col, "") or "").strip()
-
+        nome = row.get(nome_col, "").strip() or ""
         if is_ddm:
-            # Planilha DDM traz telefones/metadados, mas o debito precisa ser validado online.
-            phones = _all_phones_ddm(r, cols)
-            phone  = phones[0] if phones else ""
+            phones = _all_phones_ddm(row, list(df.columns))
+            phone = phones[0] if phones else ""
             meta = {
-                "planilha_carteira": str(r.get("carteira", "") or "").strip(),
-                "iddev":             str(r.get("iddev", "") or "").strip(),
-                "idcrm":             str(r.get("idcrm", "") or "").strip(),
-                "uf":                str(r.get("uf", "") or "").strip(),
-                "cidade":            str(r.get("cidade", "") or "").strip(),
-                "all_phones":        phones,
-                "email":             str(r.get("email", "") or "").strip(),
+                "planilha_carteira": row.get("carteira", "").strip(),
+                "iddev": row.get("iddev", "").strip(),
+                "idcrm": row.get("idcrm", "").strip(),
+                "uf": row.get("uf", "").strip(),
+                "cidade": row.get("cidade", "").strip(),
+                "all_phones": phones,
+                "email": row.get("email", "").strip(),
             }
-
+            if phone_col and phone_col in row:
+                meta["raw_phone_fallback"] = row.get(phone_col, "").strip()
         else:
-            # ── Planilha genérica: consulta API DDM por CPF ─────────────────────
-            phone  = _first_phone(r, cols)
+            phone = _first_phone_hires(row, list(df.columns)) if phone_col else ""
             meta = {}
 
-        if phone:
-            pending.append({
-                "idx": idx,
-                "cpf": cpf_norm,
-                "name": nome,
-                "phone": phone,
-                "meta": meta,
-            })
+        if not phone:
+            continue
 
-    total = len(pending)
-    pending_rows = []
-    for item in pending:
+        meta_id = ""
+        if id_col and id_col in row:
+            meta_id = row.get(id_col, "").strip()
+
         pending_rows.append({
-            "idx": item["idx"],
-            "cpf": item["cpf"],
-            "name": item["name"],
-            "phone": item["phone"],
+            "idx": idx,
+            "cpf": cpf_norm,
+            "name": nome,
+            "phone": phone,
             "has_debt": False,
             "debito": None,
             "ddm_error": "",
             "validation_status": "pending",
-            "meta": item.get("meta") or {},
+            "meta": {
+                "imported_id": meta_id,
+                **(meta if isinstance(meta, dict) else {}),
+            },
         })
 
     _set_import_rows(job_id, pending_rows)
     _set_import_state(job_id, {
         "status": "validating",
-        "total": total,
+        "total": len(pending_rows),
         "processed": 0,
         "with_debt": 0,
         "sample": pending_rows[:200],
@@ -1551,11 +1561,11 @@ def _process_dataframe(job_id: str, df, fname: str):
 
     try:
         supabase.table("import_jobs").update({
-            "status":    "validating",
-            "total":     total,
+            "status": "validating",
+            "total": len(pending_rows),
             "processed": 0,
             "with_debt": 0,
-            "result":    {
+            "result": {
                 "sample": pending_rows[:200],
                 "source": "redis",
             },
