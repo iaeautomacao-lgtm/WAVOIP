@@ -25,18 +25,6 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _normalize_campaign(row: dict) -> dict:
-    if not isinstance(row, dict):
-        return row
-    if row.get("name") is None and row.get("nome") is not None:
-        row["name"] = row.get("nome")
-    return row
-
-
-def _normalize_campaigns(rows) -> list:
-    return [_normalize_campaign(dict(row)) for row in (rows or [])]
-
-
 WAVOIP_EMAIL      = env("WAVOIP_EMAIL")
 WAVOIP_PASSWORD   = env("WAVOIP_PASSWORD")
 WAVOIP_BASE       = "https://api.wavoip.com"
@@ -512,10 +500,9 @@ def get_calls():
         name_map = {}
         if camp_ids:
             try:
-                camps = supabase.table("campaigns").select("*").in_("id", list(camp_ids)).execute().data or []
-                camps = _normalize_campaigns(camps)
+                camps = supabase.table("campaigns").select("id, name").in_("id", list(camp_ids)).execute().data or []
                 for c in camps:
-                    name_map[str(c.get("id"))] = c.get("name") or c.get("nome")
+                    name_map[str(c.get("id"))] = c.get("name")
             except Exception:
                 pass
         for r in rows:
@@ -548,13 +535,12 @@ def make_call():
 def monitor():
     try:
         camps = supabase.table("campaigns")\
-            .select("*").eq("status", "em_andamento").execute().data
-        camps = _normalize_campaigns(camps)
+            .select("id, name").eq("status", "em_andamento").execute().data
         if not camps:
             return jsonify({"ok": True, "data": [], "stats": {"em_andamento": 0, "atendido": 0, "erro": 0}})
 
         camp_ids = [c["id"] for c in camps]
-        camp_map = {c["id"]: c.get("name") or c.get("nome") or "" for c in camps}
+        camp_map = {c["id"]: c["name"] for c in camps}
 
         result = supabase.table("campaign_calls")\
             .select("*")\
@@ -593,7 +579,7 @@ def list_campaigns():
     try:
         result = supabase.table("campaigns")\
             .select("*").order("created_at", desc=True).execute()
-        return jsonify({"ok": True, "data": _normalize_campaigns(result.data)})
+        return jsonify({"ok": True, "data": result.data})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -603,7 +589,6 @@ def dashboard_summary():
     try:
         campaigns = supabase.table("campaigns")\
             .select("*").order("created_at", desc=True).limit(100).execute().data or []
-        campaigns = _normalize_campaigns(campaigns)
         calls = supabase.table("campaign_calls")\
             .select("*").order("created_at", desc=True).limit(5000).execute().data or []
 
@@ -649,7 +634,7 @@ def dashboard_summary():
             camp_formalized = sum(1 for r in rows if r.get("id") in formalized_call_ids)
             by_campaign.append({
                 "id": camp.get("id"),
-                "name": camp.get("name") or camp.get("nome"),
+                "name": camp.get("name"),
                 "status": camp.get("status"),
                 "line_tokens": camp.get("line_tokens") or [],
                 "sip_group_id": camp.get("sip_group_id") or "",
@@ -746,10 +731,9 @@ def create_campaign():
             return jsonify({"ok": False, "error": "Nenhum contato com telefone"}), 400
 
         camp_payload = {
-            "nome": name,
-            "mensagem_base": (body.get("mensagem_base") or "Contato gerado pelo CallOps para validacao DDM antes da discagem.").strip(),
+            "name":   name,
             "status": "rascunho",
-            "total": len(contacts),
+            "total":  len(contacts),
             "line_tokens": line_tokens,
         }
         if sip_group_id:
@@ -757,11 +741,9 @@ def create_campaign():
         try:
             camp = supabase.table("campaigns").insert(camp_payload).execute().data[0]
         except Exception:
-            camp_payload.pop("total", None)
             camp_payload.pop("line_tokens", None)
             camp_payload.pop("sip_group_id", None)
             camp = supabase.table("campaigns").insert(camp_payload).execute().data[0]
-        camp = _normalize_campaign(camp)
 
         campaign_id = camp["id"]
 

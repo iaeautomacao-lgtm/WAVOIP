@@ -794,7 +794,7 @@ def campaign_watchdog():
 
     try:
         camps = supabase.table("campaigns") \
-            .select("*") \
+            .select("id, name, status, total, finished") \
             .eq("status", "em_andamento") \
             .execute().data
 
