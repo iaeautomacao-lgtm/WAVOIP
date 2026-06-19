@@ -742,10 +742,15 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
             fired += 1
 
         if fired:
-            supabase.table("campaigns").update({
-                "fired": (camp.get("fired") or 0) + fired,
-                "updated_at": "now()",
-            }).eq("id", campaign_id).execute()
+            try:
+                supabase.table("campaigns").update({
+                    "fired": (camp.get("fired") or 0) + fired,
+                    "updated_at": "now()",
+                }).eq("id", campaign_id).execute()
+            except Exception:
+                supabase.table("campaigns").update({
+                    "updated_at": "now()",
+                }).eq("id", campaign_id).execute()
         elif skipped and len(pending) >= pending_limit:
             fill_campaign_capacity_task.apply_async(args=[campaign_id], countdown=2)
         elif skipped:
@@ -789,7 +794,7 @@ def campaign_watchdog():
 
     try:
         camps = supabase.table("campaigns") \
-            .select("id, name, status, total, finished") \
+            .select("*") \
             .eq("status", "em_andamento") \
             .execute().data
 

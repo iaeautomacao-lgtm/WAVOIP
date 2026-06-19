@@ -16,7 +16,6 @@ class DDMSoftError(Exception):
     """Erro transitório: timeout, 429, 5xx."""
     pass
 
-
 class DDMHardError(Exception):
     """Erro definitivo: 401/403, resposta inválida."""
     pass
