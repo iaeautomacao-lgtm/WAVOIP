@@ -1055,6 +1055,9 @@ function renderLines(lines) {
       </div>
       <div class="line-meta">Chamadas: <b>${l.calls_made ?? 0}</b></div>
       <div class="line-slot-meta">Slots: <b>${l.active_calls ?? 0}</b> / ${l.max_concurrent ?? 2}</div>
+      <div class="line-slot-meta">Env: <b>${l.env_name || '—'}</b></div>
+      <div class="line-slot-meta">Vapi: <b>${l.phone_number_short || '—'}</b></div>
+      <div class="line-slot-meta" title="${l.token || ''}">Token: <b>${(l.token || '').slice(0, 8)}...</b></div>
       ${l.pause_reason ? `<div class="line-slot-meta">Motivo: ${l.pause_reason}</div>` : ''}
       <div class="line-controls">
         ${l.paused

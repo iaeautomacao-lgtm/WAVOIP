@@ -50,6 +50,14 @@ WAVOIP_VAPI_MAP = {
     "8d739b23-77ed-4eb7-b807-e81270eb4ddb": env("VAPI_PHONE_NUMBER_ID_5"),
 }
 
+WAVOIP_ENV_MAP = {
+    "88b232ad-5c1d-404f-8652-f5399e6a6f51": "VAPI_PHONE_NUMBER_ID_1",
+    "ed49616d-fb19-46df-96b8-decab4cde3cf": "VAPI_PHONE_NUMBER_ID_2",
+    "c8af8686-ca83-4eef-b757-f53940426011": "VAPI_PHONE_NUMBER_ID_3",
+    "49d7328f-13ab-469f-b8a9-b7eb2b713f43": "VAPI_PHONE_NUMBER_ID_4",
+    "8d739b23-77ed-4eb7-b807-e81270eb4ddb": "VAPI_PHONE_NUMBER_ID_5",
+}
+
 DEVICE_PRIORITY = [
     "88b232ad-5c1d-404f-8652-f5399e6a6f51",
     "ed49616d-fb19-46df-96b8-decab4cde3cf",
@@ -358,6 +366,8 @@ def get_lines():
             "needs_restart":   (device_map.get(t) or {}).get("needs_restart"),
             "token":           t,
             "phone_number_id": WAVOIP_VAPI_MAP.get(t) or "",
+            "phone_number_short": ((WAVOIP_VAPI_MAP.get(t) or "")[:8] + "...") if WAVOIP_VAPI_MAP.get(t) else "",
+            "env_name":        WAVOIP_ENV_MAP.get(t) or "",
             "configured":      bool(WAVOIP_VAPI_MAP.get(t)),
             "max_concurrent":  LINE_MAX_CONCURRENT,
             "active_calls":    active_counts.get(t, 0),
