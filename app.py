@@ -38,6 +38,7 @@ SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
 SUPABASE_BUCKET   = env("SUPABASE_BUCKET", "imports")
 REDIS_URL         = env("REDIS_URL", "redis://localhost:6379/0")
 LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "2")))
+LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -108,6 +109,17 @@ def redis_client():
     return _redis_client
 
 
+def _line_cooldown_key(line_token: str) -> str:
+    return f"dialer:line_cooldown:{line_token}"
+
+
+def _is_line_in_cooldown(line_token: str) -> bool:
+    try:
+        return bool(redis_client().exists(_line_cooldown_key(line_token)))
+    except Exception:
+        return False
+
+
 def _import_state_key(job_id: str) -> str:
     return f"import_job:{job_id}"
 
@@ -157,6 +169,7 @@ def get_healthy_lines() -> list:
     for t in DEVICE_PRIORITY:
         if t not in device_map:          continue
         if (overrides.get(t) or {}).get("paused"): continue
+        if _is_line_in_cooldown(t):      continue
         d = device_map[t]
         if d.get("status") != "open":   continue
         if d.get("disabled") != 0:      continue
@@ -356,6 +369,7 @@ def get_lines():
         device_map = {d.get("token"): d for d in devices}
         active_counts = _active_line_counts(DEVICE_PRIORITY)
         overrides = _line_overrides_map()
+        cooldowns = {t: _is_line_in_cooldown(t) for t in DEVICE_PRIORITY}
         lines   = [{
             "id":              (device_map.get(t) or {}).get("id"),
             "name":            (device_map.get(t) or {}).get("name") or f"Linha {idx + 1}",
@@ -374,11 +388,13 @@ def get_lines():
             "free_slots":      max(0, LINE_MAX_CONCURRENT - active_counts.get(t, 0)),
             "paused":          bool((overrides.get(t) or {}).get("paused")),
             "pause_reason":    (overrides.get(t) or {}).get("reason", ""),
+            "cooldown":        bool(cooldowns.get(t)),
             "healthy":         t in device_map
                                and (device_map[t].get("status") == "open")
                                and device_map[t].get("disabled") == 0
                                and device_map[t].get("phone") is not None
                                and bool(WAVOIP_VAPI_MAP.get(t))
+                               and not bool(cooldowns.get(t))
                                and not bool((overrides.get(t) or {}).get("paused")),
         } for idx, t in enumerate(DEVICE_PRIORITY)]
         return jsonify({"ok": True, "data": lines})

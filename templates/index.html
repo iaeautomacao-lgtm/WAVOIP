@@ -1052,6 +1052,7 @@ function renderLines(lines) {
         ${l.needs_restart ? '<span class="tag tag-amber">restart</span>' : ''}
         ${l.configured ? '<span class="tag tag-brand">vapi</span>' : '<span class="tag tag-red">sem vapi</span>'}
         ${l.paused ? '<span class="tag tag-amber">pausada</span>' : ''}
+        ${l.cooldown ? '<span class="tag tag-amber">cooldown</span>' : ''}
       </div>
       <div class="line-meta">Chamadas: <b>${l.calls_made ?? 0}</b></div>
       <div class="line-slot-meta">Slots: <b>${l.active_calls ?? 0}</b> / ${l.max_concurrent ?? 2}</div>
