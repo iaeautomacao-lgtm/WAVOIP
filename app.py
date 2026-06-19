@@ -746,9 +746,10 @@ def create_campaign():
             return jsonify({"ok": False, "error": "Nenhum contato com telefone"}), 400
 
         camp_payload = {
-            "nome":   name,
+            "nome": name,
+            "mensagem_base": (body.get("mensagem_base") or "Contato gerado pelo CallOps para validacao DDM antes da discagem.").strip(),
             "status": "rascunho",
-            "total":  len(contacts),
+            "total": len(contacts),
             "line_tokens": line_tokens,
         }
         if sip_group_id:
