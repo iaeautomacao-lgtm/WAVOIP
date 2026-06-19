@@ -1544,7 +1544,17 @@ async function startCampaign(id) {
     const res  = await fetch(`${API}/api/campaigns/${id}/start`, { method: 'POST' });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error);
-    toast(`▶ Campanha iniciada — ${json.fired} disparadas agora`, 'ok');
+    if ((json.fired || 0) > 0) {
+      toast(`Campanha iniciada - ${json.fired} disparada(s) agora`, 'ok');
+    } else if (json.locked) {
+      toast('Campanha em andamento - scheduler ocupado, nova tentativa agendada.', 'warn');
+    } else if ((json.healthy_lines || 0) === 0) {
+      toast('Campanha em andamento, mas sem SIP saudável disponível.', 'warn');
+    } else if ((json.skipped || 0) > 0) {
+      toast(`Campanha em andamento - ${json.skipped} contato(s) sem débito/erro DDM.`, 'warn');
+    } else {
+      toast('Campanha em andamento, sem disparos novos agora.', 'warn');
+    }
     loadCampaigns();
   } catch(e) {
     toast(`Erro: ${e.message}`, 'err');

@@ -841,12 +841,11 @@ def start_campaign(campaign_id):
             return jsonify({"ok": False, "error": "Campanha não encontrada"}), 404
         camp = camp[0]
 
-        if camp["status"] == "em_andamento":
-            return jsonify({"ok": False, "error": "Campanha já em andamento"}), 400
-
-        supabase.table("campaigns").update({
-            "status": "em_andamento", "updated_at": "now()"
-        }).eq("id", campaign_id).execute()
+        already_running = camp["status"] == "em_andamento"
+        if not already_running:
+            supabase.table("campaigns").update({
+                "status": "em_andamento", "updated_at": "now()"
+            }).eq("id", campaign_id).execute()
 
         pending_count = supabase.table("campaign_calls")\
             .select("id", count="exact")\
@@ -861,9 +860,14 @@ def start_campaign(campaign_id):
         result = fill_campaign_capacity(campaign_id)
         if not result.get("ok"):
             return jsonify({"ok": False, "error": result.get("error", "erro ao iniciar campanha")}), 500
+        if result.get("locked"):
+            fill_campaign_capacity_task.apply_async(args=[campaign_id], countdown=2)
 
         return jsonify({
             "ok": True,
+            "already_running": already_running,
+            "locked": bool(result.get("locked")),
+            "skipped": result.get("skipped", 0),
             "fired": result.get("fired", 0),
             "capacity": result.get("capacity", 0),
             "active": result.get("active", 0),
