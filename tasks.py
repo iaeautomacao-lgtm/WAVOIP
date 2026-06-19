@@ -6,6 +6,7 @@ import uuid
 import json
 import requests
 import threading
+from decimal import Decimal, InvalidOperation
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -363,10 +364,10 @@ def vapi_call(
     phone_number_id: str = "",
     line_name: str = "",
 ) -> Dict:
-    digits = ''.join(filter(str.isdigit, phone))
-    if not digits.startswith("55"):
-        digits = "55" + digits
-    phone_e164 = "+" + digits
+    phone_e164 = _phone_e164(phone)
+    digits = re.sub(r"\D", "", phone_e164)
+    if len(digits) < 12:
+        raise Exception(f"telefone invalido: {phone}")
 
     healthy = get_healthy_lines()
     if not healthy:
@@ -444,6 +445,33 @@ def _norm_cpf(cpf) -> str:
     return s.zfill(11) if s else ""
 
 
+def _normalize_phone(phone) -> str:
+    raw = str(phone or "").strip()
+    if not raw or raw.lower() == "nan":
+        return ""
+
+    value = raw.replace(" ", "")
+    if re.search(r"e[+-]?\d+$", value, re.IGNORECASE):
+        try:
+            value = str(int(Decimal(value.replace(",", "."))))
+        except (InvalidOperation, ValueError):
+            pass
+
+    digits = re.sub(r"\D", "", value)
+    if digits.endswith("0") and re.search(r"\.0+$", value):
+        digits = digits[:-1]
+    return digits
+
+
+def _phone_e164(phone) -> str:
+    digits = _normalize_phone(phone)
+    if not digits:
+        return ""
+    if not digits.startswith("55"):
+        digits = "55" + digits
+    return "+" + digits
+
+
 def _first_phone(row, cols: list) -> str:
     """Busca o primeiro telefone válido com variações comuns de planilhas legadas."""
     candidates = [
@@ -458,7 +486,7 @@ def _first_phone(row, cols: list) -> str:
         key = cols_lower.get(cand.lower())
         if key is None:
             continue
-        val = str(row.get(key, "") or "").strip()
+        val = _normalize_phone(row.get(key, ""))
         if val and val.lower() != "nan":
             return val
     return ""
@@ -475,7 +503,7 @@ def _all_phones_ddm(row, cols: list) -> list:
     for i in range(1, 11):
         for key in (f"fone{i}", f"telefone{i}", f"tel{i}", f"phone{i}"):
             if key in [c.lower() for c in cols]:
-                val = str(row.get(key, "") or "").strip()
+                val = _normalize_phone(row.get(key, ""))
                 if val and val != "nan" and val not in phones:
                     phones.append(val)
     return phones

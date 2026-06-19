@@ -7,6 +7,7 @@ import time
 import uuid
 import json
 import logging
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
@@ -62,6 +63,33 @@ _wavoip_token    = None
 _wavoip_token_ts = 0
 TOKEN_TTL        = 600
 _redis_client    = None
+
+
+def _normalize_phone(phone) -> str:
+    raw = str(phone or "").strip()
+    if not raw or raw.lower() == "nan":
+        return ""
+
+    value = raw.replace(" ", "")
+    if re.search(r"e[+-]?\d+$", value, re.IGNORECASE):
+        try:
+            value = str(int(Decimal(value.replace(",", "."))))
+        except (InvalidOperation, ValueError):
+            pass
+
+    digits = re.sub(r"\D", "", value)
+    if digits.endswith("0") and re.search(r"\.0+$", value):
+        digits = digits[:-1]
+    return digits
+
+
+def _phone_e164(phone) -> str:
+    digits = _normalize_phone(phone)
+    if not digits:
+        return ""
+    if not digits.startswith("55"):
+        digits = "55" + digits
+    return "+" + digits
 
 
 def redis_client():
@@ -211,10 +239,10 @@ def _group_map() -> dict:
 
 def vapi_call(phone: str) -> dict:
     global _round_robin_idx
-    digits = ''.join(filter(str.isdigit, phone))
-    if not digits.startswith("55"):
-        digits = "55" + digits
-    phone_e164 = "+" + digits
+    phone_e164 = _phone_e164(phone)
+    digits = re.sub(r"\D", "", phone_e164)
+    if len(digits) < 12:
+        raise Exception(f"telefone invalido: {phone}")
 
     try:
         healthy = get_healthy_lines()
