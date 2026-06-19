@@ -44,25 +44,25 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 WAVOIP_VAPI_MAP = {
-    "88b232ad-5c1d-404f-8652-f5399e6a6f51": env("VAPI_PHONE_NUMBER_ID_1"),
-    "ed49616d-fb19-46df-96b8-decab4cde3cf": env("VAPI_PHONE_NUMBER_ID_2"),
-    "c8af8686-ca83-4eef-b757-f53940426011": env("VAPI_PHONE_NUMBER_ID_3"),
+    "ed49616d-fb19-46df-96b8-decab4cde3cf": env("VAPI_PHONE_NUMBER_ID_1"),
+    "c8af8686-ca83-4eef-b757-f53940426011": env("VAPI_PHONE_NUMBER_ID_2"),
+    "88b232ad-5c1d-404f-8652-f5399e6a6f51": env("VAPI_PHONE_NUMBER_ID_3"),
     "49d7328f-13ab-469f-b8a9-b7eb2b713f43": env("VAPI_PHONE_NUMBER_ID_4"),
     "8d739b23-77ed-4eb7-b807-e81270eb4ddb": env("VAPI_PHONE_NUMBER_ID_5"),
 }
 
 WAVOIP_ENV_MAP = {
-    "88b232ad-5c1d-404f-8652-f5399e6a6f51": "VAPI_PHONE_NUMBER_ID_1",
-    "ed49616d-fb19-46df-96b8-decab4cde3cf": "VAPI_PHONE_NUMBER_ID_2",
-    "c8af8686-ca83-4eef-b757-f53940426011": "VAPI_PHONE_NUMBER_ID_3",
+    "ed49616d-fb19-46df-96b8-decab4cde3cf": "VAPI_PHONE_NUMBER_ID_1",
+    "c8af8686-ca83-4eef-b757-f53940426011": "VAPI_PHONE_NUMBER_ID_2",
+    "88b232ad-5c1d-404f-8652-f5399e6a6f51": "VAPI_PHONE_NUMBER_ID_3",
     "49d7328f-13ab-469f-b8a9-b7eb2b713f43": "VAPI_PHONE_NUMBER_ID_4",
     "8d739b23-77ed-4eb7-b807-e81270eb4ddb": "VAPI_PHONE_NUMBER_ID_5",
 }
 
 DEVICE_PRIORITY = [
-    "88b232ad-5c1d-404f-8652-f5399e6a6f51",
     "ed49616d-fb19-46df-96b8-decab4cde3cf",
     "c8af8686-ca83-4eef-b757-f53940426011",
+    "88b232ad-5c1d-404f-8652-f5399e6a6f51",
     "49d7328f-13ab-469f-b8a9-b7eb2b713f43",
     "8d739b23-77ed-4eb7-b807-e81270eb4ddb",
 ]
