@@ -1393,8 +1393,8 @@ def formalizar_acordo(self, dados: dict):
                 "vapi_call_id":    vapi_call_id,
                 "campaign_call_id": campaign_call_id,
             }).execute()
-        except Exception:
-            pass  # tabela pode não existir ainda
+        except Exception as e:
+            logger.error(f"[FORMALIZAR] erro ao salvar no Supabase: {e}")
 
         return {
             "ok":            True,
