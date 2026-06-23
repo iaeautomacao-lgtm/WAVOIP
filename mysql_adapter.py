@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, List, Tuple
+from urllib.parse import urlparse, unquote
 
 import pymysql
 from pymysql.cursors import DictCursor
@@ -47,18 +48,31 @@ def create_client(*_args, **_kwargs):
 
 class MySQLClient:
     def __init__(self):
+        url_config = self._config_from_url(env("MYSQL_URL") or env("DATABASE_URL"))
         self.config = {
-            "host": env("MYSQL_HOST", "localhost"),
-            "port": env_int("MYSQL_PORT", 3306),
-            "user": env("MYSQL_USER", "root"),
-            "password": env("MYSQL_PASSWORD"),
-            "database": env("MYSQL_DATABASE", "wavoip"),
+            "host": env("MYSQL_HOST") or env("MYSQLHOST") or url_config.get("host") or "localhost",
+            "port": env_int("MYSQL_PORT", env_int("MYSQLPORT", url_config.get("port", 3306))),
+            "user": env("MYSQL_USER") or env("MYSQLUSER") or url_config.get("user") or "root",
+            "password": env("MYSQL_PASSWORD") or env("MYSQLPASSWORD") or url_config.get("password") or "",
+            "database": env("MYSQL_DATABASE") or env("MYSQLDATABASE") or url_config.get("database") or "wavoip",
             "charset": "utf8mb4",
             "cursorclass": DictCursor,
             "autocommit": True,
         }
         if env("MYSQL_SSL", "false").lower() in ("1", "true", "yes", "sim"):
             self.config["ssl"] = {}
+
+    def _config_from_url(self, value: str) -> dict:
+        if not value:
+            return {}
+        parsed = urlparse(value)
+        return {
+            "host": parsed.hostname or "",
+            "port": parsed.port or 3306,
+            "user": unquote(parsed.username or ""),
+            "password": unquote(parsed.password or ""),
+            "database": (parsed.path or "").lstrip("/"),
+        }
 
     def table(self, name: str):
         return QueryBuilder(self, name)
