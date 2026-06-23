@@ -49,8 +49,14 @@ def create_client(*_args, **_kwargs):
 class MySQLClient:
     def __init__(self):
         url_config = self._config_from_url(env("MYSQL_URL") or env("DATABASE_URL"))
+        host = env("MYSQL_HOST") or env("MYSQLHOST") or url_config.get("host")
+        if not host and env("RAILWAY_ENVIRONMENT_NAME"):
+            raise RuntimeError(
+                "MYSQL_HOST ou MYSQL_URL nao configurado no servico web da Railway. "
+                "Configure MYSQL_URL com a URL privada do servico MySQL ou MYSQL_HOST/MYSQL_PORT separados."
+            )
         self.config = {
-            "host": env("MYSQL_HOST") or env("MYSQLHOST") or url_config.get("host") or "localhost",
+            "host": host or "localhost",
             "port": env_int("MYSQL_PORT", env_int("MYSQLPORT", url_config.get("port", 3306))),
             "user": env("MYSQL_USER") or env("MYSQLUSER") or url_config.get("user") or "root",
             "password": env("MYSQL_PASSWORD") or env("MYSQLPASSWORD") or url_config.get("password") or "",
