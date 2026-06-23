@@ -1,2245 +1,2245 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CallOps — DDM</title>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
-  <style>
-    :root {
-      /* DDM Brand */
-      --brand:        #FF5706;
-      --brand-dark:   #CC4500;
-      --brand-light:  #FF8A4C;
-      --brand-bg:     rgba(255,87,6,.08);
-      --brand-border: rgba(255,87,6,.25);
+  <!DOCTYPE html>
+  <html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CallOps — DDM</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        /* DDM Brand */
+        --brand:        #FF5706;
+        --brand-dark:   #CC4500;
+        --brand-light:  #FF8A4C;
+        --brand-bg:     rgba(255,87,6,.08);
+        --brand-border: rgba(255,87,6,.25);
 
-      /* Light theme */
-      --bg:       #F9FAFB;
-      --surface:  #FFFFFF;
-      --surface2: #F3F4F6;
-      --surface3: #E5E7EB;
-      --border:   #E5E7EB;
-      --border2:  #D1D5DB;
-      --text:     #1A1A2E;
-      --text2:    #374151;
-      --muted:    #9CA3AF;
-      --muted2:   #6B7280;
+        /* Light theme */
+        --bg:       #F9FAFB;
+        --surface:  #FFFFFF;
+        --surface2: #F3F4F6;
+        --surface3: #E5E7EB;
+        --border:   #E5E7EB;
+        --border2:  #D1D5DB;
+        --text:     #1A1A2E;
+        --text2:    #374151;
+        --muted:    #9CA3AF;
+        --muted2:   #6B7280;
 
-      /* Status */
-      --green:        #10B981;
-      --green-bg:     rgba(16,185,129,.1);
-      --green-border: rgba(16,185,129,.3);
-      --red:          #EF4444;
-      --red-bg:       rgba(239,68,68,.08);
-      --red-border:   rgba(239,68,68,.25);
-      --amber:        #F59E0B;
-      --amber-bg:     rgba(245,158,11,.1);
-      --amber-border: rgba(245,158,11,.3);
-      --blue:         #3B82F6;
-      --blue-bg:      rgba(59,130,246,.08);
-      --blue-border:  rgba(59,130,246,.25);
+        /* Status */
+        --green:        #10B981;
+        --green-bg:     rgba(16,185,129,.1);
+        --green-border: rgba(16,185,129,.3);
+        --red:          #EF4444;
+        --red-bg:       rgba(239,68,68,.08);
+        --red-border:   rgba(239,68,68,.25);
+        --amber:        #F59E0B;
+        --amber-bg:     rgba(245,158,11,.1);
+        --amber-border: rgba(245,158,11,.3);
+        --blue:         #3B82F6;
+        --blue-bg:      rgba(59,130,246,.08);
+        --blue-border:  rgba(59,130,246,.25);
 
-      --radius:  8px;
-      --radius2: 12px;
-      --poppins: 'Poppins', sans-serif;
-      --inter:   'Inter', sans-serif;
-    }
+        --radius:  8px;
+        --radius2: 12px;
+        --poppins: 'Poppins', sans-serif;
+        --inter:   'Inter', sans-serif;
+      }
 
-    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--inter);
-      min-height: 100vh;
-      overflow-x: hidden;
-      font-size: 14px;
-      line-height: 1.5;
-    }
+      *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--inter);
+        min-height: 100vh;
+        overflow-x: hidden;
+        font-size: 14px;
+        line-height: 1.5;
+      }
 
-    /* ── LAYOUT ── */
-    .shell { display: grid; grid-template-rows: auto auto auto 1fr; min-height: 100vh; }
-    .top-bar-brand { height: 3px; background: var(--brand); position: sticky; top: 0; z-index: 101; }
+      /* ── LAYOUT ── */
+      .shell { display: grid; grid-template-rows: auto auto auto 1fr; min-height: 100vh; }
+      .top-bar-brand { height: 3px; background: var(--brand); position: sticky; top: 0; z-index: 101; }
 
-    /* ── HEADER ── */
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 32px;
-      height: 56px;
-      border-bottom: 1px solid var(--border);
-      background: #FFFFFF;
-      position: sticky;
-      top: 3px;
-      z-index: 100;
-      box-shadow: 0 1px 4px rgba(0,0,0,.06);
-    }
-    .logo-wrap { display: flex; align-items: center; gap: 10px; }
-    .logo-badge {
-      width: 32px; height: 32px;
-      background: var(--brand);
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-family: var(--poppins);
-      font-size: .65rem;
-      font-weight: 700;
-      color: #fff;
-      letter-spacing: .04em;
-    }
-    .logo-name {
-      font-family: var(--poppins);
-      font-size: .875rem;
-      font-weight: 600;
-      color: var(--text);
-      letter-spacing: .04em;
-    }
-    .logo-name span { color: var(--brand); }
-    .logo-sep { color: var(--border2); margin: 0 2px; }
-    .logo-sub { font-size: .75rem; font-weight: 400; color: var(--muted2); }
-    .header-right { display: flex; align-items: center; gap: 16px; }
-    .status-pill {
-      display: flex; align-items: center; gap: 6px;
-      padding: 4px 12px;
-      border-radius: 9999px;
-      background: var(--green-bg);
-      border: 1px solid var(--green-border);
-      font-size: .7rem;
-      font-weight: 500;
-      color: var(--green);
-    }
-    .status-dot {
-      width: 6px; height: 6px; border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 6px var(--green);
-      animation: blink 2s infinite;
-    }
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
-    .clock {
-      font-size: .75rem;
-      color: var(--muted2);
-      font-family: var(--inter);
-      font-weight: 400;
-    }
+      /* ── HEADER ── */
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 32px;
+        height: 56px;
+        border-bottom: 1px solid var(--border);
+        background: #FFFFFF;
+        position: sticky;
+        top: 3px;
+        z-index: 100;
+        box-shadow: 0 1px 4px rgba(0,0,0,.06);
+      }
+      .logo-wrap { display: flex; align-items: center; gap: 10px; }
+      .logo-badge {
+        width: 32px; height: 32px;
+        background: var(--brand);
+        border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        font-family: var(--poppins);
+        font-size: .65rem;
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: .04em;
+      }
+      .logo-name {
+        font-family: var(--poppins);
+        font-size: .875rem;
+        font-weight: 600;
+        color: var(--text);
+        letter-spacing: .04em;
+      }
+      .logo-name span { color: var(--brand); }
+      .logo-sep { color: var(--border2); margin: 0 2px; }
+      .logo-sub { font-size: .75rem; font-weight: 400; color: var(--muted2); }
+      .header-right { display: flex; align-items: center; gap: 16px; }
+      .status-pill {
+        display: flex; align-items: center; gap: 6px;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        background: var(--green-bg);
+        border: 1px solid var(--green-border);
+        font-size: .7rem;
+        font-weight: 500;
+        color: var(--green);
+      }
+      .status-dot {
+        width: 6px; height: 6px; border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 6px var(--green);
+        animation: blink 2s infinite;
+      }
+      @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+      .clock {
+        font-size: .75rem;
+        color: var(--muted2);
+        font-family: var(--inter);
+        font-weight: 400;
+      }
 
-    /* ── NAV ── */
-    nav {
-      display: flex;
-      align-items: center;
-      padding: 0 32px;
-      background: #FFFFFF;
-      border-bottom: 1px solid var(--border);
-      overflow-x: auto;
-      gap: 2px;
-      box-shadow: 0 1px 3px rgba(0,0,0,.04);
-    }
-    nav::-webkit-scrollbar { display: none; }
-    .tab {
-      position: relative;
-      padding: 0 16px;
-      height: 44px;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      font-size: .75rem;
-      font-weight: 500;
-      color: var(--muted2);
-      cursor: pointer;
-      white-space: nowrap;
-      transition: color .15s;
-      border-bottom: 2px solid transparent;
-      letter-spacing: .01em;
-      font-family: var(--inter);
-    }
-    .tab:hover { color: var(--text2); }
-    .tab.active { color: var(--brand); border-bottom-color: var(--brand); }
-    .tab-icon { font-size: .85rem; opacity: .7; }
-    .tab.active .tab-icon { opacity: 1; }
+      /* ── NAV ── */
+      nav {
+        display: flex;
+        align-items: center;
+        padding: 0 32px;
+        background: #FFFFFF;
+        border-bottom: 1px solid var(--border);
+        overflow-x: auto;
+        gap: 2px;
+        box-shadow: 0 1px 3px rgba(0,0,0,.04);
+      }
+      nav::-webkit-scrollbar { display: none; }
+      .tab {
+        position: relative;
+        padding: 0 16px;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: .75rem;
+        font-weight: 500;
+        color: var(--muted2);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: color .15s;
+        border-bottom: 2px solid transparent;
+        letter-spacing: .01em;
+        font-family: var(--inter);
+      }
+      .tab:hover { color: var(--text2); }
+      .tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+      .tab-icon { font-size: .85rem; opacity: .7; }
+      .tab.active .tab-icon { opacity: 1; }
 
-    /* ── MAIN ── */
-    main { padding: 28px 32px; }
-    .section { display: none; animation: rise .18s ease; }
-    .section.active { display: block; }
-    @keyframes rise { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+      /* ── MAIN ── */
+      main { padding: 28px 32px; }
+      .section { display: none; animation: rise .18s ease; }
+      .section.active { display: block; }
+      @keyframes rise { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
 
-    /* ── SEC HEADER ── */
-    .sec-head {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 20px; flex-wrap: wrap; gap: 10px;
-    }
-    .sec-title {
-      font-family: var(--poppins);
-      font-size: .8rem;
-      font-weight: 600;
-      color: var(--text2);
-      letter-spacing: .04em;
-      text-transform: uppercase;
-    }
+      /* ── SEC HEADER ── */
+      .sec-head {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 20px; flex-wrap: wrap; gap: 10px;
+      }
+      .sec-title {
+        font-family: var(--poppins);
+        font-size: .8rem;
+        font-weight: 600;
+        color: var(--text2);
+        letter-spacing: .04em;
+        text-transform: uppercase;
+      }
 
-    /* ── KPI STRIP ── */
-    .kpi-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 24px; }
-    @media(max-width:900px){ .kpi-strip{ grid-template-columns: repeat(2,1fr); } }
-    .kpi {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius2);
-      padding: 16px 20px;
-      position: relative;
-      overflow: hidden;
-      transition: border-color .15s, transform .15s;
-    }
-    .kpi:hover { border-color: var(--border2); transform: translateY(-1px); }
-    .kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
-    .kpi.brand::before { background: var(--brand); }
-    .kpi.green::before { background: var(--green); }
-    .kpi.red::before   { background: var(--red); }
-    .kpi.amber::before { background: var(--amber); }
-    .kpi.blue::before  { background: var(--blue); }
-    .kpi-label {
-      font-size: .7rem;
-      font-weight: 500;
-      color: var(--muted2);
-      margin-bottom: 8px;
-      letter-spacing: .02em;
-    }
-    .kpi-val {
-      font-family: var(--poppins);
-      font-size: 1.75rem;
-      font-weight: 600;
-      line-height: 1;
-    }
-    .kpi.brand .kpi-val { color: var(--brand); }
-    .kpi.green .kpi-val { color: var(--green); }
-    .kpi.red   .kpi-val { color: var(--red); }
-    .kpi.amber .kpi-val { color: var(--amber); }
-    .kpi.blue  .kpi-val { color: var(--blue); }
+      /* ── KPI STRIP ── */
+      .kpi-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 24px; }
+      @media(max-width:900px){ .kpi-strip{ grid-template-columns: repeat(2,1fr); } }
+      .kpi {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius2);
+        padding: 16px 20px;
+        position: relative;
+        overflow: hidden;
+        transition: border-color .15s, transform .15s;
+      }
+      .kpi:hover { border-color: var(--border2); transform: translateY(-1px); }
+      .kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
+      .kpi.brand::before { background: var(--brand); }
+      .kpi.green::before { background: var(--green); }
+      .kpi.red::before   { background: var(--red); }
+      .kpi.amber::before { background: var(--amber); }
+      .kpi.blue::before  { background: var(--blue); }
+      .kpi-label {
+        font-size: .7rem;
+        font-weight: 500;
+        color: var(--muted2);
+        margin-bottom: 8px;
+        letter-spacing: .02em;
+      }
+      .kpi-val {
+        font-family: var(--poppins);
+        font-size: 1.75rem;
+        font-weight: 600;
+        line-height: 1;
+      }
+      .kpi.brand .kpi-val { color: var(--brand); }
+      .kpi.green .kpi-val { color: var(--green); }
+      .kpi.red   .kpi-val { color: var(--red); }
+      .kpi.amber .kpi-val { color: var(--amber); }
+      .kpi.blue  .kpi-val { color: var(--blue); }
 
-    /* ── CARDS DE LINHA ── */
-    .lines-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(210px,1fr)); gap: 12px; margin-bottom: 24px; }
-    .line-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius2);
-      padding: 16px;
-      position: relative;
-      overflow: hidden;
-      transition: border-color .15s, transform .15s;
-    }
-    .line-card:hover { transform: translateY(-2px); }
-    .line-card .top-bar { position: absolute; top: 0; left: 0; right: 0; height: 2px; }
-    .line-card.healthy .top-bar { background: var(--green); }
-    .line-card.healthy { border-color: rgba(16,185,129,.2); }
-    .line-card.down .top-bar { background: var(--red); }
-    .line-card.warn .top-bar { background: var(--amber); }
-    .line-card.paused .top-bar { background: var(--amber); }
-    .line-name {
-      font-size: .68rem;
-      font-weight: 600;
-      color: var(--muted2);
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      margin-bottom: 4px;
-    }
-    .line-number {
-      font-family: var(--poppins);
-      font-size: .9rem;
-      font-weight: 500;
-      color: var(--text);
-      margin-bottom: 12px;
-    }
-    .line-number.empty { color: var(--muted); font-size: .8rem; font-style: italic; }
-    .line-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
-    .tag {
-      font-size: .65rem;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 9999px;
-      letter-spacing: .03em;
-    }
-    .tag-green { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
-    .tag-red   { background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-border); }
-    .tag-brand { background: var(--brand-bg); color: var(--brand); border: 1px solid var(--brand-border); }
-    .tag-gray  { background: rgba(100,116,139,.15); color: var(--muted2); border: 1px solid var(--border); }
-    .tag-amber { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
-    .line-meta { font-size: .7rem; color: var(--muted); }
-    .line-meta b { color: var(--text2); }
-    .line-slot-meta { font-size: .7rem; color: var(--muted); margin-top: 2px; }
-    .line-slot-meta b { color: var(--text2); }
-    .line-controls { margin-top: 12px; }
+      /* ── CARDS DE LINHA ── */
+      .lines-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(210px,1fr)); gap: 12px; margin-bottom: 24px; }
+      .line-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius2);
+        padding: 16px;
+        position: relative;
+        overflow: hidden;
+        transition: border-color .15s, transform .15s;
+      }
+      .line-card:hover { transform: translateY(-2px); }
+      .line-card .top-bar { position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+      .line-card.healthy .top-bar { background: var(--green); }
+      .line-card.healthy { border-color: rgba(16,185,129,.2); }
+      .line-card.down .top-bar { background: var(--red); }
+      .line-card.warn .top-bar { background: var(--amber); }
+      .line-card.paused .top-bar { background: var(--amber); }
+      .line-name {
+        font-size: .68rem;
+        font-weight: 600;
+        color: var(--muted2);
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        margin-bottom: 4px;
+      }
+      .line-number {
+        font-family: var(--poppins);
+        font-size: .9rem;
+        font-weight: 500;
+        color: var(--text);
+        margin-bottom: 12px;
+      }
+      .line-number.empty { color: var(--muted); font-size: .8rem; font-style: italic; }
+      .line-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+      .tag {
+        font-size: .65rem;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 9999px;
+        letter-spacing: .03em;
+      }
+      .tag-green { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+      .tag-red   { background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-border); }
+      .tag-brand { background: var(--brand-bg); color: var(--brand); border: 1px solid var(--brand-border); }
+      .tag-gray  { background: rgba(100,116,139,.15); color: var(--muted2); border: 1px solid var(--border); }
+      .tag-amber { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
+      .line-meta { font-size: .7rem; color: var(--muted); }
+      .line-meta b { color: var(--text2); }
+      .line-slot-meta { font-size: .7rem; color: var(--muted); margin-top: 2px; }
+      .line-slot-meta b { color: var(--text2); }
+      .line-controls { margin-top: 12px; }
 
-    /* ── BOTÕES ── */
-    .btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-family: var(--inter);
-      font-size: .75rem;
-      font-weight: 500;
-      padding: 7px 16px;
-      border-radius: var(--radius);
-      cursor: pointer;
-      transition: all .15s;
-      border: none;
-      letter-spacing: .01em;
-    }
-    .btn-primary { background: var(--brand); color: #fff; }
-    .btn-primary:hover { background: var(--brand-dark); }
-    .btn-success { background: var(--green); color: #fff; }
-    .btn-success:hover { opacity: .88; }
-    .btn-success:disabled { opacity: .35; cursor: not-allowed; }
-    .btn-ghost {
-      background: transparent;
-      border: 1px solid var(--border2);
-      color: var(--text2);
-    }
-    .btn-ghost:hover { border-color: var(--brand); color: var(--brand); }
-    .btn-danger {
-      background: transparent;
-      border: 1px solid var(--red-border);
-      color: var(--red);
-    }
-    .btn-danger:hover { background: var(--red-bg); }
-    .btn-warn { background: #f59e0b; color: #fff; }
-    .btn-warn:hover { background: #d97706; }
+      /* ── BOTÕES ── */
+      .btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-family: var(--inter);
+        font-size: .75rem;
+        font-weight: 500;
+        padding: 7px 16px;
+        border-radius: var(--radius);
+        cursor: pointer;
+        transition: all .15s;
+        border: none;
+        letter-spacing: .01em;
+      }
+      .btn-primary { background: var(--brand); color: #fff; }
+      .btn-primary:hover { background: var(--brand-dark); }
+      .btn-success { background: var(--green); color: #fff; }
+      .btn-success:hover { opacity: .88; }
+      .btn-success:disabled { opacity: .35; cursor: not-allowed; }
+      .btn-ghost {
+        background: transparent;
+        border: 1px solid var(--border2);
+        color: var(--text2);
+      }
+      .btn-ghost:hover { border-color: var(--brand); color: var(--brand); }
+      .btn-danger {
+        background: transparent;
+        border: 1px solid var(--red-border);
+        color: var(--red);
+      }
+      .btn-danger:hover { background: var(--red-bg); }
+      .btn-warn { background: #f59e0b; color: #fff; }
+      .btn-warn:hover { background: #d97706; }
 
-    /* ── TABELAS ── */
-    .table-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius2);
-      overflow: hidden;
-    }
-    table { width: 100%; border-collapse: collapse; }
-    thead tr { border-bottom: 1px solid var(--border); background: #F9FAFB; }
-    thead th {
-      padding: 10px 16px;
-      text-align: left;
-      font-size: .7rem;
-      font-weight: 600;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-      color: var(--muted2);
-    }
-    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
-    tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: #FFF7F4; }
-    tbody td { padding: 10px 16px; font-size: .82rem; color: var(--text); vertical-align: middle; }
-    .td-mono { font-family: 'Inter', monospace; font-size: .72rem; color: var(--muted2); }
-    .td-dim  { color: var(--muted2); font-size: .78rem; }
+      /* ── TABELAS ── */
+      .table-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius2);
+        overflow: hidden;
+      }
+      table { width: 100%; border-collapse: collapse; }
+      thead tr { border-bottom: 1px solid var(--border); background: #F9FAFB; }
+      thead th {
+        padding: 10px 16px;
+        text-align: left;
+        font-size: .7rem;
+        font-weight: 600;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: var(--muted2);
+      }
+      tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+      tbody tr:last-child { border-bottom: none; }
+      tbody tr:hover { background: #FFF7F4; }
+      tbody td { padding: 10px 16px; font-size: .82rem; color: var(--text); vertical-align: middle; }
+      .td-mono { font-family: 'Inter', monospace; font-size: .72rem; color: var(--muted2); }
+      .td-dim  { color: var(--muted2); font-size: .78rem; }
 
-    /* ── INLINE ACTIONS ── */
-    .call-btn {
-      display: inline-flex; align-items: center; gap: 4px;
-      font-size: .68rem; font-weight: 500;
-      padding: 4px 10px; border-radius: 6px;
-      background: var(--brand-bg);
-      border: 1px solid var(--brand-border);
-      color: var(--brand);
-      cursor: pointer; transition: all .15s;
-    }
-    .call-btn:hover { background: rgba(255,87,6,.15); border-color: var(--brand); }
-    .call-btn:disabled { opacity: .25; cursor: not-allowed; }
-    .del-btn {
-      display: inline-flex; align-items: center; gap: 4px;
-      font-size: .68rem; font-weight: 500;
-      padding: 4px 10px; border-radius: 6px;
-      background: var(--red-bg);
-      border: 1px solid var(--red-border);
-      color: var(--red);
-      cursor: pointer; transition: all .15s;
-    }
-    .del-btn:hover { background: rgba(239,68,68,.18); }
+      /* ── INLINE ACTIONS ── */
+      .call-btn {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-size: .68rem; font-weight: 500;
+        padding: 4px 10px; border-radius: 6px;
+        background: var(--brand-bg);
+        border: 1px solid var(--brand-border);
+        color: var(--brand);
+        cursor: pointer; transition: all .15s;
+      }
+      .call-btn:hover { background: rgba(255,87,6,.15); border-color: var(--brand); }
+      .call-btn:disabled { opacity: .25; cursor: not-allowed; }
+      .del-btn {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-size: .68rem; font-weight: 500;
+        padding: 4px 10px; border-radius: 6px;
+        background: var(--red-bg);
+        border: 1px solid var(--red-border);
+        color: var(--red);
+        cursor: pointer; transition: all .15s;
+      }
+      .del-btn:hover { background: rgba(239,68,68,.18); }
 
-    /* ── STATUS CHIPS ── */
-    .cs {
-      display: inline-flex; align-items: center; gap: 5px;
-      font-size: .68rem; font-weight: 600;
-      padding: 3px 9px; border-radius: 9999px;
-      letter-spacing: .02em;
-    }
-    .cs::before { content:''; width:5px; height:5px; border-radius:50%; flex-shrink: 0; }
-    .cs-ended    { background: var(--green-bg); color: var(--green); }
-    .cs-ended::before    { background: var(--green); }
-    .cs-failed   { background: var(--red-bg);   color: var(--red); }
-    .cs-failed::before   { background: var(--red); }
-    .cs-in-progress { background: var(--brand-bg); color: var(--brand); }
-    .cs-in-progress::before { background: var(--brand); box-shadow: 0 0 5px var(--brand); animation: blink 1s infinite; }
-    .cs-queued   { background: rgba(100,116,139,.15); color: var(--muted2); }
-    .cs-queued::before   { background: var(--muted2); }
+      /* ── STATUS CHIPS ── */
+      .cs {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: .68rem; font-weight: 600;
+        padding: 3px 9px; border-radius: 9999px;
+        letter-spacing: .02em;
+      }
+      .cs::before { content:''; width:5px; height:5px; border-radius:50%; flex-shrink: 0; }
+      .cs-ended    { background: var(--green-bg); color: var(--green); }
+      .cs-ended::before    { background: var(--green); }
+      .cs-failed   { background: var(--red-bg);   color: var(--red); }
+      .cs-failed::before   { background: var(--red); }
+      .cs-in-progress { background: var(--brand-bg); color: var(--brand); }
+      .cs-in-progress::before { background: var(--brand); box-shadow: 0 0 5px var(--brand); animation: blink 1s infinite; }
+      .cs-queued   { background: rgba(100,116,139,.15); color: var(--muted2); }
+      .cs-queued::before   { background: var(--muted2); }
 
-    /* ── PAGINAÇÃO ── */
-    .pagination {
-      display: flex; align-items: center; justify-content: flex-end;
-      gap: 8px; margin-top: 12px;
-    }
-    .page-info { font-size: .72rem; color: var(--muted); }
+      /* ── PAGINAÇÃO ── */
+      .pagination {
+        display: flex; align-items: center; justify-content: flex-end;
+        gap: 8px; margin-top: 12px;
+      }
+      .page-info { font-size: .72rem; color: var(--muted); }
 
-    /* ── BUSCA ── */
-    .search-wrap { position: relative; display: inline-flex; align-items: center; }
-    .search-icon { position: absolute; left: 10px; font-size: .8rem; color: var(--muted); pointer-events: none; }
-    .search-input {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-family: var(--inter);
-      font-size: .78rem;
-      padding: 7px 12px 7px 32px;
-      border-radius: var(--radius);
-      outline: none;
-      width: 220px;
-      transition: border-color .15s;
-    }
-    .search-input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(255,87,6,.12); }
-    .search-input::placeholder { color: var(--muted); }
+      /* ── BUSCA ── */
+      .search-wrap { position: relative; display: inline-flex; align-items: center; }
+      .search-icon { position: absolute; left: 10px; font-size: .8rem; color: var(--muted); pointer-events: none; }
+      .search-input {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--inter);
+        font-size: .78rem;
+        padding: 7px 12px 7px 32px;
+        border-radius: var(--radius);
+        outline: none;
+        width: 220px;
+        transition: border-color .15s;
+      }
+      .search-input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(255,87,6,.12); }
+      .search-input::placeholder { color: var(--muted); }
 
-    /* ── DROP ZONE ── */
-    .drop-zone {
-      border: 1.5px dashed var(--border2);
-      border-radius: var(--radius2);
-      padding: 52px 32px;
-      text-align: center;
-      cursor: pointer;
-      background: var(--surface);
-      transition: all .2s;
-      margin-bottom: 20px;
-      position: relative;
-    }
-    .drop-zone:hover, .drop-zone.drag {
-      border-color: var(--brand);
-      background: var(--brand-bg);
-    }
-    .drop-zone.uploading { border-color: var(--amber); cursor: default; }
-    .drop-zone.done      { border-color: rgba(16,185,129,.4); background: rgba(16,185,129,.04); }
-    .drop-icon { font-size: 2rem; margin-bottom: 12px; opacity: .5; }
-    .drop-title { font-family: var(--poppins); font-size: .875rem; font-weight: 600; color: var(--text); margin-bottom: 6px; }
-    .drop-sub { font-size: .72rem; color: var(--muted); }
+      /* ── DROP ZONE ── */
+      .drop-zone {
+        border: 1.5px dashed var(--border2);
+        border-radius: var(--radius2);
+        padding: 52px 32px;
+        text-align: center;
+        cursor: pointer;
+        background: var(--surface);
+        transition: all .2s;
+        margin-bottom: 20px;
+        position: relative;
+      }
+      .drop-zone:hover, .drop-zone.drag {
+        border-color: var(--brand);
+        background: var(--brand-bg);
+      }
+      .drop-zone.uploading { border-color: var(--amber); cursor: default; }
+      .drop-zone.done      { border-color: rgba(16,185,129,.4); background: rgba(16,185,129,.04); }
+      .drop-icon { font-size: 2rem; margin-bottom: 12px; opacity: .5; }
+      .drop-title { font-family: var(--poppins); font-size: .875rem; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+      .drop-sub { font-size: .72rem; color: var(--muted); }
 
-    /* ── PROGRESS BAR ── */
-    .upload-progress-wrap {
-      display: none;
-      margin: -8px 0 20px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-top: none;
-      border-radius: 0 0 var(--radius2) var(--radius2);
-      padding: 12px 20px;
-    }
-    .upload-progress-wrap.visible { display: block; }
-    .upload-progress-bar-bg {
-      height: 4px; background: var(--surface3);
-      border-radius: 2px; margin-bottom: 8px; overflow: hidden;
-    }
-    .upload-progress-bar-fill {
-      height: 100%; width: 0%; border-radius: 2px;
-      background: var(--brand);
-      box-shadow: 0 0 8px rgba(255,87,6,.4);
-      transition: width .3s ease;
-    }
-    .upload-progress-bar-fill.amber { background: var(--amber); box-shadow: 0 0 8px rgba(245,158,11,.4); }
-    .upload-progress-bar-fill.green { background: var(--green); box-shadow: 0 0 8px rgba(16,185,129,.4); }
-    .upload-progress-bar-fill.red   { background: var(--red);   box-shadow: none; }
-    .upload-progress-label {
-      font-size: .68rem; color: var(--muted2);
-      display: flex; justify-content: space-between;
-    }
-    .upload-progress-label span        { color: var(--brand); }
-    .upload-progress-label span.amber  { color: var(--amber); }
-    .upload-progress-label span.green  { color: var(--green); }
-    .upload-progress-label span.red    { color: var(--red); }
+      /* ── PROGRESS BAR ── */
+      .upload-progress-wrap {
+        display: none;
+        margin: -8px 0 20px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-top: none;
+        border-radius: 0 0 var(--radius2) var(--radius2);
+        padding: 12px 20px;
+      }
+      .upload-progress-wrap.visible { display: block; }
+      .upload-progress-bar-bg {
+        height: 4px; background: var(--surface3);
+        border-radius: 2px; margin-bottom: 8px; overflow: hidden;
+      }
+      .upload-progress-bar-fill {
+        height: 100%; width: 0%; border-radius: 2px;
+        background: var(--brand);
+        box-shadow: 0 0 8px rgba(255,87,6,.4);
+        transition: width .3s ease;
+      }
+      .upload-progress-bar-fill.amber { background: var(--amber); box-shadow: 0 0 8px rgba(245,158,11,.4); }
+      .upload-progress-bar-fill.green { background: var(--green); box-shadow: 0 0 8px rgba(16,185,129,.4); }
+      .upload-progress-bar-fill.red   { background: var(--red);   box-shadow: none; }
+      .upload-progress-label {
+        font-size: .68rem; color: var(--muted2);
+        display: flex; justify-content: space-between;
+      }
+      .upload-progress-label span        { color: var(--brand); }
+      .upload-progress-label span.amber  { color: var(--amber); }
+      .upload-progress-label span.green  { color: var(--green); }
+      .upload-progress-label span.red    { color: var(--red); }
 
-    .import-actions { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
-    .debt-yes   { font-size: .7rem; color: var(--green); font-weight: 500; }
-    .debt-no    { font-size: .7rem; color: var(--muted); }
-    .debt-error { font-size: .7rem; color: var(--amber); }
+      .import-actions { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+      .debt-yes   { font-size: .7rem; color: var(--green); font-weight: 500; }
+      .debt-no    { font-size: .7rem; color: var(--muted); }
+      .debt-error { font-size: .7rem; color: var(--amber); }
 
-    /* ── MODAL / OVERLAY ── */
-    .overlay {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,.7);
-      backdrop-filter: blur(6px);
-      z-index: 200;
-      display: flex; align-items: center; justify-content: center;
-      opacity: 0; pointer-events: none; transition: opacity .2s;
-    }
-    .overlay.open { opacity: 1; pointer-events: all; }
-    .modal {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: 16px;
-      padding: 28px;
-      width: 400px;
-      transform: translateY(12px) scale(.98);
-      transition: transform .25s cubic-bezier(.34,1.56,.64,1);
-      position: relative;
-      overflow: hidden;
-    }
-    .modal::before {
-      content: '';
-      position: absolute; top: 0; left: 0; right: 0; height: 2px;
-      background: linear-gradient(90deg, var(--brand), var(--brand-light), transparent);
-    }
-    .modal.wide { width: 520px; }
-    .overlay.open .modal { transform: none; }
-    .modal-title {
-      font-family: var(--poppins);
-      font-size: .825rem; font-weight: 600;
-      color: var(--text); margin-bottom: 20px;
-    }
-    .modal-field { margin-bottom: 14px; }
-    .modal-label {
-      display: block; font-size: .68rem; font-weight: 600;
-      letter-spacing: .05em; text-transform: uppercase;
-      color: var(--muted2); margin-bottom: 6px;
-    }
-    .modal-val { font-size: .875rem; color: var(--text); }
-    .modal-select {
-      width: 100%;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-family: var(--inter);
-      font-size: .78rem;
-      padding: 8px 12px;
-      border-radius: var(--radius);
-      outline: none;
-      transition: border-color .15s;
-    }
-    .modal-select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(255,87,6,.12); }
-    .modal-footer { display: flex; gap: 10px; margin-top: 24px; }
-    .modal-footer .btn { flex: 1; justify-content: center; padding: 10px; }
+      /* ── MODAL / OVERLAY ── */
+      .overlay {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,.7);
+        backdrop-filter: blur(6px);
+        z-index: 200;
+        display: flex; align-items: center; justify-content: center;
+        opacity: 0; pointer-events: none; transition: opacity .2s;
+      }
+      .overlay.open { opacity: 1; pointer-events: all; }
+      .modal {
+        background: var(--surface);
+        border: 1px solid var(--border2);
+        border-radius: 16px;
+        padding: 28px;
+        width: 400px;
+        transform: translateY(12px) scale(.98);
+        transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+        position: relative;
+        overflow: hidden;
+      }
+      .modal::before {
+        content: '';
+        position: absolute; top: 0; left: 0; right: 0; height: 2px;
+        background: linear-gradient(90deg, var(--brand), var(--brand-light), transparent);
+      }
+      .modal.wide { width: 520px; }
+      .overlay.open .modal { transform: none; }
+      .modal-title {
+        font-family: var(--poppins);
+        font-size: .825rem; font-weight: 600;
+        color: var(--text); margin-bottom: 20px;
+      }
+      .modal-field { margin-bottom: 14px; }
+      .modal-label {
+        display: block; font-size: .68rem; font-weight: 600;
+        letter-spacing: .05em; text-transform: uppercase;
+        color: var(--muted2); margin-bottom: 6px;
+      }
+      .modal-val { font-size: .875rem; color: var(--text); }
+      .modal-select {
+        width: 100%;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--inter);
+        font-size: .78rem;
+        padding: 8px 12px;
+        border-radius: var(--radius);
+        outline: none;
+        transition: border-color .15s;
+      }
+      .modal-select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(255,87,6,.12); }
+      .modal-footer { display: flex; gap: 10px; margin-top: 24px; }
+      .modal-footer .btn { flex: 1; justify-content: center; padding: 10px; }
 
-    /* ── INPUTS ── */
-    .campaign-name-input, .mini-input {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-family: var(--inter);
-      font-size: .78rem;
-      padding: 7px 12px;
-      border-radius: var(--radius);
-      outline: none;
-      width: 280px;
-      transition: border-color .15s;
-    }
-    .campaign-name-input:focus, .mini-input:focus {
-      border-color: var(--brand);
-      box-shadow: 0 0 0 3px rgba(255,87,6,.12);
-    }
-    .campaign-name-input::placeholder, .mini-input::placeholder { color: var(--muted); }
+      /* ── INPUTS ── */
+      .campaign-name-input, .mini-input {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--inter);
+        font-size: .78rem;
+        padding: 7px 12px;
+        border-radius: var(--radius);
+        outline: none;
+        width: 280px;
+        transition: border-color .15s;
+      }
+      .campaign-name-input:focus, .mini-input:focus {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px rgba(255,87,6,.12);
+      }
+      .campaign-name-input::placeholder, .mini-input::placeholder { color: var(--muted); }
 
-    .mini-select {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-family: var(--inter); font-size: .75rem;
-      padding: 7px 10px; border-radius: var(--radius);
-      outline: none; cursor: pointer;
-      transition: border-color .15s;
-    }
-    .mini-select:focus { border-color: var(--brand); }
+      .mini-select {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--inter); font-size: .75rem;
+        padding: 7px 10px; border-radius: var(--radius);
+        outline: none; cursor: pointer;
+        transition: border-color .15s;
+      }
+      .mini-select:focus { border-color: var(--brand); }
 
-    /* ── IMPORT SUMMARY ── */
-    .import-summary { display: none; }
-    .import-summary.visible { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 20px; }
+      /* ── IMPORT SUMMARY ── */
+      .import-summary { display: none; }
+      .import-summary.visible { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 20px; }
 
-    /* ── CAMPAIGN LINE PANEL ── */
-    .campaign-line-panel {
-      width: 100%;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 12px;
-    }
-    .campaign-line-title {
-      font-size: .68rem; font-weight: 600;
-      text-transform: uppercase; letter-spacing: .05em;
-      color: var(--muted2); margin-bottom: 8px;
-    }
-    .campaign-line-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-    .campaign-line-option {
-      display: flex; align-items: center; gap: 6px;
-      font-size: .75rem; color: var(--text2); cursor: pointer;
-      padding: 4px 8px; border-radius: 6px;
-      border: 1px solid var(--border); background: var(--surface);
-      transition: all .12s;
-    }
-    .campaign-line-option:hover { border-color: var(--brand); color: var(--brand); }
-    .campaign-line-option.disabled { opacity: .35; cursor: not-allowed; }
-    .campaign-line-check { accent-color: var(--brand); }
+      /* ── CAMPAIGN LINE PANEL ── */
+      .campaign-line-panel {
+        width: 100%;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px;
+      }
+      .campaign-line-title {
+        font-size: .68rem; font-weight: 600;
+        text-transform: uppercase; letter-spacing: .05em;
+        color: var(--muted2); margin-bottom: 8px;
+      }
+      .campaign-line-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+      .campaign-line-option {
+        display: flex; align-items: center; gap: 6px;
+        font-size: .75rem; color: var(--text2); cursor: pointer;
+        padding: 4px 8px; border-radius: 6px;
+        border: 1px solid var(--border); background: var(--surface);
+        transition: all .12s;
+      }
+      .campaign-line-option:hover { border-color: var(--brand); color: var(--brand); }
+      .campaign-line-option.disabled { opacity: .35; cursor: not-allowed; }
+      .campaign-line-check { accent-color: var(--brand); }
 
-    /* ── COMPACT CHECKS ── */
-    .compact-checks { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-    .compact-check {
-      display: flex; align-items: center; gap: 5px;
-      font-size: .75rem; color: var(--text2); cursor: pointer;
-      padding: 4px 8px; border-radius: 6px;
-      border: 1px solid var(--border); background: var(--surface);
-      transition: all .12s;
-    }
-    .compact-check:hover { border-color: var(--brand); }
-    .compact-check input { accent-color: var(--brand); }
+      /* ── COMPACT CHECKS ── */
+      .compact-checks { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+      .compact-check {
+        display: flex; align-items: center; gap: 5px;
+        font-size: .75rem; color: var(--text2); cursor: pointer;
+        padding: 4px 8px; border-radius: 6px;
+        border: 1px solid var(--border); background: var(--surface);
+        transition: all .12s;
+      }
+      .compact-check:hover { border-color: var(--brand); }
+      .compact-check input { accent-color: var(--brand); }
 
-    /* ── LOADER ── */
-    .loader {
-      display: flex; align-items: center; justify-content: center;
-      gap: 10px; padding: 48px;
-      font-size: .72rem; color: var(--muted);
-    }
-    .spin {
-      width: 14px; height: 14px;
-      border: 1.5px solid var(--border2);
-      border-top-color: var(--brand);
-      border-radius: 50%;
-      animation: spin .7s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
+      /* ── LOADER ── */
+      .loader {
+        display: flex; align-items: center; justify-content: center;
+        gap: 10px; padding: 48px;
+        font-size: .72rem; color: var(--muted);
+      }
+      .spin {
+        width: 14px; height: 14px;
+        border: 1.5px solid var(--border2);
+        border-top-color: var(--brand);
+        border-radius: 50%;
+        animation: spin .7s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── TOAST ── */
-    #toast {
-      position: fixed; bottom: 20px; right: 20px;
-      display: flex; align-items: center; gap: 8px;
-      padding: 10px 16px;
-      border-radius: var(--radius);
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      font-size: .75rem; font-weight: 500;
-      color: var(--text);
-      z-index: 999;
-      transform: translateY(14px); opacity: 0;
-      transition: all .3s cubic-bezier(.34,1.56,.64,1);
-      max-width: 340px; pointer-events: none;
-      box-shadow: 0 4px 20px rgba(0,0,0,.3);
-    }
-    #toast.show  { transform: none; opacity: 1; }
-    #toast.ok    { border-color: var(--green-border); color: var(--green); }
-    #toast.err   { border-color: var(--red-border);   color: var(--red); }
-    #toast.warn  { border-color: var(--amber-border); color: var(--amber); }
+      /* ── TOAST ── */
+      #toast {
+        position: fixed; bottom: 20px; right: 20px;
+        display: flex; align-items: center; gap: 8px;
+        padding: 10px 16px;
+        border-radius: var(--radius);
+        background: var(--surface);
+        border: 1px solid var(--border2);
+        font-size: .75rem; font-weight: 500;
+        color: var(--text);
+        z-index: 999;
+        transform: translateY(14px); opacity: 0;
+        transition: all .3s cubic-bezier(.34,1.56,.64,1);
+        max-width: 340px; pointer-events: none;
+        box-shadow: 0 4px 20px rgba(0,0,0,.3);
+      }
+      #toast.show  { transform: none; opacity: 1; }
+      #toast.ok    { border-color: var(--green-border); color: var(--green); }
+      #toast.err   { border-color: var(--red-border);   color: var(--red); }
+      #toast.warn  { border-color: var(--amber-border); color: var(--amber); }
 
-    /* ── DASHBOARD PANELS ── */
-    .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-    @media(max-width:900px){ .dashboard-grid{ grid-template-columns: 1fr; } }
-    .dash-panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius2);
-      overflow: hidden;
-    }
-    .dash-panel-head {
-      padding: 14px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .dash-panel-title {
-      font-family: var(--poppins); font-size: .775rem; font-weight: 600;
-      color: var(--text2);
-    }
-    .mini-form { padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
-    .alert-list { padding: 12px 20px; display: flex; flex-direction: column; gap: 6px; }
-    .alert-item {
-      font-size: .75rem; padding: 8px 12px;
-      border-radius: var(--radius); border: 1px solid;
-      background: var(--green-bg); border-color: var(--green-border); color: var(--green);
-    }
-    .alert-item.danger { background: var(--red-bg); border-color: var(--red-border); color: var(--red); }
-    .alert-item.warn   { background: var(--amber-bg); border-color: var(--amber-border); color: var(--amber); }
+      /* ── DASHBOARD PANELS ── */
+      .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+      @media(max-width:900px){ .dashboard-grid{ grid-template-columns: 1fr; } }
+      .dash-panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius2);
+        overflow: hidden;
+      }
+      .dash-panel-head {
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border);
+        display: flex; align-items: center; justify-content: space-between;
+      }
+      .dash-panel-title {
+        font-family: var(--poppins); font-size: .775rem; font-weight: 600;
+        color: var(--text2);
+      }
+      .mini-form { padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+      .alert-list { padding: 12px 20px; display: flex; flex-direction: column; gap: 6px; }
+      .alert-item {
+        font-size: .75rem; padding: 8px 12px;
+        border-radius: var(--radius); border: 1px solid;
+        background: var(--green-bg); border-color: var(--green-border); color: var(--green);
+      }
+      .alert-item.danger { background: var(--red-bg); border-color: var(--red-border); color: var(--red); }
+      .alert-item.warn   { background: var(--amber-bg); border-color: var(--amber-border); color: var(--amber); }
 
-    /* ── DIVIDER ── */
-    .section-gap { margin-bottom: 16px; }
-  </style>
-</head>
-<body>
-<div class="shell">
-  <div class="top-bar-brand"></div>
+      /* ── DIVIDER ── */
+      .section-gap { margin-bottom: 16px; }
+    </style>
+  </head>
+  <body>
+  <div class="shell">
+    <div class="top-bar-brand"></div>
 
-  <header>
-    <div class="logo-wrap">
-      <div class="logo-badge">CO</div>
-      <div>
-        <div class="logo-name">CallOps <span>/</span> DDM</div>
-      </div>
-    </div>
-    <div class="header-right">
-      <div class="status-pill">
-        <div class="status-dot"></div>
-        <span id="healthy-count">—</span>
-      </div>
-      <span class="clock" id="clock">—</span>
-    </div>
-  </header>
-
-  <nav>
-    <div class="tab active" data-tab="lines"><span class="tab-icon">⬡</span> Linhas</div>
-    <div class="tab" data-tab="contacts"><span class="tab-icon">◎</span> Contatos</div>
-    <div class="tab" data-tab="calls"><span class="tab-icon">◷</span> Histórico</div>
-    <div class="tab" data-tab="monitor"><span class="tab-icon">◉</span> Monitor</div>
-    <div class="tab" data-tab="campaigns"><span class="tab-icon">▷</span> Campanhas</div>
-    <div class="tab" data-tab="import"><span class="tab-icon">⊕</span> Importar</div>
-    <div class="tab" data-tab="dashboard"><span class="tab-icon">▣</span> Dashboard</div>
-  </nav>
-
-  <main>
-
-    <!-- LINHAS -->
-    <div class="section active" id="tab-lines">
-      <div class="sec-head">
-        <span class="sec-title">Linhas Wavoip</span>
-        <button class="btn btn-ghost" onclick="loadLines()">↻ &nbsp;Atualizar</button>
-      </div>
-      <div class="kpi-strip" id="lines-stats" style="display:none">
-        <div class="kpi brand"><div class="kpi-label">Total</div><div class="kpi-val" id="stat-total">0</div></div>
-        <div class="kpi green"><div class="kpi-label">Ativas</div><div class="kpi-val" id="stat-healthy">0</div></div>
-        <div class="kpi red"><div class="kpi-label">Inativas</div><div class="kpi-val" id="stat-down">0</div></div>
-        <div class="kpi amber"><div class="kpi-label">Chamadas</div><div class="kpi-val" id="stat-calls">0</div></div>
-      </div>
-      <div class="lines-grid" id="lines-grid">
-        <div class="loader"><div class="spin"></div>Carregando linhas...</div>
-      </div>
-    </div>
-
-    <!-- CONTATOS -->
-    <div class="section" id="tab-contacts">
-      <div class="sec-head">
-        <span class="sec-title">Contatos com débito</span>
-        <div class="search-wrap">
-          <span class="search-icon">⌕</span>
-          <input class="search-input" type="text" id="contacts-search" placeholder="Buscar por nome..." />
+    <header>
+      <div class="logo-wrap">
+        <div class="logo-badge">CO</div>
+        <div>
+          <div class="logo-name">CallOps <span>/</span> DDM</div>
         </div>
       </div>
-      <div class="table-card">
-        <table>
-          <thead>
-            <tr><th>Nome</th><th>CPF</th><th>Instituição</th><th>Telefones</th><th>Ações</th></tr>
-          </thead>
-          <tbody id="contacts-body">
-            <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="pagination">
-        <button class="btn btn-ghost" id="contacts-prev" onclick="contactsPage(-1)">← Anterior</button>
-        <span class="page-info" id="contacts-page-info">—</span>
-        <button class="btn btn-ghost" id="contacts-next" onclick="contactsPage(1)">Próxima →</button>
-      </div>
-    </div>
-
-    <!-- HISTÓRICO -->
-    <div class="section" id="tab-calls">
-      <div class="sec-head">
-        <span class="sec-title">Histórico de chamadas</span>
-      </div>
-      <div class="table-card">
-        <table>
-          <thead>
-            <tr><th>ID</th><th>Contato</th><th>Status</th><th>Duração</th><th>Data</th></tr>
-          </thead>
-          <tbody id="calls-body">
-            <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="pagination">
-        <button class="btn btn-ghost" id="calls-prev" onclick="callsPage(-1)">← Anterior</button>
-        <span class="page-info" id="calls-page-info">—</span>
-        <button class="btn btn-ghost" id="calls-next" onclick="callsPage(1)">Próxima →</button>
-      </div>
-    </div>
-
-    <!-- MONITOR -->
-    <div class="section" id="tab-monitor">
-      <div class="sec-head">
-        <span class="sec-title">Monitor de chamadas ativas</span>
-        <div style="display:flex;align-items:center;gap:12px">
-          <span class="td-dim" id="monitor-updated">—</span>
-          <button class="btn btn-ghost" onclick="loadMonitor()">↻ &nbsp;Atualizar</button>
+      <div class="header-right">
+        <div class="status-pill">
+          <div class="status-dot"></div>
+          <span id="healthy-count">—</span>
         </div>
+        <span class="clock" id="clock">—</span>
       </div>
-      <div class="kpi-strip" id="monitor-stats" style="display:none">
-        <div class="kpi brand"><div class="kpi-label">Em andamento</div><div class="kpi-val" id="mon-andamento">0</div></div>
-        <div class="kpi green"><div class="kpi-label">Atendidas</div><div class="kpi-val" id="mon-atendido">0</div></div>
-        <div class="kpi red"><div class="kpi-label">Erro</div><div class="kpi-val" id="mon-erro">0</div></div>
-      </div>
-      <div class="table-card">
-        <table>
-          <thead>
-            <tr><th>CPF</th><th>Telefone</th><th>Status</th><th>SIP</th><th>Campanha</th><th>Iniciada</th></tr>
-          </thead>
-          <tbody id="monitor-body">
-            <tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    </header>
 
-    <!-- CAMPANHAS -->
-    <div class="section" id="tab-campaigns">
-      <div class="sec-head">
-        <span class="sec-title">Campanhas de discagem</span>
-        <button class="btn btn-ghost" onclick="loadCampaigns()">↻ &nbsp;Atualizar</button>
-      </div>
-      <div class="table-card">
-        <table>
-          <thead>
-            <tr><th>Nome</th><th>Status</th><th>SIPs</th><th>Total</th><th>Finalizadas</th><th>Criada em</th><th>Ações</th></tr>
-          </thead>
-          <tbody id="campaigns-body">
-            <tr><td colspan="7"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <nav>
+      <div class="tab active" data-tab="lines"><span class="tab-icon">⬡</span> Linhas</div>
+      <div class="tab" data-tab="contacts"><span class="tab-icon">◎</span> Contatos</div>
+      <div class="tab" data-tab="calls"><span class="tab-icon">◷</span> Histórico</div>
+      <div class="tab" data-tab="monitor"><span class="tab-icon">◉</span> Monitor</div>
+      <div class="tab" data-tab="campaigns"><span class="tab-icon">▷</span> Campanhas</div>
+      <div class="tab" data-tab="import"><span class="tab-icon">⊕</span> Importar</div>
+      <div class="tab" data-tab="dashboard"><span class="tab-icon">▣</span> Dashboard</div>
+    </nav>
 
-    <!-- IMPORTAR -->
-    <div class="section" id="tab-import">
-      <div class="sec-head">
-        <span class="sec-title">Nova campanha</span>
-      </div>
+    <main>
 
-      <div class="drop-zone" id="import-zone" onclick="onDropZoneClick()">
-        <div class="drop-icon" id="drop-icon">⬆</div>
-        <div class="drop-title" id="drop-title">Arraste ou clique para selecionar</div>
-        <div class="drop-sub" id="drop-sub">Aceita .xlsx e .csv &nbsp;·&nbsp; Planilha DDM ou genérica (CPF, Nome)</div>
-        <input type="file" id="file-input" accept=".xlsx,.csv,.xls" style="display:none" />
-      </div>
-
-      <div class="upload-progress-wrap" id="upload-progress-wrap">
-        <div class="upload-progress-bar-bg">
-          <div class="upload-progress-bar-fill" id="upload-progress-fill"></div>
+      <!-- LINHAS -->
+      <div class="section active" id="tab-lines">
+        <div class="sec-head">
+          <span class="sec-title">Linhas Wavoip</span>
+          <button class="btn btn-ghost" onclick="loadLines()">↻ &nbsp;Atualizar</button>
         </div>
-        <div class="upload-progress-label">
-          <span id="upload-progress-stage">—</span>
-          <span id="upload-progress-pct">0%</span>
+        <div class="kpi-strip" id="lines-stats" style="display:none">
+          <div class="kpi brand"><div class="kpi-label">Total</div><div class="kpi-val" id="stat-total">0</div></div>
+          <div class="kpi green"><div class="kpi-label">Ativas</div><div class="kpi-val" id="stat-healthy">0</div></div>
+          <div class="kpi red"><div class="kpi-label">Inativas</div><div class="kpi-val" id="stat-down">0</div></div>
+          <div class="kpi amber"><div class="kpi-label">Chamadas</div><div class="kpi-val" id="stat-calls">0</div></div>
+        </div>
+        <div class="lines-grid" id="lines-grid">
+          <div class="loader"><div class="spin"></div>Carregando linhas...</div>
         </div>
       </div>
 
-      <div class="import-summary" id="import-summary">
-        <div class="kpi brand"><div class="kpi-label">Total importados</div><div class="kpi-val" id="imp-total">0</div></div>
-        <div class="kpi green"><div class="kpi-label">Com débito</div><div class="kpi-val" id="imp-debt">0</div></div>
-        <div class="kpi red"><div class="kpi-label">Sem débito / sem tel</div><div class="kpi-val" id="imp-no-debt">0</div></div>
-      </div>
-
-      <div class="import-actions" id="import-actions" style="display:none">
-        <input class="campaign-name-input" type="text" id="campaign-name-input" placeholder="Nome da campanha..." />
-        <select class="mini-select" id="campaign-group-select" onchange="applyCampaignGroupSelection()">
-          <option value="">Grupo de SIPs...</option>
-        </select>
-        <button class="btn btn-success" id="btn-save-campaign" onclick="saveCampaign()">💾 &nbsp;Salvar campanha</button>
-        <button class="btn btn-danger" onclick="resetImport()">✕ &nbsp;Limpar</button>
-        <div class="campaign-line-panel">
-          <div class="campaign-line-title">SIPs desta campanha</div>
-          <div class="campaign-line-grid" id="campaign-line-picker">
-            <div class="td-dim">Carregando linhas...</div>
+      <!-- CONTATOS -->
+      <div class="section" id="tab-contacts">
+        <div class="sec-head">
+          <span class="sec-title">Contatos com débito</span>
+          <div class="search-wrap">
+            <span class="search-icon">⌕</span>
+            <input class="search-input" type="text" id="contacts-search" placeholder="Buscar por nome..." />
           </div>
-        </div>
-      </div>
-
-      <div id="import-processing-actions" class="import-actions" style="display:none">
-        <button class="btn btn-warn" onclick="stopImport()">⏹ &nbsp;Parar importação</button>
-      </div>
-
-      <div id="import-table-wrap" style="display:none">
-        <div class="sec-head" style="margin-bottom:12px">
-          <span class="sec-title" id="import-table-title">Preview</span>
         </div>
         <div class="table-card">
           <table>
-            <thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Débito?</th></tr></thead>
-            <tbody id="import-body"></tbody>
+            <thead>
+              <tr><th>Nome</th><th>CPF</th><th>Instituição</th><th>Telefones</th><th>Ações</th></tr>
+            </thead>
+            <tbody id="contacts-body">
+              <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <button class="btn btn-ghost" id="contacts-prev" onclick="contactsPage(-1)">← Anterior</button>
+          <span class="page-info" id="contacts-page-info">—</span>
+          <button class="btn btn-ghost" id="contacts-next" onclick="contactsPage(1)">Próxima →</button>
+        </div>
+      </div>
+
+      <!-- HISTÓRICO -->
+      <div class="section" id="tab-calls">
+        <div class="sec-head">
+          <span class="sec-title">Histórico de chamadas</span>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr><th>ID</th><th>Contato</th><th>Status</th><th>Duração</th><th>Data</th></tr>
+            </thead>
+            <tbody id="calls-body">
+              <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <button class="btn btn-ghost" id="calls-prev" onclick="callsPage(-1)">← Anterior</button>
+          <span class="page-info" id="calls-page-info">—</span>
+          <button class="btn btn-ghost" id="calls-next" onclick="callsPage(1)">Próxima →</button>
+        </div>
+      </div>
+
+      <!-- MONITOR -->
+      <div class="section" id="tab-monitor">
+        <div class="sec-head">
+          <span class="sec-title">Monitor de chamadas ativas</span>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span class="td-dim" id="monitor-updated">—</span>
+            <button class="btn btn-ghost" onclick="loadMonitor()">↻ &nbsp;Atualizar</button>
+          </div>
+        </div>
+        <div class="kpi-strip" id="monitor-stats" style="display:none">
+          <div class="kpi brand"><div class="kpi-label">Em andamento</div><div class="kpi-val" id="mon-andamento">0</div></div>
+          <div class="kpi green"><div class="kpi-label">Atendidas</div><div class="kpi-val" id="mon-atendido">0</div></div>
+          <div class="kpi red"><div class="kpi-label">Erro</div><div class="kpi-val" id="mon-erro">0</div></div>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr><th>CPF</th><th>Telefone</th><th>Status</th><th>SIP</th><th>Campanha</th><th>Iniciada</th></tr>
+            </thead>
+            <tbody id="monitor-body">
+              <tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+            </tbody>
           </table>
         </div>
       </div>
-    </div>
 
-    <!-- DASHBOARD -->
-    <div class="section" id="tab-dashboard">
-      <div class="sec-head">
-        <span class="sec-title">Dashboard operacional</span>
-        <button class="btn btn-ghost" onclick="loadDashboard()">↻ &nbsp;Atualizar</button>
-      </div>
-
-      <div class="kpi-strip" id="dashboard-kpis">
-        <div class="kpi brand"><div class="kpi-label">Campanhas ativas</div><div class="kpi-val" id="dash-active">0</div></div>
-        <div class="kpi green"><div class="kpi-label">Atendidas</div><div class="kpi-val" id="dash-answered">0</div></div>
-        <div class="kpi amber"><div class="kpi-label">Formalizadas</div><div class="kpi-val" id="dash-formalized">0</div></div>
-        <div class="kpi red"><div class="kpi-label">Erros</div><div class="kpi-val" id="dash-errors">0</div></div>
-      </div>
-
-      <div class="dashboard-grid">
-        <div class="dash-panel" style="min-width:0">
-          <div class="dash-panel-head"><span class="dash-panel-title">Desempenho por campanha</span></div>
-          <div style="padding:10px 12px 10px 12px; color:var(--muted)">Visão executiva do resultado atual.</div>
-          <div id="campaign-viz" style="display:grid; gap:10px; padding: 0 12px 12px;"></div>
+      <!-- CAMPANHAS -->
+      <div class="section" id="tab-campaigns">
+        <div class="sec-head">
+          <span class="sec-title">Campanhas de discagem</span>
+          <button class="btn btn-ghost" onclick="loadCampaigns()">↻ &nbsp;Atualizar</button>
         </div>
-        <div class="dash-panel">
-          <div class="dash-panel-head"><span class="dash-panel-title">Alertas de SIP</span></div>
-          <div class="alert-list" id="dashboard-alerts">
-            <div class="alert-item">Carregando linhas...</div>
-          </div>
-        </div>
-        <div class="dash-panel">
-          <div class="dash-panel-head"><span class="dash-panel-title">Grupos por carteira</span></div>
-          <div class="mini-form">
-            <input class="mini-input" id="group-name-input" placeholder="Nome do grupo (UVA, Cruzeiro...)" />
-            <div class="compact-checks" id="group-line-picker"></div>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-success" onclick="saveSipGroup()">Salvar grupo</button>
-              <button class="btn btn-ghost" onclick="resetGroupForm()">Limpar</button>
-            </div>
-          </div>
-          <div class="table-card" style="margin:0 12px 12px;border-radius:8px">
-            <table>
-              <thead><tr><th>Grupo</th><th>SIPs</th><th>Ações</th></tr></thead>
-              <tbody id="groups-body">
-                <tr><td colspan="3"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div class="dash-panel section-gap">
-        <div class="dash-panel-head"><span class="dash-panel-title">Relatório por carteira / grupo</span></div>
-        <div class="table-card" style="margin:12px;border-radius:8px">
+        <div class="table-card">
           <table>
-            <thead><tr><th>Grupo</th><th>Campanhas</th><th>Total</th><th>Ativas</th><th>Atendidas</th><th>Formalizadas</th><th>Erros</th></tr></thead>
-            <tbody id="dashboard-groups-report-body">
+            <thead>
+              <tr><th>Nome</th><th>Status</th><th>SIPs</th><th>Total</th><th>Finalizadas</th><th>Criada em</th><th>Ações</th></tr>
+            </thead>
+            <tbody id="campaigns-body">
               <tr><td colspan="7"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <div class="dash-panel section-gap">
-        <div class="dash-panel-head"><span class="dash-panel-title">Relatório por campanha</span></div>
-        <div class="table-card" style="margin:12px;border-radius:8px">
-          <table>
-            <thead><tr><th>Campanha</th><th>Status</th><th>Grupo</th><th>SIPs</th><th>Total</th><th>Ativas</th><th>Atendidas</th><th>Formalizadas</th><th>Erros</th><th>Ações</th></tr></thead>
-            <tbody id="dashboard-campaigns-body">
-              <tr><td colspan="10"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
-            </tbody>
-          </table>
+      <!-- IMPORTAR -->
+      <div class="section" id="tab-import">
+        <div class="sec-head">
+          <span class="sec-title">Nova campanha</span>
+        </div>
+
+        <div class="drop-zone" id="import-zone" onclick="onDropZoneClick()">
+          <div class="drop-icon" id="drop-icon">⬆</div>
+          <div class="drop-title" id="drop-title">Arraste ou clique para selecionar</div>
+          <div class="drop-sub" id="drop-sub">Aceita .xlsx e .csv &nbsp;·&nbsp; Planilha DDM ou genérica (CPF, Nome)</div>
+          <input type="file" id="file-input" accept=".xlsx,.csv,.xls" style="display:none" />
+        </div>
+
+        <div class="upload-progress-wrap" id="upload-progress-wrap">
+          <div class="upload-progress-bar-bg">
+            <div class="upload-progress-bar-fill" id="upload-progress-fill"></div>
+          </div>
+          <div class="upload-progress-label">
+            <span id="upload-progress-stage">—</span>
+            <span id="upload-progress-pct">0%</span>
+          </div>
+        </div>
+
+        <div class="import-summary" id="import-summary">
+          <div class="kpi brand"><div class="kpi-label">Total importados</div><div class="kpi-val" id="imp-total">0</div></div>
+          <div class="kpi green"><div class="kpi-label">Com débito</div><div class="kpi-val" id="imp-debt">0</div></div>
+          <div class="kpi red"><div class="kpi-label">Sem débito / sem tel</div><div class="kpi-val" id="imp-no-debt">0</div></div>
+        </div>
+
+        <div class="import-actions" id="import-actions" style="display:none">
+          <input class="campaign-name-input" type="text" id="campaign-name-input" placeholder="Nome da campanha..." />
+          <select class="mini-select" id="campaign-group-select" onchange="applyCampaignGroupSelection()">
+            <option value="">Grupo de SIPs...</option>
+          </select>
+          <button class="btn btn-success" id="btn-save-campaign" onclick="saveCampaign()">💾 &nbsp;Salvar campanha</button>
+          <button class="btn btn-danger" onclick="resetImport()">✕ &nbsp;Limpar</button>
+          <div class="campaign-line-panel">
+            <div class="campaign-line-title">SIPs desta campanha</div>
+            <div class="campaign-line-grid" id="campaign-line-picker">
+              <div class="td-dim">Carregando linhas...</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="import-processing-actions" class="import-actions" style="display:none">
+          <button class="btn btn-warn" onclick="stopImport()">⏹ &nbsp;Parar importação</button>
+        </div>
+
+        <div id="import-table-wrap" style="display:none">
+          <div class="sec-head" style="margin-bottom:12px">
+            <span class="sec-title" id="import-table-title">Preview</span>
+          </div>
+          <div class="table-card">
+            <table>
+              <thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Débito?</th></tr></thead>
+              <tbody id="import-body"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      <div class="dash-panel">
-        <div class="dash-panel-head"><span class="dash-panel-title">Relatório e controle por SIP</span></div>
-        <div class="table-card" style="margin:12px;border-radius:8px">
-          <table>
-            <thead><tr><th>SIP</th><th>Grupos</th><th>Slots</th><th>Total</th><th>Ativas</th><th>Atendidas</th><th>Formalizadas</th><th>Erros</th><th>Controle</th></tr></thead>
-            <tbody id="dashboard-lines-body">
-              <tr><td colspan="9"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
-            </tbody>
-          </table>
+      <!-- DASHBOARD -->
+      <div class="section" id="tab-dashboard">
+        <div class="sec-head">
+          <span class="sec-title">Dashboard operacional</span>
+          <button class="btn btn-ghost" onclick="loadDashboard()">↻ &nbsp;Atualizar</button>
+        </div>
+
+        <div class="kpi-strip" id="dashboard-kpis">
+          <div class="kpi brand"><div class="kpi-label">Campanhas ativas</div><div class="kpi-val" id="dash-active">0</div></div>
+          <div class="kpi green"><div class="kpi-label">Atendidas</div><div class="kpi-val" id="dash-answered">0</div></div>
+          <div class="kpi amber"><div class="kpi-label">Formalizadas</div><div class="kpi-val" id="dash-formalized">0</div></div>
+          <div class="kpi red"><div class="kpi-label">Erros</div><div class="kpi-val" id="dash-errors">0</div></div>
+        </div>
+
+        <div class="dashboard-grid">
+          <div class="dash-panel" style="min-width:0">
+            <div class="dash-panel-head"><span class="dash-panel-title">Desempenho por campanha</span></div>
+            <div style="padding:10px 12px 10px 12px; color:var(--muted)">Visão executiva do resultado atual.</div>
+            <div id="campaign-viz" style="display:grid; gap:10px; padding: 0 12px 12px;"></div>
+          </div>
+          <div class="dash-panel">
+            <div class="dash-panel-head"><span class="dash-panel-title">Alertas de SIP</span></div>
+            <div class="alert-list" id="dashboard-alerts">
+              <div class="alert-item">Carregando linhas...</div>
+            </div>
+          </div>
+          <div class="dash-panel">
+            <div class="dash-panel-head"><span class="dash-panel-title">Grupos por carteira</span></div>
+            <div class="mini-form">
+              <input class="mini-input" id="group-name-input" placeholder="Nome do grupo (UVA, Cruzeiro...)" />
+              <div class="compact-checks" id="group-line-picker"></div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-success" onclick="saveSipGroup()">Salvar grupo</button>
+                <button class="btn btn-ghost" onclick="resetGroupForm()">Limpar</button>
+              </div>
+            </div>
+            <div class="table-card" style="margin:0 12px 12px;border-radius:8px">
+              <table>
+                <thead><tr><th>Grupo</th><th>SIPs</th><th>Ações</th></tr></thead>
+                <tbody id="groups-body">
+                  <tr><td colspan="3"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-panel section-gap">
+          <div class="dash-panel-head"><span class="dash-panel-title">Relatório por carteira / grupo</span></div>
+          <div class="table-card" style="margin:12px;border-radius:8px">
+            <table>
+              <thead><tr><th>Grupo</th><th>Campanhas</th><th>Total</th><th>Ativas</th><th>Atendidas</th><th>Formalizadas</th><th>Erros</th></tr></thead>
+              <tbody id="dashboard-groups-report-body">
+                <tr><td colspan="7"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="dash-panel section-gap">
+          <div class="dash-panel-head"><span class="dash-panel-title">Relatório por campanha</span></div>
+          <div class="table-card" style="margin:12px;border-radius:8px">
+            <table>
+              <thead><tr><th>Campanha</th><th>Status</th><th>Grupo</th><th>SIPs</th><th>Total</th><th>Ativas</th><th>Atendidas</th><th>Formalizadas</th><th>Erros</th><th>Ações</th></tr></thead>
+              <tbody id="dashboard-campaigns-body">
+                <tr><td colspan="10"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="dash-panel">
+          <div class="dash-panel-head"><span class="dash-panel-title">Relatório e controle por SIP</span></div>
+          <div class="table-card" style="margin:12px;border-radius:8px">
+            <table>
+              <thead><tr><th>SIP</th><th>Grupos</th><th>Slots</th><th>Total</th><th>Ativas</th><th>Atendidas</th><th>Formalizadas</th><th>Erros</th><th>Controle</th></tr></thead>
+              <tbody id="dashboard-lines-body">
+                <tr><td colspan="9"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
 
-  </main>
-</div>
+    </main>
+  </div>
 
-<!-- Modal chamada manual -->
-<div class="overlay" id="call-modal">
-  <div class="modal">
-    <div class="modal-title">↗ Iniciar chamada</div>
-    <div class="modal-field">
-      <span class="modal-label">Contato</span>
-      <div class="modal-val" id="modal-contact-name">—</div>
-    </div>
-    <div class="modal-field">
-      <span class="modal-label">Telefone</span>
-      <select class="modal-select" id="modal-phone-select"></select>
-    </div>
-    <div class="modal-field">
-      <span class="modal-label">Linha SIP</span>
-      <select class="modal-select" id="modal-line-select">
-        <option value="">Carregando linhas...</option>
-      </select>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmCall()">Ligar agora</button>
+  <!-- Modal chamada manual -->
+  <div class="overlay" id="call-modal">
+    <div class="modal">
+      <div class="modal-title">↗ Iniciar chamada</div>
+      <div class="modal-field">
+        <span class="modal-label">Contato</span>
+        <div class="modal-val" id="modal-contact-name">—</div>
+      </div>
+      <div class="modal-field">
+        <span class="modal-label">Telefone</span>
+        <select class="modal-select" id="modal-phone-select"></select>
+      </div>
+      <div class="modal-field">
+        <span class="modal-label">Linha SIP</span>
+        <select class="modal-select" id="modal-line-select">
+          <option value="">Carregando linhas...</option>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmCall()">Ligar agora</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- Modal editar SIPs da campanha -->
-<div class="overlay" id="campaign-lines-modal">
-  <div class="modal wide">
-    <div class="modal-title">SIPs da campanha</div>
-    <div class="modal-field">
-      <span class="modal-label">Campanha</span>
-      <div class="modal-val" id="edit-campaign-name">—</div>
-    </div>
-    <div class="modal-field">
-      <span class="modal-label">Grupo</span>
-      <select class="modal-select" id="edit-campaign-group-select" onchange="applyEditGroupSelection()">
-        <option value="">Sem grupo fixo</option>
-      </select>
-    </div>
-    <div class="modal-field">
-      <span class="modal-label">SIPs selecionadas</span>
-      <div class="campaign-line-grid" id="edit-campaign-line-picker"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeCampaignLinesModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveCampaignLines()">Salvar SIPs</button>
+  <!-- Modal editar SIPs da campanha -->
+  <div class="overlay" id="campaign-lines-modal">
+    <div class="modal wide">
+      <div class="modal-title">SIPs da campanha</div>
+      <div class="modal-field">
+        <span class="modal-label">Campanha</span>
+        <div class="modal-val" id="edit-campaign-name">—</div>
+      </div>
+      <div class="modal-field">
+        <span class="modal-label">Grupo</span>
+        <select class="modal-select" id="edit-campaign-group-select" onchange="applyEditGroupSelection()">
+          <option value="">Sem grupo fixo</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <span class="modal-label">SIPs selecionadas</span>
+        <div class="campaign-line-grid" id="edit-campaign-line-picker"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeCampaignLinesModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveCampaignLines()">Salvar SIPs</button>
+      </div>
     </div>
   </div>
-</div>
 
-<div id="toast"></div>
+  <div id="toast"></div>
 
-<script>
-const API = '';
-const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-}[ch]));
-const jsArg = (v) => escapeHtml(JSON.stringify(String(v ?? '')).replace(/</g, '\\u003c'));
-const nativeFetch = window.fetch.bind(window);
-window.fetch = (input, init = {}) => {
-  const token = sessionStorage.getItem('api_auth_token') || localStorage.getItem('api_auth_token') || '';
-  const url = typeof input === 'string' ? input : (input?.url || '');
-  const isApi = url.startsWith('/api/') || url.startsWith(`${location.origin}/api/`) || url.startsWith(`${API}/api/`);
-  if (token && isApi) {
-    const headers = new Headers(init.headers || {});
-    headers.set('X-API-Token', token);
-    init = { ...init, headers };
-  }
-  return nativeFetch(input, init);
-};
+  <script>
+  const API = '';
+  const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+  const jsArg = (v) => escapeHtml(JSON.stringify(String(v ?? '')).replace(/</g, '\\u003c'));
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const token = sessionStorage.getItem('api_auth_token') || localStorage.getItem('api_auth_token') || '';
+    const url = typeof input === 'string' ? input : (input?.url || '');
+    const isApi = url.startsWith('/api/') || url.startsWith(`${location.origin}/api/`) || url.startsWith(`${API}/api/`);
+    if (token && isApi) {
+      const headers = new Headers(init.headers || {});
+      headers.set('X-API-Token', token);
+      init = { ...init, headers };
+    }
+    return nativeFetch(input, init);
+  };
 
-setInterval(() => {
-  document.getElementById('clock').textContent = new Date().toLocaleTimeString('pt-BR');
-}, 1000);
+  setInterval(() => {
+    document.getElementById('clock').textContent = new Date().toLocaleTimeString('pt-BR');
+  }, 1000);
 
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-    if (tab.dataset.tab === 'contacts'  && !contactsLoaded)  loadContacts();
-    if (tab.dataset.tab === 'calls'     && !callsLoaded)     loadCalls();
-    if (tab.dataset.tab === 'campaigns' && !campaignsLoaded) loadCampaigns();
-    if (tab.dataset.tab === 'monitor')  { loadMonitor(); startMonitor(); }
-    if (tab.dataset.tab === 'dashboard') loadDashboard();
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      if (tab.dataset.tab === 'contacts'  && !contactsLoaded)  loadContacts();
+      if (tab.dataset.tab === 'calls'     && !callsLoaded)     loadCalls();
+      if (tab.dataset.tab === 'campaigns' && !campaignsLoaded) loadCampaigns();
+      if (tab.dataset.tab === 'monitor')  { loadMonitor(); startMonitor(); }
+      if (tab.dataset.tab === 'dashboard') loadDashboard();
+    });
   });
-});
 
-function toast(msg, type = 'ok') {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = `show ${type}`;
-  clearTimeout(el._t);
-  el._t = setTimeout(() => el.className = '', 4000);
-}
-
-let linesData = [];
-let sipGroups = [];
-let dashboardData = null;
-let editingGroupId = null;
-let editingCampaign = null;
-
-async function loadLines() {
-  document.getElementById('lines-grid').innerHTML = '<div class="loader"><div class="spin"></div>Carregando linhas...</div>';
-  try {
-    const res  = await fetch(`${API}/api/lines`);
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    linesData = json.data;
-    renderLines(linesData);
-  } catch(e) {
-    document.getElementById('lines-grid').innerHTML = `<div class="loader">Erro: ${escapeHtml(e.message)}</div>`;
+  function toast(msg, type = 'ok') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `show ${type}`;
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.className = '', 4000);
   }
-}
 
-function renderLines(lines) {
-  const grid = document.getElementById('lines-grid');
-  if (!lines.length) { grid.innerHTML = '<div class="loader">Nenhuma linha encontrada.</div>'; return; }
-  grid.innerHTML = lines.map(l => `
-    <div class="line-card ${l.paused ? 'paused' : l.healthy ? 'healthy' : l.status === 'connecting' ? 'warn' : 'down'}">
-      <div class="top-bar"></div>
-      <div class="line-name">${escapeHtml(l.name || 'Dispositivo')}</div>
-      <div class="line-number ${!l.phone ? 'empty' : ''}">${l.phone ? escapeHtml(String(l.phone).replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3')) : 'Sem número'}</div>
-      <div class="line-tags">
-        <span class="tag ${l.status==='open'?'tag-green':l.status==='connecting'?'tag-amber':'tag-red'}">${escapeHtml(l.status)}</span>
-        ${l.disabled ? '<span class="tag tag-red">off</span>' : '<span class="tag tag-brand">on</span>'}
-        ${l.needs_restart ? '<span class="tag tag-amber">restart</span>' : ''}
-        ${l.configured ? '<span class="tag tag-brand">vapi</span>' : '<span class="tag tag-red">sem vapi</span>'}
-        ${l.paused ? '<span class="tag tag-amber">pausada</span>' : ''}
-        ${l.cooldown ? '<span class="tag tag-amber">cooldown</span>' : ''}
-      </div>
-      <div class="line-meta">Chamadas: <b>${l.calls_made ?? 0}</b></div>
-      <div class="line-slot-meta">Slots: <b>${l.active_calls ?? 0}</b> / ${l.max_concurrent ?? 2}</div>
-      <div class="line-slot-meta">Env: <b>${escapeHtml(l.env_name || '—')}</b></div>
-      <div class="line-slot-meta">Vapi: <b>${escapeHtml(l.phone_number_short || '—')}</b></div>
-      <div class="line-slot-meta" title="${escapeHtml(l.token || '')}">Token: <b>${escapeHtml((l.token || '').slice(0, 8))}...</b></div>
-      ${l.pause_reason ? `<div class="line-slot-meta">Motivo: ${escapeHtml(l.pause_reason)}</div>` : ''}
-      <div class="line-controls">
-        ${l.paused
-          ? `<button class="call-btn" onclick="resumeLine(${jsArg(l.token)})">Retomar</button>`
-          : `<button class="del-btn" onclick="pauseLine(${jsArg(l.token)}, ${jsArg(l.name || 'linha')})">Pausar</button>`}
-      </div>
-    </div>
-  `).join('');
-  const stats = document.getElementById('lines-stats');
-  stats.style.display = 'grid';
-  document.getElementById('stat-total').textContent   = lines.length;
-  document.getElementById('stat-healthy').textContent = lines.filter(l => l.healthy).length;
-  document.getElementById('stat-down').textContent    = lines.filter(l => !l.healthy).length;
-  document.getElementById('stat-calls').textContent   = lines.reduce((a,l) => a + (l.calls_made||0), 0);
-  const ok = lines.filter(l => l.healthy).length;
-  document.getElementById('healthy-count').textContent = `${ok}/${lines.length} linhas ok`;
-  renderCampaignLinePicker(lines);
-  renderGroupLinePicker();
-  if (campaignsLoaded) loadCampaigns();
-}
+  let linesData = [];
+  let sipGroups = [];
+  let dashboardData = null;
+  let editingGroupId = null;
+  let editingCampaign = null;
 
-async function ensureLinesLoaded() {
-  if (!linesData.length) await loadLines();
-}
-
-function renderCampaignLinePicker(lines) {
-  const picker = document.getElementById('campaign-line-picker');
-  if (!picker) return;
-  const previous = getSelectedCampaignLines();
-  const usable = lines.filter(l => l.configured);
-  if (!usable.length) {
-    picker.innerHTML = '<div class="td-dim">Nenhuma SIP com phoneNumberId configurado.</div>';
-    return;
+  async function loadLines() {
+    document.getElementById('lines-grid').innerHTML = '<div class="loader"><div class="spin"></div>Carregando linhas...</div>';
+    try {
+      const res  = await fetch(`${API}/api/lines`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      linesData = json.data;
+      renderLines(linesData);
+    } catch(e) {
+      document.getElementById('lines-grid').innerHTML = `<div class="loader">Erro: ${escapeHtml(e.message)}</div>`;
+    }
   }
-  picker.innerHTML = usable.map(l => {
-    const disabled = !l.healthy;
-    const checked = !disabled && (previous.length ? previous.includes(l.token) : true);
-    const label = `${l.name || 'Linha'} · ${l.phone || 'sem numero'} · ${l.active_calls ?? 0}/${l.max_concurrent ?? 2}`;
-    return `<label class="campaign-line-option ${disabled ? 'disabled' : ''}">
-      <input type="checkbox" class="campaign-line-check" value="${escapeHtml(l.token)}" ${disabled ? 'disabled' : ''} ${checked ? 'checked' : ''}>
-      <span>${escapeHtml(label)}</span>
-    </label>`;
-  }).join('');
-}
 
-function getSelectedCampaignLines() {
-  return Array.from(document.querySelectorAll('.campaign-line-check:checked:not(:disabled)')).map(el => el.value);
-}
-
-function lineLabelByToken(token) {
-  const line = linesData.find(l => l.token === token);
-  if (!line) return token ? token.slice(0, 6) : 'linha';
-  return line.name || line.phone || token.slice(0, 6);
-}
-
-function campaignLinesLabel(tokens) {
-  if (!Array.isArray(tokens) || !tokens.length) return 'todas';
-  const labels = tokens.map(lineLabelByToken);
-  if (labels.length <= 2) return labels.join(', ');
-  return `${labels.slice(0, 2).join(', ')} +${labels.length - 2}`;
-}
-
-function lineByToken(token) {
-  return linesData.find(l => l.token === token) || {};
-}
-
-function groupById(id) {
-  return sipGroups.find(g => g.id === id);
-}
-
-function setCheckedTokens(containerId, tokens) {
-  const wanted = new Set(tokens || []);
-  document.querySelectorAll(`#${containerId} input[type="checkbox"]`).forEach(input => {
-    input.checked = wanted.has(input.value);
-  });
-}
-
-function checkedTokens(containerId) {
-  return Array.from(document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`)).map(el => el.value);
-}
-
-function renderTokenChecks(containerId, selected = [], onlyHealthy = false, defaultAll = true) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  const wanted = new Set(selected || []);
-  const lines = linesData.filter(l => l.configured);
-  if (!lines.length) {
-    el.innerHTML = '<span class="td-dim">Nenhuma SIP com Vapi configurada.</span>';
-    return;
-  }
-  el.innerHTML = lines.map(l => {
-    const disabled = onlyHealthy && !l.healthy;
-    const checked = wanted.size ? wanted.has(l.token) : (defaultAll && (!onlyHealthy || l.healthy));
-    return `<label class="compact-check">
-      <input type="checkbox" value="${escapeHtml(l.token)}" ${disabled ? 'disabled' : ''} ${checked && !disabled ? 'checked' : ''}>
-      ${escapeHtml(l.name || l.phone || 'Linha')}
-    </label>`;
-  }).join('');
-}
-
-function renderGroupLinePicker() {
-  renderTokenChecks('group-line-picker', editingGroupId ? (groupById(editingGroupId)?.line_tokens || []) : [], false, false);
-}
-
-async function loadSipGroups() {
-  try {
-    const res = await fetch(`${API}/api/sip-groups`);
-    const json = await res.json();
-    sipGroups = json.data || [];
-  } catch(e) {
-    sipGroups = [];
-  }
-  renderGroupOptions();
-  renderGroupsTable();
-  renderGroupLinePicker();
-}
-
-function renderGroupOptions() {
-  const selects = [
-    document.getElementById('campaign-group-select'),
-    document.getElementById('edit-campaign-group-select')
-  ].filter(Boolean);
-  selects.forEach(sel => {
-    const current = sel.value;
-    const first = sel.id === 'campaign-group-select' ? 'Grupo de SIPs...' : 'Sem grupo fixo';
-    sel.innerHTML = `<option value="">${first}</option>` + sipGroups.map(g =>
-      `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`
-    ).join('');
-    if (current) sel.value = current;
-  });
-}
-
-function renderGroupsTable() {
-  const tbody = document.getElementById('groups-body');
-  if (!tbody) return;
-  if (!sipGroups.length) {
-    tbody.innerHTML = '<tr><td colspan="3"><div class="loader">Nenhum grupo criado.</div></td></tr>';
-    return;
-  }
-  tbody.innerHTML = sipGroups.map(g => `
-    <tr>
-      <td>${escapeHtml(g.name)}</td>
-      <td class="td-mono">${campaignLinesLabel(g.line_tokens)}</td>
-      <td>
-        <div style="display:flex;gap:6px">
-          <button class="call-btn" onclick="editSipGroup(${jsArg(g.id)})">Editar</button>
-          <button class="del-btn" onclick="deleteSipGroup(${jsArg(g.id)}, ${jsArg(g.name)})">Excluir</button>
+  function renderLines(lines) {
+    const grid = document.getElementById('lines-grid');
+    if (!lines.length) { grid.innerHTML = '<div class="loader">Nenhuma linha encontrada.</div>'; return; }
+    grid.innerHTML = lines.map(l => `
+      <div class="line-card ${l.paused ? 'paused' : l.healthy ? 'healthy' : l.status === 'connecting' ? 'warn' : 'down'}">
+        <div class="top-bar"></div>
+        <div class="line-name">${escapeHtml(l.name || 'Dispositivo')}</div>
+        <div class="line-number ${!l.phone ? 'empty' : ''}">${l.phone ? escapeHtml(String(l.phone).replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3')) : 'Sem número'}</div>
+        <div class="line-tags">
+          <span class="tag ${l.status==='open'?'tag-green':l.status==='connecting'?'tag-amber':'tag-red'}">${escapeHtml(l.status)}</span>
+          ${l.disabled ? '<span class="tag tag-red">off</span>' : '<span class="tag tag-brand">on</span>'}
+          ${l.needs_restart ? '<span class="tag tag-amber">restart</span>' : ''}
+          ${l.configured ? '<span class="tag tag-brand">vapi</span>' : '<span class="tag tag-red">sem vapi</span>'}
+          ${l.paused ? '<span class="tag tag-amber">pausada</span>' : ''}
+          ${l.cooldown ? '<span class="tag tag-amber">cooldown</span>' : ''}
         </div>
-      </td>
-    </tr>
-  `).join('');
-}
+        <div class="line-meta">Chamadas: <b>${l.calls_made ?? 0}</b></div>
+        <div class="line-slot-meta">Slots: <b>${l.active_calls ?? 0}</b> / ${l.max_concurrent ?? 2}</div>
+        <div class="line-slot-meta">Env: <b>${escapeHtml(l.env_name || '—')}</b></div>
+        <div class="line-slot-meta">Vapi: <b>${escapeHtml(l.phone_number_short || '—')}</b></div>
+        <div class="line-slot-meta" title="${escapeHtml(l.token || '')}">Token: <b>${escapeHtml((l.token || '').slice(0, 8))}...</b></div>
+        ${l.pause_reason ? `<div class="line-slot-meta">Motivo: ${escapeHtml(l.pause_reason)}</div>` : ''}
+        <div class="line-controls">
+          ${l.paused
+            ? `<button class="call-btn" onclick="resumeLine(${jsArg(l.token)})">Retomar</button>`
+            : `<button class="del-btn" onclick="pauseLine(${jsArg(l.token)}, ${jsArg(l.name || 'linha')})">Pausar</button>`}
+        </div>
+      </div>
+    `).join('');
+    const stats = document.getElementById('lines-stats');
+    stats.style.display = 'grid';
+    document.getElementById('stat-total').textContent   = lines.length;
+    document.getElementById('stat-healthy').textContent = lines.filter(l => l.healthy).length;
+    document.getElementById('stat-down').textContent    = lines.filter(l => !l.healthy).length;
+    document.getElementById('stat-calls').textContent   = lines.reduce((a,l) => a + (l.calls_made||0), 0);
+    const ok = lines.filter(l => l.healthy).length;
+    document.getElementById('healthy-count').textContent = `${ok}/${lines.length} linhas ok`;
+    renderCampaignLinePicker(lines);
+    renderGroupLinePicker();
+    if (campaignsLoaded) loadCampaigns();
+  }
 
-function editSipGroup(id) {
-  const group = groupById(id);
-  if (!group) return;
-  editingGroupId = id;
-  document.getElementById('group-name-input').value = group.name;
-  renderTokenChecks('group-line-picker', group.line_tokens || [], false);
-}
+  async function ensureLinesLoaded() {
+    if (!linesData.length) await loadLines();
+  }
 
-function resetGroupForm() {
-  editingGroupId = null;
-  const input = document.getElementById('group-name-input');
-  if (input) input.value = '';
-  renderTokenChecks('group-line-picker', [], false, false);
-}
+  function renderCampaignLinePicker(lines) {
+    const picker = document.getElementById('campaign-line-picker');
+    if (!picker) return;
+    const previous = getSelectedCampaignLines();
+    const usable = lines.filter(l => l.configured);
+    if (!usable.length) {
+      picker.innerHTML = '<div class="td-dim">Nenhuma SIP com phoneNumberId configurado.</div>';
+      return;
+    }
+    picker.innerHTML = usable.map(l => {
+      const disabled = !l.healthy;
+      const checked = !disabled && (previous.length ? previous.includes(l.token) : true);
+      const label = `${l.name || 'Linha'} · ${l.phone || 'sem numero'} · ${l.active_calls ?? 0}/${l.max_concurrent ?? 2}`;
+      return `<label class="campaign-line-option ${disabled ? 'disabled' : ''}">
+        <input type="checkbox" class="campaign-line-check" value="${escapeHtml(l.token)}" ${disabled ? 'disabled' : ''} ${checked ? 'checked' : ''}>
+        <span>${escapeHtml(label)}</span>
+      </label>`;
+    }).join('');
+  }
 
-async function saveSipGroup() {
-  await ensureLinesLoaded();
-  const name = document.getElementById('group-name-input').value.trim();
-  const line_tokens = checkedTokens('group-line-picker');
-  if (!name) { toast('Digite o nome do grupo.', 'err'); return; }
-  if (!line_tokens.length) { toast('Selecione ao menos uma SIP.', 'err'); return; }
-  try {
-    const url = editingGroupId ? `${API}/api/sip-groups/${editingGroupId}` : `${API}/api/sip-groups`;
-    const res = await fetch(url, {
-      method: editingGroupId ? 'PUT' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, line_tokens })
+  function getSelectedCampaignLines() {
+    return Array.from(document.querySelectorAll('.campaign-line-check:checked:not(:disabled)')).map(el => el.value);
+  }
+
+  function lineLabelByToken(token) {
+    const line = linesData.find(l => l.token === token);
+    if (!line) return token ? token.slice(0, 6) : 'linha';
+    return line.name || line.phone || token.slice(0, 6);
+  }
+
+  function campaignLinesLabel(tokens) {
+    if (!Array.isArray(tokens) || !tokens.length) return 'todas';
+    const labels = tokens.map(lineLabelByToken);
+    if (labels.length <= 2) return labels.join(', ');
+    return `${labels.slice(0, 2).join(', ')} +${labels.length - 2}`;
+  }
+
+  function lineByToken(token) {
+    return linesData.find(l => l.token === token) || {};
+  }
+
+  function groupById(id) {
+    return sipGroups.find(g => g.id === id);
+  }
+
+  function setCheckedTokens(containerId, tokens) {
+    const wanted = new Set(tokens || []);
+    document.querySelectorAll(`#${containerId} input[type="checkbox"]`).forEach(input => {
+      input.checked = wanted.has(input.value);
     });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    toast('Grupo salvo.', 'ok');
-    resetGroupForm();
-    await loadSipGroups();
-    loadDashboard();
-  } catch(e) {
-    toast(`Erro: ${e.message}`, 'err');
   }
-}
 
-async function deleteSipGroup(id, name) {
-  if (!confirm(`Excluir grupo "${name}"?`)) return;
-  try {
-    const res = await fetch(`${API}/api/sip-groups/${id}`, { method: 'DELETE' });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    toast('Grupo excluído.', 'ok');
-    await loadSipGroups();
-    loadDashboard();
-  } catch(e) {
-    toast(`Erro: ${e.message}`, 'err');
+  function checkedTokens(containerId) {
+    return Array.from(document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`)).map(el => el.value);
   }
-}
 
-function applyCampaignGroupSelection() {
-  const group = groupById(document.getElementById('campaign-group-select').value);
-  if (group) setCheckedTokens('campaign-line-picker', group.line_tokens || []);
-}
+  function renderTokenChecks(containerId, selected = [], onlyHealthy = false, defaultAll = true) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const wanted = new Set(selected || []);
+    const lines = linesData.filter(l => l.configured);
+    if (!lines.length) {
+      el.innerHTML = '<span class="td-dim">Nenhuma SIP com Vapi configurada.</span>';
+      return;
+    }
+    el.innerHTML = lines.map(l => {
+      const disabled = onlyHealthy && !l.healthy;
+      const checked = wanted.size ? wanted.has(l.token) : (defaultAll && (!onlyHealthy || l.healthy));
+      return `<label class="compact-check">
+        <input type="checkbox" value="${escapeHtml(l.token)}" ${disabled ? 'disabled' : ''} ${checked && !disabled ? 'checked' : ''}>
+        ${escapeHtml(l.name || l.phone || 'Linha')}
+      </label>`;
+    }).join('');
+  }
 
-function applyEditGroupSelection() {
-  const group = groupById(document.getElementById('edit-campaign-group-select').value);
-  if (group) setCheckedTokens('edit-campaign-line-picker', group.line_tokens || []);
-}
+  function renderGroupLinePicker() {
+    renderTokenChecks('group-line-picker', editingGroupId ? (groupById(editingGroupId)?.line_tokens || []) : [], false, false);
+  }
 
-async function pauseLine(token, name) {
-  const reason = prompt(`Motivo para pausar ${name || 'linha'}:`, 'pausa operacional');
-  if (reason === null) return;
-  try {
-    const res = await fetch(`${API}/api/lines/${token}/pause`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason })
+  async function loadSipGroups() {
+    try {
+      const res = await fetch(`${API}/api/sip-groups`);
+      const json = await res.json();
+      sipGroups = json.data || [];
+    } catch(e) {
+      sipGroups = [];
+    }
+    renderGroupOptions();
+    renderGroupsTable();
+    renderGroupLinePicker();
+  }
+
+  function renderGroupOptions() {
+    const selects = [
+      document.getElementById('campaign-group-select'),
+      document.getElementById('edit-campaign-group-select')
+    ].filter(Boolean);
+    selects.forEach(sel => {
+      const current = sel.value;
+      const first = sel.id === 'campaign-group-select' ? 'Grupo de SIPs...' : 'Sem grupo fixo';
+      sel.innerHTML = `<option value="">${first}</option>` + sipGroups.map(g =>
+        `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`
+      ).join('');
+      if (current) sel.value = current;
     });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    toast('SIP pausada.', 'ok');
-    await loadLines();
-    loadDashboard();
-  } catch(e) {
-    toast(`Erro: ${e.message}`, 'err');
   }
-}
 
-async function resumeLine(token) {
-  try {
-    const res = await fetch(`${API}/api/lines/${token}/resume`, { method: 'POST' });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    toast('SIP retomada.', 'ok');
-    await loadLines();
-    loadDashboard();
-  } catch(e) {
-    toast(`Erro: ${e.message}`, 'err');
-  }
-}
-
-function populateModalLines(lines) {
-  const sel     = document.getElementById('modal-line-select');
-  const healthy = lines.filter(l => l.healthy);
-  sel.innerHTML = healthy.length
-    ? healthy.map(l => `<option value="${escapeHtml(l.id)}">${escapeHtml(l.name)} — ${escapeHtml(l.phone)}</option>`).join('')
-    : '<option value="">Nenhuma linha disponível</option>';
-}
-
-let contactsLoaded = false, contactsPage_ = 1, contactsSearch = '', searchTimer;
-
-async function loadContacts() {
-  contactsLoaded = true;
-  document.getElementById('contacts-body').innerHTML =
-    '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
-  try {
-    const params = new URLSearchParams({ page: contactsPage_, per_page: 50, search: contactsSearch });
-    const res  = await fetch(`${API}/api/contacts?${params}`);
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    renderContacts(json.data, json.page, json.pages, json.total);
-  } catch(e) {
-    document.getElementById('contacts-body').innerHTML =
-      `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
-  }
-}
-
-function renderContacts(rows, page, pages, total) {
-  const tbody = document.getElementById('contacts-body');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Nenhum contato encontrado.</div></td></tr>';
-  } else {
-    tbody.innerHTML = rows.map(c => {
-      const phones = Array.isArray(c.phones) ? c.phones : (c.phones ? [c.phones] : []);
-      return `<tr>
-        <td>${escapeHtml(c.name || '—')}</td>
-        <td class="td-mono">${escapeHtml(c.cpf || c.cpf_norm || '—')}</td>
-        <td class="td-dim">${escapeHtml(c.institution || '—')}</td>
-        <td class="td-mono">${escapeHtml(phones.slice(0,2).join(', ') || '—')}</td>
+  function renderGroupsTable() {
+    const tbody = document.getElementById('groups-body');
+    if (!tbody) return;
+    if (!sipGroups.length) {
+      tbody.innerHTML = '<tr><td colspan="3"><div class="loader">Nenhum grupo criado.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = sipGroups.map(g => `
+      <tr>
+        <td>${escapeHtml(g.name)}</td>
+        <td class="td-mono">${campaignLinesLabel(g.line_tokens)}</td>
         <td>
           <div style="display:flex;gap:6px">
-            <button class="call-btn" ${!phones.length?'disabled':''}
-              onclick='openModal(${escapeHtml(JSON.stringify({id:c.id,name:c.name,phones}).replace(/</g, "\\u003c"))})'>
-              ↗ Ligar
-            </button>
-            <button class="del-btn" onclick='deleteContact(${jsArg(c.id)}, ${jsArg(c.name)})'>✕</button>
+            <button class="call-btn" onclick="editSipGroup(${jsArg(g.id)})">Editar</button>
+            <button class="del-btn" onclick="deleteSipGroup(${jsArg(g.id)}, ${jsArg(g.name)})">Excluir</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function editSipGroup(id) {
+    const group = groupById(id);
+    if (!group) return;
+    editingGroupId = id;
+    document.getElementById('group-name-input').value = group.name;
+    renderTokenChecks('group-line-picker', group.line_tokens || [], false);
+  }
+
+  function resetGroupForm() {
+    editingGroupId = null;
+    const input = document.getElementById('group-name-input');
+    if (input) input.value = '';
+    renderTokenChecks('group-line-picker', [], false, false);
+  }
+
+  async function saveSipGroup() {
+    await ensureLinesLoaded();
+    const name = document.getElementById('group-name-input').value.trim();
+    const line_tokens = checkedTokens('group-line-picker');
+    if (!name) { toast('Digite o nome do grupo.', 'err'); return; }
+    if (!line_tokens.length) { toast('Selecione ao menos uma SIP.', 'err'); return; }
+    try {
+      const url = editingGroupId ? `${API}/api/sip-groups/${editingGroupId}` : `${API}/api/sip-groups`;
+      const res = await fetch(url, {
+        method: editingGroupId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, line_tokens })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('Grupo salvo.', 'ok');
+      resetGroupForm();
+      await loadSipGroups();
+      loadDashboard();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  async function deleteSipGroup(id, name) {
+    if (!confirm(`Excluir grupo "${name}"?`)) return;
+    try {
+      const res = await fetch(`${API}/api/sip-groups/${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('Grupo excluído.', 'ok');
+      await loadSipGroups();
+      loadDashboard();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  function applyCampaignGroupSelection() {
+    const group = groupById(document.getElementById('campaign-group-select').value);
+    if (group) setCheckedTokens('campaign-line-picker', group.line_tokens || []);
+  }
+
+  function applyEditGroupSelection() {
+    const group = groupById(document.getElementById('edit-campaign-group-select').value);
+    if (group) setCheckedTokens('edit-campaign-line-picker', group.line_tokens || []);
+  }
+
+  async function pauseLine(token, name) {
+    const reason = prompt(`Motivo para pausar ${name || 'linha'}:`, 'pausa operacional');
+    if (reason === null) return;
+    try {
+      const res = await fetch(`${API}/api/lines/${token}/pause`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('SIP pausada.', 'ok');
+      await loadLines();
+      loadDashboard();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  async function resumeLine(token) {
+    try {
+      const res = await fetch(`${API}/api/lines/${token}/resume`, { method: 'POST' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('SIP retomada.', 'ok');
+      await loadLines();
+      loadDashboard();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  function populateModalLines(lines) {
+    const sel     = document.getElementById('modal-line-select');
+    const healthy = lines.filter(l => l.healthy);
+    sel.innerHTML = healthy.length
+      ? healthy.map(l => `<option value="${escapeHtml(l.id)}">${escapeHtml(l.name)} — ${escapeHtml(l.phone)}</option>`).join('')
+      : '<option value="">Nenhuma linha disponível</option>';
+  }
+
+  let contactsLoaded = false, contactsPage_ = 1, contactsSearch = '', searchTimer;
+
+  async function loadContacts() {
+    contactsLoaded = true;
+    document.getElementById('contacts-body').innerHTML =
+      '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+    try {
+      const params = new URLSearchParams({ page: contactsPage_, per_page: 50, search: contactsSearch });
+      const res  = await fetch(`${API}/api/contacts?${params}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      renderContacts(json.data, json.page, json.pages, json.total);
+    } catch(e) {
+      document.getElementById('contacts-body').innerHTML =
+        `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
+    }
+  }
+
+  function renderContacts(rows, page, pages, total) {
+    const tbody = document.getElementById('contacts-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Nenhum contato encontrado.</div></td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(c => {
+        const phones = Array.isArray(c.phones) ? c.phones : (c.phones ? [c.phones] : []);
+        return `<tr>
+          <td>${escapeHtml(c.name || '—')}</td>
+          <td class="td-mono">${escapeHtml(c.cpf || c.cpf_norm || '—')}</td>
+          <td class="td-dim">${escapeHtml(c.institution || '—')}</td>
+          <td class="td-mono">${escapeHtml(phones.slice(0,2).join(', ') || '—')}</td>
+          <td>
+            <div style="display:flex;gap:6px">
+              <button class="call-btn" ${!phones.length?'disabled':''}
+                onclick='openModal(${escapeHtml(JSON.stringify({id:c.id,name:c.name,phones}).replace(/</g, "\\u003c"))})'>
+                ↗ Ligar
+              </button>
+              <button class="del-btn" onclick='deleteContact(${jsArg(c.id)}, ${jsArg(c.name)})'>✕</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+    document.getElementById('contacts-page-info').textContent = `${page} / ${pages} — ${total} contatos`;
+    document.getElementById('contacts-prev').disabled = page <= 1;
+    document.getElementById('contacts-next').disabled = page >= pages;
+  }
+
+  function contactsPage(dir) { contactsPage_ += dir; loadContacts(); }
+
+  document.getElementById('contacts-search').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { contactsSearch = e.target.value; contactsPage_ = 1; loadContacts(); }, 400);
+  });
+
+  async function deleteContact(id, name) {
+    if (!confirm(`Excluir "${name}"?`)) return;
+    try {
+      const res  = await fetch(`${API}/api/contacts/${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast(`✓ ${name} excluído`, 'ok');
+      loadContacts();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  let callsLoaded = false, callsPage_ = 1;
+
+  async function loadCalls() {
+    callsLoaded = true;
+    document.getElementById('calls-body').innerHTML =
+      '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+    try {
+      const res  = await fetch(`${API}/api/calls?page=${callsPage_}&per_page=50`);
+      const json = await res.json();
+      if (!json.ok) {
+        console.error('loadCalls error', json);
+        throw new Error(json.error);
+      }
+      renderCalls(json.data, json.page, json.pages, json.total);
+    } catch(e) {
+      console.error('loadCalls failed', e);
+      document.getElementById('calls-body').innerHTML =
+        `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
+    }
+  }
+
+  function renderCalls(rows, page, pages, total) {
+    const tbody = document.getElementById('calls-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Sem histórico.</div></td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(c => {
+        const statusMap = {
+          finalizado: 'cs-ended', atendido: 'cs-ended',
+          em_andamento: 'cs-in-progress', erro: 'cs-failed',
+          pendente: 'cs-queued', enfileirado: 'cs-queued', sem_debito: 'cs-queued',
+        };
+        const cls  = statusMap[c.status] || 'cs-queued';
+        const dur  = c.duration ? `${Math.floor(c.duration/60)}m ${c.duration%60}s` : '—';
+        const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
+        const camp = c.campaign_name || (c.campaign_id ? `Campanha ${String(c.campaign_id).slice(0,8)}` : '—');
+        return `<tr>
+          <td class="td-mono" style="color:var(--muted)">${(c.id||'').slice(0,8)}…</td>
+          <td>${escapeHtml(c.cpf || '—')}<br><span class="td-dim">${escapeHtml(camp)}</span></td>
+          <td><span class="cs ${cls}">${escapeHtml(c.status||'—')}</span></td>
+          <td class="td-mono">${dur}</td>
+          <td class="td-dim">${date}</td>
+        </tr>`;
+      }).join('');
+    }
+    document.getElementById('calls-page-info').textContent = `${page} / ${pages} — ${total} chamadas`;
+    document.getElementById('calls-prev').disabled = page <= 1;
+    document.getElementById('calls-next').disabled = page >= pages;
+  }
+
+  function callsPage(dir) { callsPage_ += dir; loadCalls(); }
+
+  let monitorTimer = null;
+
+  async function loadMonitor() {
+    try {
+      const res  = await fetch(`${API}/api/monitor`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      renderMonitor(json.data, json.stats);
+      document.getElementById('monitor-updated').textContent =
+        'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
+    } catch(e) {
+      document.getElementById('monitor-body').innerHTML =
+        `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
+    }
+  }
+
+  function renderMonitor(rows, stats) {
+    const tbody = document.getElementById('monitor-body');
+    document.getElementById('monitor-stats').style.display = 'grid';
+    document.getElementById('mon-andamento').textContent = stats.em_andamento;
+    document.getElementById('mon-atendido').textContent  = stats.atendido;
+    document.getElementById('mon-erro').textContent      = stats.erro;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6"><div class="loader">Nenhuma chamada ativa.</div></td></tr>';
+      return;
+    }
+    const statusMap = {
+      em_andamento: { cls: 'cs-in-progress', label: 'ligando' },
+      enfileirado:  { cls: 'cs-queued',      label: 'aguardando' },
+      atendido:     { cls: 'cs-ended',       label: 'atendido' },
+      erro:         { cls: 'cs-failed',      label: 'erro' },
+    };
+    tbody.innerHTML = rows.map(r => {
+      const s    = statusMap[r.status] || { cls: 'cs-queued', label: r.status };
+      const date = r.created_at ? new Date(r.created_at).toLocaleTimeString('pt-BR') : '—';
+      const cpf  = r.cpf ? r.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : '—';
+      const tel  = r.phone ? r.phone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3') : '—';
+      return `<tr>
+        <td class="td-mono">${cpf}</td>
+        <td class="td-mono">${tel}</td>
+        <td><span class="cs ${s.cls}">${s.label}</span></td>
+        <td class="td-dim">${escapeHtml(r.line_name || '—')}</td>
+        <td class="td-dim">${escapeHtml(r.campaign)}</td>
+        <td class="td-dim">${date}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function startMonitor() {
+    if (monitorTimer) clearInterval(monitorTimer);
+    monitorTimer = setInterval(loadMonitor, 5000);
+  }
+
+  let campaignsLoaded = false;
+  let campaignRows = [];
+
+  async function loadCampaigns() {
+    campaignsLoaded = true;
+    document.getElementById('campaigns-body').innerHTML =
+      '<tr><td colspan="7"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+    try {
+      const res  = await fetch(`${API}/api/campaigns`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      renderCampaigns(json.data);
+    } catch(e) {
+      document.getElementById('campaigns-body').innerHTML =
+        `<tr><td colspan="7"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
+    }
+  }
+
+  function renderCampaigns(rows) {
+    campaignRows = rows || [];
+    const tbody = document.getElementById('campaigns-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7"><div class="loader">Nenhuma campanha criada.</div></td></tr>';
+      return;
+    }
+    const statusMap = {
+      rascunho:     { cls: 'cs-queued',      label: 'rascunho' },
+      em_andamento: { cls: 'cs-in-progress', label: 'em andamento' },
+      finalizada:   { cls: 'cs-ended',       label: 'finalizada' },
+      pausada:      { cls: 'cs-failed',      label: 'pausada' },
+    };
+    tbody.innerHTML = rows.map(c => {
+      const s    = statusMap[c.status] || { cls: 'cs-queued', label: c.status };
+      const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
+      const sipLabel = campaignLinesLabel(c.line_tokens);
+      const canStart = c.status === 'rascunho' || c.status === 'pausada';
+      const canPause = c.status === 'em_andamento';
+      return `<tr>
+        <td>${escapeHtml(c.name)}</td>
+        <td><span class="cs ${s.cls}">${s.label}</span></td>
+        <td class="td-mono">${sipLabel}</td>
+        <td class="td-mono">${c.total ?? 0}</td>
+        <td class="td-mono">${c.finished ?? 0} / ${c.total ?? 0}</td>
+        <td class="td-dim">${date}</td>
+        <td>
+          <div style="display:flex;gap:6px">
+            ${canStart ? `<button class="call-btn" onclick="startCampaign(${jsArg(c.id)})">▶ Iniciar</button>` : ''}
+            ${canPause ? `<button class="call-btn" onclick="pauseCampaign(${jsArg(c.id)})">⏸ Pausar</button>` : ''}
+            <button class="call-btn" onclick="openCampaignLinesModal(${jsArg(c.id)})">SIPs</button>
+            <button class="del-btn" onclick="deleteCampaign(${jsArg(c.id)}, ${jsArg(c.name)})">✕</button>
           </div>
         </td>
       </tr>`;
     }).join('');
   }
-  document.getElementById('contacts-page-info').textContent = `${page} / ${pages} — ${total} contatos`;
-  document.getElementById('contacts-prev').disabled = page <= 1;
-  document.getElementById('contacts-next').disabled = page >= pages;
-}
 
-function contactsPage(dir) { contactsPage_ += dir; loadContacts(); }
-
-document.getElementById('contacts-search').addEventListener('input', e => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => { contactsSearch = e.target.value; contactsPage_ = 1; loadContacts(); }, 400);
-});
-
-async function deleteContact(id, name) {
-  if (!confirm(`Excluir "${name}"?`)) return;
-  try {
-    const res  = await fetch(`${API}/api/contacts/${id}`, { method: 'DELETE' });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    toast(`✓ ${name} excluído`, 'ok');
-    loadContacts();
-  } catch(e) {
-    toast(`Erro: ${e.message}`, 'err');
-  }
-}
-
-let callsLoaded = false, callsPage_ = 1;
-
-async function loadCalls() {
-  callsLoaded = true;
-  document.getElementById('calls-body').innerHTML =
-    '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
-  try {
-    const res  = await fetch(`${API}/api/calls?page=${callsPage_}&per_page=50`);
-    const json = await res.json();
-    if (!json.ok) {
-      console.error('loadCalls error', json);
-      throw new Error(json.error);
+  async function startCampaign(id) {
+    try {
+      const res  = await fetch(`${API}/api/campaigns/${id}/start`, { method: 'POST' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      if ((json.fired || 0) > 0) {
+        toast(`Campanha iniciada - ${json.fired} disparada(s) agora`, 'ok');
+      } else if (json.locked) {
+        toast('Campanha em andamento - scheduler ocupado, nova tentativa agendada.', 'warn');
+      } else if ((json.healthy_lines || 0) === 0) {
+        toast('Campanha em andamento, mas sem SIP saudável disponível.', 'warn');
+      } else if ((json.skipped || 0) > 0) {
+        toast(`Campanha em andamento - ${json.skipped} contato(s) sem débito/erro DDM.`, 'warn');
+      } else {
+        toast('Campanha em andamento, sem disparos novos agora.', 'warn');
+      }
+      loadCampaigns();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
     }
-    renderCalls(json.data, json.page, json.pages, json.total);
-  } catch(e) {
-    console.error('loadCalls failed', e);
-    document.getElementById('calls-body').innerHTML =
-      `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
   }
-}
 
-function renderCalls(rows, page, pages, total) {
-  const tbody = document.getElementById('calls-body');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Sem histórico.</div></td></tr>';
-  } else {
-    tbody.innerHTML = rows.map(c => {
-      const statusMap = {
-        finalizado: 'cs-ended', atendido: 'cs-ended',
-        em_andamento: 'cs-in-progress', erro: 'cs-failed',
-        pendente: 'cs-queued', enfileirado: 'cs-queued', sem_debito: 'cs-queued',
-      };
-      const cls  = statusMap[c.status] || 'cs-queued';
-      const dur  = c.duration ? `${Math.floor(c.duration/60)}m ${c.duration%60}s` : '—';
-      const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
-      const camp = c.campaign_name || (c.campaign_id ? `Campanha ${String(c.campaign_id).slice(0,8)}` : '—');
+  async function pauseCampaign(id) {
+    try {
+      const res  = await fetch(`${API}/api/campaigns/${id}/pause`, { method: 'POST' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('⏸ Campanha pausada', 'ok');
+      loadCampaigns();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  async function deleteCampaign(id, name) {
+    if (!confirm(`Excluir campanha "${name}"?`)) return;
+    try {
+      const res  = await fetch(`${API}/api/campaigns/${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('✓ Campanha excluída', 'ok');
+      loadCampaigns();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  async function openCampaignLinesModal(id) {
+    await ensureLinesLoaded();
+    await loadSipGroups();
+    const camp = campaignRows.find(c => c.id === id) || (dashboardData?.campaigns || []).find(c => c.id === id);
+    if (!camp) { toast('Campanha não encontrada na tela.', 'err'); return; }
+    editingCampaign = camp;
+    document.getElementById('edit-campaign-name').textContent = camp.name || '—';
+    document.getElementById('edit-campaign-group-select').value = camp.sip_group_id || '';
+    renderTokenChecks('edit-campaign-line-picker', camp.line_tokens || [], true);
+    document.getElementById('campaign-lines-modal').classList.add('open');
+  }
+
+  function closeCampaignLinesModal() {
+    document.getElementById('campaign-lines-modal').classList.remove('open');
+    editingCampaign = null;
+  }
+
+  async function saveCampaignLines() {
+    if (!editingCampaign) return;
+    const line_tokens = checkedTokens('edit-campaign-line-picker');
+    const sip_group_id = document.getElementById('edit-campaign-group-select').value || '';
+    if (!line_tokens.length) { toast('Selecione ao menos uma SIP.', 'err'); return; }
+    try {
+      const res = await fetch(`${API}/api/campaigns/${editingCampaign.id}/lines`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ line_tokens, sip_group_id })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('SIPs da campanha atualizadas.', 'ok');
+      closeCampaignLinesModal();
+      campaignsLoaded = false;
+      await loadCampaigns();
+      loadDashboard();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  async function loadDashboard() {
+    await ensureLinesLoaded();
+    await loadSipGroups();
+    try {
+      const res = await fetch(`${API}/api/dashboard/summary`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      dashboardData = json;
+      renderDashboard(json);
+    } catch(e) {
+      document.getElementById('dashboard-alerts').innerHTML =
+        `<div class="alert-item danger">Erro ao carregar dashboard: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  function renderDashboard(data) {
+    const totals = data.totals || {};
+    document.getElementById('dash-active').textContent     = totals.campaigns_active || 0;
+    document.getElementById('dash-answered').textContent   = totals.answered || 0;
+    document.getElementById('dash-formalized').textContent = totals.formalized || 0;
+    document.getElementById('dash-errors').textContent     = totals.errors || 0;
+    renderDashboardAlerts();
+    renderCampaignViz(data.campaigns || []);
+    renderDashboardGroupsReport(data.groups_report || []);
+    renderDashboardCampaigns(data.campaigns || []);
+    renderDashboardLines(data.lines || []);
+    renderGroupsTable();
+  }
+
+  function renderDashboardAlerts() {
+    const wrap = document.getElementById('dashboard-alerts');
+    const alerts = [];
+    linesData.forEach(l => {
+      if (l.paused) alerts.push({ type: 'warn', text: `${l.name || 'Linha'} pausada: ${l.pause_reason || 'sem motivo'}` });
+      else if (!l.configured) alerts.push({ type: 'danger', text: `${l.name || 'Linha'} sem phoneNumberId da Vapi configurado` });
+      else if (l.status === 'missing') alerts.push({ type: 'danger', text: `${l.name || 'Linha'} não apareceu no retorno Wavoip` });
+      else if (!l.healthy) alerts.push({ type: 'danger', text: `${l.name || 'Linha'} indisponível (${l.status || 'status desconhecido'})` });
+      else if ((l.free_slots ?? 0) === 0) alerts.push({ type: 'warn', text: `${l.name || 'Linha'} está no limite de slots (${l.active_calls}/${l.max_concurrent})` });
+    });
+    if (!alerts.length) {
+      wrap.innerHTML = '<div class="alert-item">Todas as SIPs configuradas estão operacionais.</div>';
+      return;
+    }
+    wrap.innerHTML = alerts.map(a =>
+      `<div class="alert-item ${a.type === 'danger' ? 'danger' : a.type === 'warn' ? 'warn' : ''}">${escapeHtml(a.text)}</div>`
+    ).join('');
+  }
+
+  function renderDashboardCampaigns(rows) {
+    const tbody = document.getElementById('dashboard-campaigns-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="10"><div class="loader">Nenhuma campanha para relatar.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(c => `
+      <tr>
+        <td>${escapeHtml(c.name || '—')}</td>
+        <td><span class="cs ${c.status === 'em_andamento' ? 'cs-in-progress' : c.status === 'finalizada' ? 'cs-ended' : c.status === 'pausada' ? 'cs-failed' : 'cs-queued'}">${escapeHtml(c.status || '—')}</span></td>
+        <td class="td-dim">${escapeHtml(c.group || '—')}</td>
+        <td class="td-mono">${campaignLinesLabel(c.line_tokens)}</td>
+        <td class="td-mono">${c.total || 0}</td>
+        <td class="td-mono">${c.active || 0}</td>
+        <td class="td-mono">${c.answered || 0}</td>
+        <td class="td-mono">${c.formalized || 0}</td>
+        <td class="td-mono">${c.errors || 0}</td>
+        <td><button class="call-btn" onclick="openCampaignLinesModal(${jsArg(c.id)})">SIPs</button></td>
+      </tr>
+    `).join('');
+  }
+
+  function renderCampaignViz(rows) {
+    const wrap = document.getElementById('campaign-viz');
+    if (!wrap) return;
+    if (!rows.length) {
+      wrap.innerHTML = '<div style="color:var(--muted)">Sem campanhas.</div>';
+      return;
+    }
+    const maxTotal = rows.reduce((m, r) => Math.max(m, r.total || 0), 1);
+    const bar = (val, max, cls) => {
+      if (!max) return '<div class="hv" style="height:6px;background:rgba(255,255,255,.08);"></div>';
+      const pct = Math.round((val / max) * 100);
+      const color = cls === 'answered' ? 'var(--green)' : cls === 'formalized' ? 'var(--brand)' : cls === 'errors' ? '#e74c3c' : '#d1d5db';
+      return `<div style="display:flex;align-items:center;gap:8px">
+        <div class="hv" style="flex:1;height:8px;background:rgba(255,255,255,.06);border-radius:999px;overflow:hidden">
+          <div style="width:${pct}%;background:${color};height:100%;border-radius:999px;opacity:.9"></div>
+        </div>
+        <span class="td-dim" style="width:28px;text-align:right">${val}</span>
+      </div>`;
+    };
+    wrap.innerHTML = rows.map(c => {
+      const name = escapeHtml(c.name || '—');
+      const answered = c.answered || 0;
+      const formalized = c.formalized || 0;
+      const errors = c.errors || 0;
+      const total = c.total || 0;
+      return `<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);padding:10px 12px;border-radius:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
+          <div style="font-weight:600;font-size:.92rem;color:var(--text)">${name}</div>
+          <div class="td-dim" style="display:flex; gap:10px;font-size:.8rem">
+            <span>Total <b style="color:var(--text)">${total}</b></span>
+            <span>Atendidas <b style="color:var(--green)">${answered}</b></span>
+            <span>Formalizadas <b style="color:var(--brand)">${formalized}</b></span>
+            <span>Erros <b style="color:#e74c3c">${errors}</b></span>
+          </div>
+        </div>
+        ${bar(answered, maxTotal, 'answered')}
+        ${bar(formalized, maxTotal, 'formalized')}
+        ${bar(errors, maxTotal, 'errors')}
+      </div>`;
+    }).join('');
+  }
+
+  function renderDashboardGroupsReport(rows) {
+    const tbody = document.getElementById('dashboard-groups-report-body');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7"><div class="loader">Nenhuma carteira para relatar.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(g => `
+      <tr>
+        <td>${escapeHtml(g.name || 'Sem grupo')}</td>
+        <td class="td-mono">${g.campaigns || 0}</td>
+        <td class="td-mono">${g.total || 0}</td>
+        <td class="td-mono">${g.active || 0}</td>
+        <td class="td-mono">${g.answered || 0}</td>
+        <td class="td-mono">${g.formalized || 0}</td>
+        <td class="td-mono">${g.errors || 0}</td>
+      </tr>
+    `).join('');
+  }
+
+  function renderDashboardLines(rows) {
+    const tbody = document.getElementById('dashboard-lines-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="9"><div class="loader">Nenhuma SIP para relatar.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => {
+      const line = lineByToken(r.token);
       return `<tr>
-        <td class="td-mono" style="color:var(--muted)">${(c.id||'').slice(0,8)}…</td>
-        <td>${escapeHtml(c.cpf || '—')}<br><span class="td-dim">${escapeHtml(camp)}</span></td>
-        <td><span class="cs ${cls}">${escapeHtml(c.status||'—')}</span></td>
-        <td class="td-mono">${dur}</td>
-        <td class="td-dim">${date}</td>
+        <td>${escapeHtml(r.name || line.name || 'Linha')}</td>
+        <td class="td-dim">${escapeHtml((r.groups || []).join(', ') || '—')}</td>
+        <td class="td-mono">${line.active_calls ?? 0}/${line.max_concurrent ?? 2}</td>
+        <td class="td-mono">${r.total || 0}</td>
+        <td class="td-mono">${r.active || 0}</td>
+        <td class="td-mono">${r.answered || 0}</td>
+        <td class="td-mono">${r.formalized || 0}</td>
+        <td class="td-mono">${r.errors || 0}</td>
+        <td>
+          ${line.paused
+            ? `<button class="call-btn" onclick="resumeLine(${jsArg(r.token)})">Retomar</button>`
+            : `<button class="del-btn" onclick="pauseLine(${jsArg(r.token)}, ${jsArg(r.name || 'linha')})">Pausar</button>`}
+        </td>
       </tr>`;
     }).join('');
   }
-  document.getElementById('calls-page-info').textContent = `${page} / ${pages} — ${total} chamadas`;
-  document.getElementById('calls-prev').disabled = page <= 1;
-  document.getElementById('calls-next').disabled = page >= pages;
-}
 
-function callsPage(dir) { callsPage_ += dir; loadCalls(); }
-
-let monitorTimer = null;
-
-async function loadMonitor() {
-  try {
-    const res  = await fetch(`${API}/api/monitor`);
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    renderMonitor(json.data, json.stats);
-    document.getElementById('monitor-updated').textContent =
-      'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
-  } catch(e) {
-    document.getElementById('monitor-body').innerHTML =
-      `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
-  }
-}
-
-function renderMonitor(rows, stats) {
-  const tbody = document.getElementById('monitor-body');
-  document.getElementById('monitor-stats').style.display = 'grid';
-  document.getElementById('mon-andamento').textContent = stats.em_andamento;
-  document.getElementById('mon-atendido').textContent  = stats.atendido;
-  document.getElementById('mon-erro').textContent      = stats.erro;
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6"><div class="loader">Nenhuma chamada ativa.</div></td></tr>';
-    return;
-  }
-  const statusMap = {
-    em_andamento: { cls: 'cs-in-progress', label: 'ligando' },
-    enfileirado:  { cls: 'cs-queued',      label: 'aguardando' },
-    atendido:     { cls: 'cs-ended',       label: 'atendido' },
-    erro:         { cls: 'cs-failed',      label: 'erro' },
-  };
-  tbody.innerHTML = rows.map(r => {
-    const s    = statusMap[r.status] || { cls: 'cs-queued', label: r.status };
-    const date = r.created_at ? new Date(r.created_at).toLocaleTimeString('pt-BR') : '—';
-    const cpf  = r.cpf ? r.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : '—';
-    const tel  = r.phone ? r.phone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3') : '—';
-    return `<tr>
-      <td class="td-mono">${cpf}</td>
-      <td class="td-mono">${tel}</td>
-      <td><span class="cs ${s.cls}">${s.label}</span></td>
-      <td class="td-dim">${escapeHtml(r.line_name || '—')}</td>
-      <td class="td-dim">${escapeHtml(r.campaign)}</td>
-      <td class="td-dim">${date}</td>
-    </tr>`;
-  }).join('');
-}
-
-function startMonitor() {
-  if (monitorTimer) clearInterval(monitorTimer);
-  monitorTimer = setInterval(loadMonitor, 5000);
-}
-
-let campaignsLoaded = false;
-let campaignRows = [];
-
-async function loadCampaigns() {
-  campaignsLoaded = true;
-  document.getElementById('campaigns-body').innerHTML =
-    '<tr><td colspan="7"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
-  try {
-    const res  = await fetch(`${API}/api/campaigns`);
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    renderCampaigns(json.data);
-  } catch(e) {
-    document.getElementById('campaigns-body').innerHTML =
-      `<tr><td colspan="7"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
-  }
-}
-
-function renderCampaigns(rows) {
-  campaignRows = rows || [];
-  const tbody = document.getElementById('campaigns-body');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="loader">Nenhuma campanha criada.</div></td></tr>';
-    return;
-  }
-  const statusMap = {
-    rascunho:     { cls: 'cs-queued',      label: 'rascunho' },
-    em_andamento: { cls: 'cs-in-progress', label: 'em andamento' },
-    finalizada:   { cls: 'cs-ended',       label: 'finalizada' },
-    pausada:      { cls: 'cs-failed',      label: 'pausada' },
-  };
-  tbody.innerHTML = rows.map(c => {
-    const s    = statusMap[c.status] || { cls: 'cs-queued', label: c.status };
-    const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
-    const sipLabel = campaignLinesLabel(c.line_tokens);
-    const canStart = c.status === 'rascunho' || c.status === 'pausada';
-    const canPause = c.status === 'em_andamento';
-    return `<tr>
-      <td>${escapeHtml(c.name)}</td>
-      <td><span class="cs ${s.cls}">${s.label}</span></td>
-      <td class="td-mono">${sipLabel}</td>
-      <td class="td-mono">${c.total ?? 0}</td>
-      <td class="td-mono">${c.finished ?? 0} / ${c.total ?? 0}</td>
-      <td class="td-dim">${date}</td>
-      <td>
-        <div style="display:flex;gap:6px">
-          ${canStart ? `<button class="call-btn" onclick="startCampaign(${jsArg(c.id)})">▶ Iniciar</button>` : ''}
-          ${canPause ? `<button class="call-btn" onclick="pauseCampaign(${jsArg(c.id)})">⏸ Pausar</button>` : ''}
-          <button class="call-btn" onclick="openCampaignLinesModal(${jsArg(c.id)})">SIPs</button>
-          <button class="del-btn" onclick="deleteCampaign(${jsArg(c.id)}, ${jsArg(c.name)})">✕</button>
-        </div>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-async function startCampaign(id) {
-  try {
-    const res  = await fetch(`${API}/api/campaigns/${id}/start`, { method: 'POST' });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    if ((json.fired || 0) > 0) {
-      toast(`Campanha iniciada - ${json.fired} disparada(s) agora`, 'ok');
-    } else if (json.locked) {
-      toast('Campanha em andamento - scheduler ocupado, nova tentativa agendada.', 'warn');
-    } else if ((json.healthy_lines || 0) === 0) {
-      toast('Campanha em andamento, mas sem SIP saudável disponível.', 'warn');
-    } else if ((json.skipped || 0) > 0) {
-      toast(`Campanha em andamento - ${json.skipped} contato(s) sem débito/erro DDM.`, 'warn');
-    } else {
-      toast('Campanha em andamento, sem disparos novos agora.', 'warn');
+  async function saveCampaign() {
+    const name = document.getElementById('campaign-name-input').value.trim();
+    if (!name) { toast('Digite um nome para a campanha.', 'err'); return; }
+    if (!importSessionId && !importRows.filter(r => r.phone).length) {
+      toast('Nenhum contato com telefone.', 'err'); return;
     }
-    loadCampaigns();
-  } catch(e) {
-    toast(`Erro: ${e.message}`, 'err');
-  }
-}
-
-async function pauseCampaign(id) {
-  try {
-    const res  = await fetch(`${API}/api/campaigns/${id}/pause`, { method: 'POST' });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    toast('⏸ Campanha pausada', 'ok');
-    loadCampaigns();
-  } catch(e) {
-    toast(`Erro: ${e.message}`, 'err');
-  }
-}
-
-async function deleteCampaign(id, name) {
-  if (!confirm(`Excluir campanha "${name}"?`)) return;
-  try {
-    const res  = await fetch(`${API}/api/campaigns/${id}`, { method: 'DELETE' });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    toast('✓ Campanha excluída', 'ok');
-    loadCampaigns();
-  } catch(e) {
-    toast(`Erro: ${e.message}`, 'err');
-  }
-}
-
-async function openCampaignLinesModal(id) {
-  await ensureLinesLoaded();
-  await loadSipGroups();
-  const camp = campaignRows.find(c => c.id === id) || (dashboardData?.campaigns || []).find(c => c.id === id);
-  if (!camp) { toast('Campanha não encontrada na tela.', 'err'); return; }
-  editingCampaign = camp;
-  document.getElementById('edit-campaign-name').textContent = camp.name || '—';
-  document.getElementById('edit-campaign-group-select').value = camp.sip_group_id || '';
-  renderTokenChecks('edit-campaign-line-picker', camp.line_tokens || [], true);
-  document.getElementById('campaign-lines-modal').classList.add('open');
-}
-
-function closeCampaignLinesModal() {
-  document.getElementById('campaign-lines-modal').classList.remove('open');
-  editingCampaign = null;
-}
-
-async function saveCampaignLines() {
-  if (!editingCampaign) return;
-  const line_tokens = checkedTokens('edit-campaign-line-picker');
-  const sip_group_id = document.getElementById('edit-campaign-group-select').value || '';
-  if (!line_tokens.length) { toast('Selecione ao menos uma SIP.', 'err'); return; }
-  try {
-    const res = await fetch(`${API}/api/campaigns/${editingCampaign.id}/lines`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ line_tokens, sip_group_id })
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    toast('SIPs da campanha atualizadas.', 'ok');
-    closeCampaignLinesModal();
-    campaignsLoaded = false;
-    await loadCampaigns();
-    loadDashboard();
-  } catch(e) {
-    toast(`Erro: ${e.message}`, 'err');
-  }
-}
-
-async function loadDashboard() {
-  await ensureLinesLoaded();
-  await loadSipGroups();
-  try {
-    const res = await fetch(`${API}/api/dashboard/summary`);
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    dashboardData = json;
-    renderDashboard(json);
-  } catch(e) {
-    document.getElementById('dashboard-alerts').innerHTML =
-      `<div class="alert-item danger">Erro ao carregar dashboard: ${escapeHtml(e.message)}</div>`;
-  }
-}
-
-function renderDashboard(data) {
-  const totals = data.totals || {};
-  document.getElementById('dash-active').textContent     = totals.campaigns_active || 0;
-  document.getElementById('dash-answered').textContent   = totals.answered || 0;
-  document.getElementById('dash-formalized').textContent = totals.formalized || 0;
-  document.getElementById('dash-errors').textContent     = totals.errors || 0;
-  renderDashboardAlerts();
-  renderCampaignViz(data.campaigns || []);
-  renderDashboardGroupsReport(data.groups_report || []);
-  renderDashboardCampaigns(data.campaigns || []);
-  renderDashboardLines(data.lines || []);
-  renderGroupsTable();
-}
-
-function renderDashboardAlerts() {
-  const wrap = document.getElementById('dashboard-alerts');
-  const alerts = [];
-  linesData.forEach(l => {
-    if (l.paused) alerts.push({ type: 'warn', text: `${l.name || 'Linha'} pausada: ${l.pause_reason || 'sem motivo'}` });
-    else if (!l.configured) alerts.push({ type: 'danger', text: `${l.name || 'Linha'} sem phoneNumberId da Vapi configurado` });
-    else if (l.status === 'missing') alerts.push({ type: 'danger', text: `${l.name || 'Linha'} não apareceu no retorno Wavoip` });
-    else if (!l.healthy) alerts.push({ type: 'danger', text: `${l.name || 'Linha'} indisponível (${l.status || 'status desconhecido'})` });
-    else if ((l.free_slots ?? 0) === 0) alerts.push({ type: 'warn', text: `${l.name || 'Linha'} está no limite de slots (${l.active_calls}/${l.max_concurrent})` });
-  });
-  if (!alerts.length) {
-    wrap.innerHTML = '<div class="alert-item">Todas as SIPs configuradas estão operacionais.</div>';
-    return;
-  }
-  wrap.innerHTML = alerts.map(a =>
-    `<div class="alert-item ${a.type === 'danger' ? 'danger' : a.type === 'warn' ? 'warn' : ''}">${escapeHtml(a.text)}</div>`
-  ).join('');
-}
-
-function renderDashboardCampaigns(rows) {
-  const tbody = document.getElementById('dashboard-campaigns-body');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="10"><div class="loader">Nenhuma campanha para relatar.</div></td></tr>';
-    return;
-  }
-  tbody.innerHTML = rows.map(c => `
-    <tr>
-      <td>${escapeHtml(c.name || '—')}</td>
-      <td><span class="cs ${c.status === 'em_andamento' ? 'cs-in-progress' : c.status === 'finalizada' ? 'cs-ended' : c.status === 'pausada' ? 'cs-failed' : 'cs-queued'}">${escapeHtml(c.status || '—')}</span></td>
-      <td class="td-dim">${escapeHtml(c.group || '—')}</td>
-      <td class="td-mono">${campaignLinesLabel(c.line_tokens)}</td>
-      <td class="td-mono">${c.total || 0}</td>
-      <td class="td-mono">${c.active || 0}</td>
-      <td class="td-mono">${c.answered || 0}</td>
-      <td class="td-mono">${c.formalized || 0}</td>
-      <td class="td-mono">${c.errors || 0}</td>
-      <td><button class="call-btn" onclick="openCampaignLinesModal(${jsArg(c.id)})">SIPs</button></td>
-    </tr>
-  `).join('');
-}
-
-function renderCampaignViz(rows) {
-  const wrap = document.getElementById('campaign-viz');
-  if (!wrap) return;
-  if (!rows.length) {
-    wrap.innerHTML = '<div style="color:var(--muted)">Sem campanhas.</div>';
-    return;
-  }
-  const maxTotal = rows.reduce((m, r) => Math.max(m, r.total || 0), 1);
-  const bar = (val, max, cls) => {
-    if (!max) return '<div class="hv" style="height:6px;background:rgba(255,255,255,.08);"></div>';
-    const pct = Math.round((val / max) * 100);
-    const color = cls === 'answered' ? 'var(--green)' : cls === 'formalized' ? 'var(--brand)' : cls === 'errors' ? '#e74c3c' : '#d1d5db';
-    return `<div style="display:flex;align-items:center;gap:8px">
-      <div class="hv" style="flex:1;height:8px;background:rgba(255,255,255,.06);border-radius:999px;overflow:hidden">
-        <div style="width:${pct}%;background:${color};height:100%;border-radius:999px;opacity:.9"></div>
-      </div>
-      <span class="td-dim" style="width:28px;text-align:right">${val}</span>
-    </div>`;
-  };
-  wrap.innerHTML = rows.map(c => {
-    const name = escapeHtml(c.name || '—');
-    const answered = c.answered || 0;
-    const formalized = c.formalized || 0;
-    const errors = c.errors || 0;
-    const total = c.total || 0;
-    return `<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);padding:10px 12px;border-radius:10px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
-        <div style="font-weight:600;font-size:.92rem;color:var(--text)">${name}</div>
-        <div class="td-dim" style="display:flex; gap:10px;font-size:.8rem">
-          <span>Total <b style="color:var(--text)">${total}</b></span>
-          <span>Atendidas <b style="color:var(--green)">${answered}</b></span>
-          <span>Formalizadas <b style="color:var(--brand)">${formalized}</b></span>
-          <span>Erros <b style="color:#e74c3c">${errors}</b></span>
-        </div>
-      </div>
-      ${bar(answered, maxTotal, 'answered')}
-      ${bar(formalized, maxTotal, 'formalized')}
-      ${bar(errors, maxTotal, 'errors')}
-    </div>`;
-  }).join('');
-}
-
-function renderDashboardGroupsReport(rows) {
-  const tbody = document.getElementById('dashboard-groups-report-body');
-  if (!tbody) return;
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="loader">Nenhuma carteira para relatar.</div></td></tr>';
-    return;
-  }
-  tbody.innerHTML = rows.map(g => `
-    <tr>
-      <td>${escapeHtml(g.name || 'Sem grupo')}</td>
-      <td class="td-mono">${g.campaigns || 0}</td>
-      <td class="td-mono">${g.total || 0}</td>
-      <td class="td-mono">${g.active || 0}</td>
-      <td class="td-mono">${g.answered || 0}</td>
-      <td class="td-mono">${g.formalized || 0}</td>
-      <td class="td-mono">${g.errors || 0}</td>
-    </tr>
-  `).join('');
-}
-
-function renderDashboardLines(rows) {
-  const tbody = document.getElementById('dashboard-lines-body');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="9"><div class="loader">Nenhuma SIP para relatar.</div></td></tr>';
-    return;
-  }
-  tbody.innerHTML = rows.map(r => {
-    const line = lineByToken(r.token);
-    return `<tr>
-      <td>${escapeHtml(r.name || line.name || 'Linha')}</td>
-      <td class="td-dim">${escapeHtml((r.groups || []).join(', ') || '—')}</td>
-      <td class="td-mono">${line.active_calls ?? 0}/${line.max_concurrent ?? 2}</td>
-      <td class="td-mono">${r.total || 0}</td>
-      <td class="td-mono">${r.active || 0}</td>
-      <td class="td-mono">${r.answered || 0}</td>
-      <td class="td-mono">${r.formalized || 0}</td>
-      <td class="td-mono">${r.errors || 0}</td>
-      <td>
-        ${line.paused
-          ? `<button class="call-btn" onclick="resumeLine(${jsArg(r.token)})">Retomar</button>`
-          : `<button class="del-btn" onclick="pauseLine(${jsArg(r.token)}, ${jsArg(r.name || 'linha')})">Pausar</button>`}
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-async function saveCampaign() {
-  const name = document.getElementById('campaign-name-input').value.trim();
-  if (!name) { toast('Digite um nome para a campanha.', 'err'); return; }
-  if (!importSessionId && !importRows.filter(r => r.phone).length) {
-    toast('Nenhum contato com telefone.', 'err'); return;
-  }
-  await ensureLinesLoaded();
-  const line_tokens = getSelectedCampaignLines();
-  const sip_group_id = document.getElementById('campaign-group-select')?.value || '';
-  if (!line_tokens.length) {
-    toast('Selecione ao menos uma SIP para esta campanha.', 'err');
-    return;
-  }
-  const btn = document.getElementById('btn-save-campaign');
-  btn.disabled = true; btn.textContent = 'Salvando…';
-  try {
-    const body = importSessionId
-      ? { name, session_id: importSessionId, line_tokens, sip_group_id }
-      : { name, contacts: importRows.filter(r => r.phone), line_tokens, sip_group_id };
-    const res  = await fetch(`${API}/api/campaigns`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    toast(`✓ Campanha "${name}" salva com sucesso`, 'ok');
-    campaignsLoaded = false;
-    resetImport();
-  } catch(e) {
-    toast(`Erro: ${e.message}`, 'err');
-  } finally {
-    btn.disabled = false; btn.textContent = '💾  Salvar campanha';
-  }
-}
-
-let modalContact = null;
-
-function openModal(contact) {
-  modalContact = contact;
-  document.getElementById('modal-contact-name').textContent = contact.name || '—';
-  document.getElementById('modal-phone-select').innerHTML =
-    (contact.phones||[]).map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
-  populateModalLines(linesData);
-  document.getElementById('call-modal').classList.add('open');
-}
-
-function closeModal() {
-  document.getElementById('call-modal').classList.remove('open');
-  modalContact = null;
-}
-
-async function confirmCall() {
-  const phone = document.getElementById('modal-phone-select').value;
-  if (!phone) { toast('Selecione um telefone.', 'err'); return; }
-  try {
-    const res  = await fetch(`${API}/api/call`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contact_id: modalContact?.id, phone })
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    toast(`✓ Chamada iniciada — ${phone}`, 'ok');
-    closeModal();
-  } catch(e) {
-    toast(`Erro: ${e.message}`, 'err');
-  }
-}
-
-document.getElementById('call-modal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) closeModal();
-});
-
-document.getElementById('campaign-lines-modal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) closeCampaignLinesModal();
-});
-
-let importRows      = [];
-let importSessionId = null;
-let _pollTimer      = null;
-
-const fileInput  = document.getElementById('file-input');
-const importZone = document.getElementById('import-zone');
-
-function restoreImportState() {
-  try {
-    const saved = sessionStorage.getItem('import_job_id');
-    if (!saved) return;
-    const parsed = JSON.parse(saved);
-    const status = parsed.status;
-    const jobId = parsed.job_id;
-    if (!jobId) return;
-
-    importSessionId = jobId;
-    if (status === 'done') {
-      importRows = parsed.result || [];
-      renderImportPreview({ rows: importRows, total: parsed.total, with_debt: parsed.with_debt, validating: false });
-      const beforeCall = importRows.some(r => r.validation_status === 'pending');
-      setProgress(100, beforeCall
-        ? `✓ Concluído — ${(parsed.total || importRows.length || 0).toLocaleString('pt-BR')} contatos carregados`
-        : `✓ Concluído — ${(parsed.with_debt || 0).toLocaleString('pt-BR')} contatos com débito`, 'green');
-      setDropState('done', `✓ ${(parsed.total || 0).toLocaleString('pt-BR')} contatos carregados`, beforeCall
-        ? 'DDM será validado antes da chamada · clique para trocar o arquivo'
-        : `${(parsed.with_debt || 0).toLocaleString('pt-BR')} com débito · clique para trocar o arquivo`);
-      setTimeout(hideProgress, 3000);
-      sessionStorage.removeItem('import_job_id');
-    } else if (status === 'error') {
-      const errMsg = (parsed.result && parsed.result.error) || 'Erro desconhecido no worker';
-      setProgress(100, `Erro: ${errMsg}`, 'red');
-      setDropState('', 'Erro no processamento — clique para tentar novamente', errMsg);
-      setTimeout(hideProgress, 5000);
-      sessionStorage.removeItem('import_job_id');
-    } else {
-      pollImportJob(jobId);
+    await ensureLinesLoaded();
+    const line_tokens = getSelectedCampaignLines();
+    const sip_group_id = document.getElementById('campaign-group-select')?.value || '';
+    if (!line_tokens.length) {
+      toast('Selecione ao menos uma SIP para esta campanha.', 'err');
+      return;
     }
-  } catch (e) {
-    sessionStorage.removeItem('import_job_id');
-  }
-}
-
-document.addEventListener('DOMContentLoaded', restoreImportState);
-
-function onDropZoneClick() {
-  if (importZone.classList.contains('uploading')) return;
-  fileInput.click();
-}
-
-fileInput.addEventListener('change', e => {
-  if (e.target.files[0]) handleImportFile(e.target.files[0]);
-});
-
-importZone.addEventListener('dragover', e => {
-  e.preventDefault();
-  if (!importZone.classList.contains('uploading')) importZone.classList.add('drag');
-});
-importZone.addEventListener('dragleave', () => importZone.classList.remove('drag'));
-importZone.addEventListener('drop', e => {
-  e.preventDefault();
-  importZone.classList.remove('drag');
-  if (!importZone.classList.contains('uploading') && e.dataTransfer.files[0]) {
-    handleImportFile(e.dataTransfer.files[0]);
-  }
-});
-
-function setProgress(pct, stage, color = '') {
-  const fill     = document.getElementById('upload-progress-fill');
-  const stage_el = document.getElementById('upload-progress-stage');
-  const pct_el   = document.getElementById('upload-progress-pct');
-  const wrap     = document.getElementById('upload-progress-wrap');
-  wrap.classList.add('visible');
-  fill.style.width   = pct + '%';
-  fill.className     = 'upload-progress-bar-fill' + (color ? ' ' + color : '');
-  stage_el.textContent = stage;
-  stage_el.className   = color || '';
-  pct_el.textContent   = pct + '%';
-  pct_el.className     = color || '';
-}
-
-function hideProgress() {
-  document.getElementById('upload-progress-wrap').classList.remove('visible');
-}
-
-function setDropState(state, title, sub) {
-  const zone = document.getElementById('import-zone');
-  zone.className = 'drop-zone ' + state;
-  document.getElementById('drop-title').textContent = title;
-  document.getElementById('drop-sub').textContent   = sub;
-  document.getElementById('drop-icon').textContent  = state === 'done' ? '✓' : '⬆';
-}
-
-async function handleImportFile(file) {
-  const mb  = (file.size / 1024 / 1024).toFixed(1);
-  resetImportUI();
-  setDropState('uploading', `Preparando ${file.name} (${mb} MB)...`, 'Aguarde...');
-  setProgress(2, 'Enviando arquivo...', 'amber');
-  try {
-    const importJson = await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.upload.addEventListener('progress', e => {
-        if (e.lengthComputable) {
-          const pct = Math.round(5 + (e.loaded / e.total) * 70);
-          const sent = (e.loaded / 1024 / 1024).toFixed(1);
-          const total = (e.total / 1024 / 1024).toFixed(1);
-          setProgress(pct, `Enviando ${sent} / ${total} MB...`, 'amber');
-        }
-      });
-      xhr.addEventListener('load', () => {
-        let json = {};
-        try { json = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
-        if (xhr.status >= 200 && xhr.status < 300 && json.ok) resolve(json);
-        else reject(new Error(json.error || `Upload falhou: HTTP ${xhr.status}`));
-      });
-      xhr.addEventListener('error', () => reject(new Error('Erro de rede no upload')));
-      xhr.addEventListener('abort', () => reject(new Error('Upload cancelado')));
-      xhr.open('POST', `${API}/api/import/upload`);
-      const token = sessionStorage.getItem('api_auth_token') || localStorage.getItem('api_auth_token') || '';
-      if (token) xhr.setRequestHeader('X-API-Token', token);
-      const form = new FormData();
-      form.append('file', file);
-      xhr.send(form);
-    });
-    importSessionId = importJson.job_id;
+    const btn = document.getElementById('btn-save-campaign');
+    btn.disabled = true; btn.textContent = 'Salvando…';
     try {
-      sessionStorage.setItem('import_job_id', JSON.stringify({
-        job_id: importJson.job_id,
-        status: 'processing',
-      }));
-    } catch(_) {
-      sessionStorage.removeItem('import_job_id');
-    }
-    setDropState('uploading', 'Processamento iniciado', 'Validando arquivo...');
-    setProgress(78, 'Processamento iniciado...', 'amber');
-    await pollImportJob(importJson.job_id);
-  } catch(e) {
-    setDropState('', 'Falha no upload/processamento', e.message);
-    setProgress(100, `Erro: ${e.message}`, 'red');
-    toast(`Erro: ${e.message}`, 'err');
-    setTimeout(hideProgress, 5000);
-  }
-  return;
-  const ext = file.name.split('.').pop().toLowerCase();
-  resetImportUI();
-  setDropState('uploading', `Preparando ${file.name} (${mb} MB)…`, 'Aguarde...');
-  setProgress(2, 'Obtendo URL de upload...', 'amber');
-  try {
-    const presignedRes  = await fetch(`${API}/api/upload/presigned?ext=${ext}`);
-    const presignedJson = await presignedRes.json();
-    if (!presignedJson.ok) throw new Error(presignedJson.error || 'Falha ao obter URL de upload');
-    const { upload_url, path } = presignedJson;
-    setProgress(5, 'Enviando arquivo para Storage...', 'amber');
-    await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.upload.addEventListener('progress', e => {
-        if (e.lengthComputable) {
-          const pct   = Math.round(5 + (e.loaded / e.total) * 65);
-          const sent  = (e.loaded / 1024 / 1024).toFixed(1);
-          const total = (e.total / 1024 / 1024).toFixed(1);
-          setProgress(pct, `Enviando ${sent} / ${total} MB...`, 'amber');
-        }
+      const body = importSessionId
+        ? { name, session_id: importSessionId, line_tokens, sip_group_id }
+        : { name, contacts: importRows.filter(r => r.phone), line_tokens, sip_group_id };
+      const res  = await fetch(`${API}/api/campaigns`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
       });
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error(`Upload falhou: HTTP ${xhr.status}`));
-      });
-      xhr.addEventListener('error', () => reject(new Error('Erro de rede no upload')));
-      xhr.addEventListener('abort', () => reject(new Error('Upload cancelado')));
-      xhr.open('PUT', upload_url);
-      xhr.setRequestHeader('Content-Type', ext === 'csv' ? 'text/csv' : 'application/octet-stream');
-      xhr.send(file);
-    });
-    setProgress(72, 'Arquivo recebido. Enfileirando processamento...', 'amber');
-    const importRes  = await fetch(`${API}/api/import/from-storage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path, filename: file.name, size_bytes: file.size }),
-    });
-    const importJson = await importRes.json();
-    if (!importJson.ok) throw new Error(importJson.error || 'Falha ao enfileirar processamento');
-    importSessionId = importJson.job_id;
-    try {
-      sessionStorage.setItem('import_job_id', JSON.stringify({
-        job_id: importJson.job_id,
-        status: 'processing',
-      }));
-    } catch (e) {
-      sessionStorage.removeItem('import_job_id');
-    }
-    setProgress(75, 'Worker iniciado. Processando planilha...', '');
-    setDropState('uploading', `Processando ${file.name}…`, 'Worker Celery em andamento...');
-    toast(`⬆ Upload concluído (${mb} MB). Processando...`, 'warn');
-    await pollImportJob(importJson.job_id);
-  } catch(e) {
-      setDropState('', 'Erro no upload — clique para tentar novamente', e.message);
-      setProgress(100, `Erro: ${e.message}`, 'red');
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast(`✓ Campanha "${name}" salva com sucesso`, 'ok');
+      campaignsLoaded = false;
+      resetImport();
+    } catch(e) {
       toast(`Erro: ${e.message}`, 'err');
-      setTimeout(hideProgress, 4000);
     } finally {
-      fileInput.value = '';
+      btn.disabled = false; btn.textContent = '💾  Salvar campanha';
     }
   }
 
-async function pollImportJob(jobId) {
-  if (_pollTimer) clearInterval(_pollTimer);
-  try {
-    sessionStorage.setItem('import_job_id', JSON.stringify({ job_id: jobId, status: 'processing' }));
-  } catch (e) {
-    sessionStorage.removeItem('import_job_id');
+  let modalContact = null;
+
+  function openModal(contact) {
+    modalContact = contact;
+    document.getElementById('modal-contact-name').textContent = contact.name || '—';
+    document.getElementById('modal-phone-select').innerHTML =
+      (contact.phones||[]).map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+    populateModalLines(linesData);
+    document.getElementById('call-modal').classList.add('open');
   }
-  return new Promise((resolve) => {
-    _pollTimer = setInterval(async () => {
-      try {
-        const res  = await fetch(`${API}/api/import/status/${jobId}`);
-        const json = await res.json();
-        if (!json.ok) return;
-        const total     = json.total     || 0;
-        const processed = json.processed || 0;
-        const withDebt  = json.with_debt || 0;
-        if (total > 0) {
-          document.getElementById('import-processing-actions').style.display = 'flex';
-          const pct     = Math.round(75 + (processed / total) * 23);
-          const pctStr  = Math.round((processed / total) * 100);
-          const stageLabel = json.status === 'rechecking_ddm' ? 'Rechecando erros DDM' : 'Processando';
-          setProgress(pct, `${stageLabel} ${processed.toLocaleString('pt-BR')} / ${total.toLocaleString('pt-BR')} linhas (${pctStr}%)`, '');
-          setDropState('uploading', `Processando planilha... ${pctStr}%`,
-            `${processed.toLocaleString('pt-BR')} de ${total.toLocaleString('pt-BR')} linhas — ${withDebt.toLocaleString('pt-BR')} com débito`);
-        }
-        const previewRows = Array.isArray(json.result) ? json.result : [];
-        if (total > 0 && previewRows.length) {
-          importRows = previewRows;
-          renderImportPreview({ rows: previewRows, total, with_debt: withDebt, validating: json.status !== 'done' });
-        }
-        if (json.status === 'done') {
-          clearInterval(_pollTimer);
-          importSessionId = jobId;
-          const rows = Array.isArray(json.result) ? json.result : [];
-          const beforeCall = rows.some(r => r.validation_status === 'pending');
-          setProgress(100, beforeCall
-            ? `✓ Concluído — ${total.toLocaleString('pt-BR')} contatos carregados`
-            : `✓ Concluído — ${withDebt.toLocaleString('pt-BR')} contatos com débito`, 'green');
-          setDropState('done', `✓ ${total.toLocaleString('pt-BR')} contatos carregados`,
-            beforeCall ? 'DDM será validado antes da chamada · clique para trocar o arquivo' : `${withDebt.toLocaleString('pt-BR')} com débito · clique para trocar o arquivo`);
-          importRows = rows;
-          renderImportPreview({ rows, total, with_debt: withDebt, validating: false });
-          toast(beforeCall
-            ? `✓ ${total.toLocaleString('pt-BR')} linhas carregadas — DDM antes da chamada`
-            : `✓ ${total.toLocaleString('pt-BR')} linhas processadas — ${withDebt.toLocaleString('pt-BR')} com débito`, 'ok');
-          setTimeout(hideProgress, 3000);
-          resolve(json);
-        } else if (json.status === 'error') {
-          clearInterval(_pollTimer);
-          const errMsg = json.result?.error || 'Erro desconhecido no worker';
-          setProgress(100, `Erro: ${errMsg}`, 'red');
-          setDropState('', 'Erro no processamento — clique para tentar novamente', errMsg);
-          toast(`Erro no worker: ${errMsg}`, 'err');
-          setTimeout(hideProgress, 5000);
-          resolve(json);
-        }
-      } catch(e) {}
-    }, 2000);
+
+  function closeModal() {
+    document.getElementById('call-modal').classList.remove('open');
+    modalContact = null;
+  }
+
+  async function confirmCall() {
+    const phone = document.getElementById('modal-phone-select').value;
+    if (!phone) { toast('Selecione um telefone.', 'err'); return; }
+    try {
+      const res  = await fetch(`${API}/api/call`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contact_id: modalContact?.id, phone })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast(`✓ Chamada iniciada — ${phone}`, 'ok');
+      closeModal();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  document.getElementById('call-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
   });
-}
 
-function renderImportPreview(data) {
-  const rows = data.rows || [];
-  let pendingCount = rows.filter(r => r.validation_status === 'pending').length;
-  const errorCount = rows.filter(r => r.ddm_error).length;
-  const debtCount = rows.filter(r => r.has_debt).length || data.with_debt || 0;
-  if (pendingCount && !debtCount && !errorCount && data.total > rows.length) pendingCount = data.total;
-  const noDebtCount = Math.max(0, (data.total || rows.length || 0) - debtCount - pendingCount - errorCount);
-  document.getElementById('imp-total').textContent   = (data.total || 0).toLocaleString('pt-BR');
-  document.getElementById('imp-debt').textContent    = debtCount.toLocaleString('pt-BR');
-  document.getElementById('imp-no-debt').textContent = pendingCount
-    ? `${pendingCount.toLocaleString('pt-BR')} pendentes`
-    : (errorCount ? `${noDebtCount.toLocaleString('pt-BR')} / ${errorCount.toLocaleString('pt-BR')} erro DDM` : noDebtCount.toLocaleString('pt-BR'));
-  document.getElementById('import-summary').classList.add('visible');
-  document.getElementById('import-actions').style.display = data.validating ? 'none' : 'flex';
-  if (linesData.length) renderCampaignLinePicker(linesData);
-  else loadLines();
-  if (rows.length) {
-    document.getElementById('import-table-wrap').style.display = 'block';
-    document.getElementById('import-table-title').textContent =
-      `Preview — ${rows.length.toLocaleString('pt-BR')} de ${(data.total || rows.length).toLocaleString('pt-BR')}`;
-    document.getElementById('import-body').innerHTML = rows.slice(0, 500).map(r => `
-      <tr>
-        <td>${escapeHtml(r.name || '—')}</td>
-        <td class="td-mono">${escapeHtml(r.cpf_raw || r.cpf || '—')}</td>
-        <td class="td-mono">${escapeHtml(r.phone || '—')}</td>
-        <td>${r.has_debt
-          ? '<span class="debt-yes">✓ sim</span>'
-          : r.validation_status === 'pending'
-            ? (data.validating ? '<span class="debt-no">validando</span>' : '<span class="debt-no">antes da chamada</span>')
-            : r.ddm_error
-            ? `<span class="debt-error" title="${escapeHtml(r.ddm_error)}">! ${escapeHtml(r.ddm_error || 'erro DDM')}</span>`
-            : '<span class="debt-no">— não</span>'}</td>
-      </tr>`).join('');
-  }
-}
+  document.getElementById('campaign-lines-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeCampaignLinesModal();
+  });
 
-function resetImportUI() {
-  importRows      = [];
-  importSessionId = null;
-  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
-  document.getElementById('import-summary').classList.remove('visible');
-  document.getElementById('import-actions').style.display = 'none';
-  document.getElementById('import-table-wrap').style.display = 'none';
-  document.getElementById('import-body').innerHTML = '';
-  document.getElementById('campaign-name-input').value = '';
-  const groupSelect = document.getElementById('campaign-group-select');
-  if (groupSelect) groupSelect.value = '';
-  const picker = document.getElementById('campaign-line-picker');
-  if (picker) picker.innerHTML = '<div class="td-dim">Carregando linhas...</div>';
-  hideProgress();
-}
+  let importRows      = [];
+  let importSessionId = null;
+  let _pollTimer      = null;
 
-async function stopImport() {
-  const jobId = importSessionId || (() => {
+  const fileInput  = document.getElementById('file-input');
+  const importZone = document.getElementById('import-zone');
+
+  function restoreImportState() {
     try {
       const saved = sessionStorage.getItem('import_job_id');
-      return saved ? JSON.parse(saved)?.job_id || null : null;
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      const status = parsed.status;
+      const jobId = parsed.job_id;
+      if (!jobId) return;
+
+      importSessionId = jobId;
+      if (status === 'done') {
+        importRows = parsed.result || [];
+        renderImportPreview({ rows: importRows, total: parsed.total, with_debt: parsed.with_debt, validating: false });
+        const beforeCall = importRows.some(r => r.validation_status === 'pending');
+        setProgress(100, beforeCall
+          ? `✓ Concluído — ${(parsed.total || importRows.length || 0).toLocaleString('pt-BR')} contatos carregados`
+          : `✓ Concluído — ${(parsed.with_debt || 0).toLocaleString('pt-BR')} contatos com débito`, 'green');
+        setDropState('done', `✓ ${(parsed.total || 0).toLocaleString('pt-BR')} contatos carregados`, beforeCall
+          ? 'DDM será validado antes da chamada · clique para trocar o arquivo'
+          : `${(parsed.with_debt || 0).toLocaleString('pt-BR')} com débito · clique para trocar o arquivo`);
+        setTimeout(hideProgress, 3000);
+        sessionStorage.removeItem('import_job_id');
+      } else if (status === 'error') {
+        const errMsg = (parsed.result && parsed.result.error) || 'Erro desconhecido no worker';
+        setProgress(100, `Erro: ${errMsg}`, 'red');
+        setDropState('', 'Erro no processamento — clique para tentar novamente', errMsg);
+        setTimeout(hideProgress, 5000);
+        sessionStorage.removeItem('import_job_id');
+      } else {
+        pollImportJob(jobId);
+      }
     } catch (e) {
-      return null;
+      sessionStorage.removeItem('import_job_id');
     }
-  })();
-
-  if (!jobId) return;
-
-  const confirmed = confirm('Tem certeza que deseja parar a importação?');
-  if (!confirmed) return;
-
-  try {
-    const res = await fetch(`${API}/api/import/stop/${jobId}`, { method: 'POST' });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error || 'Falha ao parar importação');
-
-    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
-    sessionStorage.removeItem('import_job_id');
-
-    setProgress(100, 'Importação interrompida pelo usuário', 'amber');
-    setDropState('done', 'Importação parada', 'Clique para selecionar outro arquivo');
-    toast('Importação parada', 'warn');
-    setTimeout(hideProgress, 3000);
-    importSessionId = null;
-    document.getElementById('import-actions').style.display = 'flex';
-    document.getElementById('import-processing-actions').style.display = 'none';
-  } catch (e) {
-    toast(`Erro ao parar: ${e.message}`, 'err');
   }
-}
 
-function resetImport() {
-  resetImportUI();
-  setDropState('', 'Arraste ou clique para selecionar', 'Aceita .xlsx e .csv · Planilha DDM ou genérica (CPF, Nome)');
-  fileInput.value = '';
-}
+  document.addEventListener('DOMContentLoaded', restoreImportState);
 
-loadLines();
-loadSipGroups();
-setInterval(loadLines, 120_000);
-</script>
-</body>
-</html>
+  function onDropZoneClick() {
+    if (importZone.classList.contains('uploading')) return;
+    fileInput.click();
+  }
+
+  fileInput.addEventListener('change', e => {
+    if (e.target.files[0]) handleImportFile(e.target.files[0]);
+  });
+
+  importZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (!importZone.classList.contains('uploading')) importZone.classList.add('drag');
+  });
+  importZone.addEventListener('dragleave', () => importZone.classList.remove('drag'));
+  importZone.addEventListener('drop', e => {
+    e.preventDefault();
+    importZone.classList.remove('drag');
+    if (!importZone.classList.contains('uploading') && e.dataTransfer.files[0]) {
+      handleImportFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  function setProgress(pct, stage, color = '') {
+    const fill     = document.getElementById('upload-progress-fill');
+    const stage_el = document.getElementById('upload-progress-stage');
+    const pct_el   = document.getElementById('upload-progress-pct');
+    const wrap     = document.getElementById('upload-progress-wrap');
+    wrap.classList.add('visible');
+    fill.style.width   = pct + '%';
+    fill.className     = 'upload-progress-bar-fill' + (color ? ' ' + color : '');
+    stage_el.textContent = stage;
+    stage_el.className   = color || '';
+    pct_el.textContent   = pct + '%';
+    pct_el.className     = color || '';
+  }
+
+  function hideProgress() {
+    document.getElementById('upload-progress-wrap').classList.remove('visible');
+  }
+
+  function setDropState(state, title, sub) {
+    const zone = document.getElementById('import-zone');
+    zone.className = 'drop-zone ' + state;
+    document.getElementById('drop-title').textContent = title;
+    document.getElementById('drop-sub').textContent   = sub;
+    document.getElementById('drop-icon').textContent  = state === 'done' ? '✓' : '⬆';
+  }
+
+  async function handleImportFile(file) {
+    const mb  = (file.size / 1024 / 1024).toFixed(1);
+    resetImportUI();
+    setDropState('uploading', `Preparando ${file.name} (${mb} MB)...`, 'Aguarde...');
+    setProgress(2, 'Enviando arquivo...', 'amber');
+    try {
+      const importJson = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.upload.addEventListener('progress', e => {
+          if (e.lengthComputable) {
+            const pct = Math.round(5 + (e.loaded / e.total) * 70);
+            const sent = (e.loaded / 1024 / 1024).toFixed(1);
+            const total = (e.total / 1024 / 1024).toFixed(1);
+            setProgress(pct, `Enviando ${sent} / ${total} MB...`, 'amber');
+          }
+        });
+        xhr.addEventListener('load', () => {
+          let json = {};
+          try { json = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
+          if (xhr.status >= 200 && xhr.status < 300 && json.ok) resolve(json);
+          else reject(new Error(json.error || `Upload falhou: HTTP ${xhr.status}`));
+        });
+        xhr.addEventListener('error', () => reject(new Error('Erro de rede no upload')));
+        xhr.addEventListener('abort', () => reject(new Error('Upload cancelado')));
+        xhr.open('POST', `${API}/api/import/upload`);
+        const token = sessionStorage.getItem('api_auth_token') || localStorage.getItem('api_auth_token') || '';
+        if (token) xhr.setRequestHeader('X-API-Token', token);
+        const form = new FormData();
+        form.append('file', file);
+        xhr.send(form);
+      });
+      importSessionId = importJson.job_id;
+      try {
+        sessionStorage.setItem('import_job_id', JSON.stringify({
+          job_id: importJson.job_id,
+          status: 'processing',
+        }));
+      } catch(_) {
+        sessionStorage.removeItem('import_job_id');
+      }
+      setDropState('uploading', 'Processamento iniciado', 'Validando arquivo...');
+      setProgress(78, 'Processamento iniciado...', 'amber');
+      await pollImportJob(importJson.job_id);
+    } catch(e) {
+      setDropState('', 'Falha no upload/processamento', e.message);
+      setProgress(100, `Erro: ${e.message}`, 'red');
+      toast(`Erro: ${e.message}`, 'err');
+      setTimeout(hideProgress, 5000);
+    }
+    return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    resetImportUI();
+    setDropState('uploading', `Preparando ${file.name} (${mb} MB)…`, 'Aguarde...');
+    setProgress(2, 'Obtendo URL de upload...', 'amber');
+    try {
+      const presignedRes  = await fetch(`${API}/api/upload/presigned?ext=${ext}`);
+      const presignedJson = await presignedRes.json();
+      if (!presignedJson.ok) throw new Error(presignedJson.error || 'Falha ao obter URL de upload');
+      const { upload_url, path } = presignedJson;
+      setProgress(5, 'Enviando arquivo para Storage...', 'amber');
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.upload.addEventListener('progress', e => {
+          if (e.lengthComputable) {
+            const pct   = Math.round(5 + (e.loaded / e.total) * 65);
+            const sent  = (e.loaded / 1024 / 1024).toFixed(1);
+            const total = (e.total / 1024 / 1024).toFixed(1);
+            setProgress(pct, `Enviando ${sent} / ${total} MB...`, 'amber');
+          }
+        });
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`Upload falhou: HTTP ${xhr.status}`));
+        });
+        xhr.addEventListener('error', () => reject(new Error('Erro de rede no upload')));
+        xhr.addEventListener('abort', () => reject(new Error('Upload cancelado')));
+        xhr.open('PUT', upload_url);
+        xhr.setRequestHeader('Content-Type', ext === 'csv' ? 'text/csv' : 'application/octet-stream');
+        xhr.send(file);
+      });
+      setProgress(72, 'Arquivo recebido. Enfileirando processamento...', 'amber');
+      const importRes  = await fetch(`${API}/api/import/from-storage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, filename: file.name, size_bytes: file.size }),
+      });
+      const importJson = await importRes.json();
+      if (!importJson.ok) throw new Error(importJson.error || 'Falha ao enfileirar processamento');
+      importSessionId = importJson.job_id;
+      try {
+        sessionStorage.setItem('import_job_id', JSON.stringify({
+          job_id: importJson.job_id,
+          status: 'processing',
+        }));
+      } catch (e) {
+        sessionStorage.removeItem('import_job_id');
+      }
+      setProgress(75, 'Worker iniciado. Processando planilha...', '');
+      setDropState('uploading', `Processando ${file.name}…`, 'Worker Celery em andamento...');
+      toast(`⬆ Upload concluído (${mb} MB). Processando...`, 'warn');
+      await pollImportJob(importJson.job_id);
+    } catch(e) {
+        setDropState('', 'Erro no upload — clique para tentar novamente', e.message);
+        setProgress(100, `Erro: ${e.message}`, 'red');
+        toast(`Erro: ${e.message}`, 'err');
+        setTimeout(hideProgress, 4000);
+      } finally {
+        fileInput.value = '';
+      }
+    }
+
+  async function pollImportJob(jobId) {
+    if (_pollTimer) clearInterval(_pollTimer);
+    try {
+      sessionStorage.setItem('import_job_id', JSON.stringify({ job_id: jobId, status: 'processing' }));
+    } catch (e) {
+      sessionStorage.removeItem('import_job_id');
+    }
+    return new Promise((resolve) => {
+      _pollTimer = setInterval(async () => {
+        try {
+          const res  = await fetch(`${API}/api/import/status/${jobId}`);
+          const json = await res.json();
+          if (!json.ok) return;
+          const total     = json.total     || 0;
+          const processed = json.processed || 0;
+          const withDebt  = json.with_debt || 0;
+          if (total > 0) {
+            document.getElementById('import-processing-actions').style.display = 'flex';
+            const pct     = Math.round(75 + (processed / total) * 23);
+            const pctStr  = Math.round((processed / total) * 100);
+            const stageLabel = json.status === 'rechecking_ddm' ? 'Rechecando erros DDM' : 'Processando';
+            setProgress(pct, `${stageLabel} ${processed.toLocaleString('pt-BR')} / ${total.toLocaleString('pt-BR')} linhas (${pctStr}%)`, '');
+            setDropState('uploading', `Processando planilha... ${pctStr}%`,
+              `${processed.toLocaleString('pt-BR')} de ${total.toLocaleString('pt-BR')} linhas — ${withDebt.toLocaleString('pt-BR')} com débito`);
+          }
+          const previewRows = Array.isArray(json.result) ? json.result : [];
+          if (total > 0 && previewRows.length) {
+            importRows = previewRows;
+            renderImportPreview({ rows: previewRows, total, with_debt: withDebt, validating: json.status !== 'done' });
+          }
+          if (json.status === 'done') {
+            clearInterval(_pollTimer);
+            importSessionId = jobId;
+            const rows = Array.isArray(json.result) ? json.result : [];
+            const beforeCall = rows.some(r => r.validation_status === 'pending');
+            setProgress(100, beforeCall
+              ? `✓ Concluído — ${total.toLocaleString('pt-BR')} contatos carregados`
+              : `✓ Concluído — ${withDebt.toLocaleString('pt-BR')} contatos com débito`, 'green');
+            setDropState('done', `✓ ${total.toLocaleString('pt-BR')} contatos carregados`,
+              beforeCall ? 'DDM será validado antes da chamada · clique para trocar o arquivo' : `${withDebt.toLocaleString('pt-BR')} com débito · clique para trocar o arquivo`);
+            importRows = rows;
+            renderImportPreview({ rows, total, with_debt: withDebt, validating: false });
+            toast(beforeCall
+              ? `✓ ${total.toLocaleString('pt-BR')} linhas carregadas — DDM antes da chamada`
+              : `✓ ${total.toLocaleString('pt-BR')} linhas processadas — ${withDebt.toLocaleString('pt-BR')} com débito`, 'ok');
+            setTimeout(hideProgress, 3000);
+            resolve(json);
+          } else if (json.status === 'error') {
+            clearInterval(_pollTimer);
+            const errMsg = json.result?.error || 'Erro desconhecido no worker';
+            setProgress(100, `Erro: ${errMsg}`, 'red');
+            setDropState('', 'Erro no processamento — clique para tentar novamente', errMsg);
+            toast(`Erro no worker: ${errMsg}`, 'err');
+            setTimeout(hideProgress, 5000);
+            resolve(json);
+          }
+        } catch(e) {}
+      }, 2000);
+    });
+  }
+
+  function renderImportPreview(data) {
+    const rows = data.rows || [];
+    let pendingCount = rows.filter(r => r.validation_status === 'pending').length;
+    const errorCount = rows.filter(r => r.ddm_error).length;
+    const debtCount = rows.filter(r => r.has_debt).length || data.with_debt || 0;
+    if (pendingCount && !debtCount && !errorCount && data.total > rows.length) pendingCount = data.total;
+    const noDebtCount = Math.max(0, (data.total || rows.length || 0) - debtCount - pendingCount - errorCount);
+    document.getElementById('imp-total').textContent   = (data.total || 0).toLocaleString('pt-BR');
+    document.getElementById('imp-debt').textContent    = debtCount.toLocaleString('pt-BR');
+    document.getElementById('imp-no-debt').textContent = pendingCount
+      ? `${pendingCount.toLocaleString('pt-BR')} pendentes`
+      : (errorCount ? `${noDebtCount.toLocaleString('pt-BR')} / ${errorCount.toLocaleString('pt-BR')} erro DDM` : noDebtCount.toLocaleString('pt-BR'));
+    document.getElementById('import-summary').classList.add('visible');
+    document.getElementById('import-actions').style.display = data.validating ? 'none' : 'flex';
+    if (linesData.length) renderCampaignLinePicker(linesData);
+    else loadLines();
+    if (rows.length) {
+      document.getElementById('import-table-wrap').style.display = 'block';
+      document.getElementById('import-table-title').textContent =
+        `Preview — ${rows.length.toLocaleString('pt-BR')} de ${(data.total || rows.length).toLocaleString('pt-BR')}`;
+      document.getElementById('import-body').innerHTML = rows.slice(0, 500).map(r => `
+        <tr>
+          <td>${escapeHtml(r.name || '—')}</td>
+          <td class="td-mono">${escapeHtml(r.cpf_raw || r.cpf || '—')}</td>
+          <td class="td-mono">${escapeHtml(r.phone || '—')}</td>
+          <td>${r.has_debt
+            ? '<span class="debt-yes">✓ sim</span>'
+            : r.validation_status === 'pending'
+              ? (data.validating ? '<span class="debt-no">validando</span>' : '<span class="debt-no">antes da chamada</span>')
+              : r.ddm_error
+              ? `<span class="debt-error" title="${escapeHtml(r.ddm_error)}">! ${escapeHtml(r.ddm_error || 'erro DDM')}</span>`
+              : '<span class="debt-no">— não</span>'}</td>
+        </tr>`).join('');
+    }
+  }
+
+  function resetImportUI() {
+    importRows      = [];
+    importSessionId = null;
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+    document.getElementById('import-summary').classList.remove('visible');
+    document.getElementById('import-actions').style.display = 'none';
+    document.getElementById('import-table-wrap').style.display = 'none';
+    document.getElementById('import-body').innerHTML = '';
+    document.getElementById('campaign-name-input').value = '';
+    const groupSelect = document.getElementById('campaign-group-select');
+    if (groupSelect) groupSelect.value = '';
+    const picker = document.getElementById('campaign-line-picker');
+    if (picker) picker.innerHTML = '<div class="td-dim">Carregando linhas...</div>';
+    hideProgress();
+  }
+
+  async function stopImport() {
+    const jobId = importSessionId || (() => {
+      try {
+        const saved = sessionStorage.getItem('import_job_id');
+        return saved ? JSON.parse(saved)?.job_id || null : null;
+      } catch (e) {
+        return null;
+      }
+    })();
+
+    if (!jobId) return;
+
+    const confirmed = confirm('Tem certeza que deseja parar a importação?');
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`${API}/api/import/stop/${jobId}`, { method: 'POST' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Falha ao parar importação');
+
+      if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+      sessionStorage.removeItem('import_job_id');
+
+      setProgress(100, 'Importação interrompida pelo usuário', 'amber');
+      setDropState('done', 'Importação parada', 'Clique para selecionar outro arquivo');
+      toast('Importação parada', 'warn');
+      setTimeout(hideProgress, 3000);
+      importSessionId = null;
+      document.getElementById('import-actions').style.display = 'flex';
+      document.getElementById('import-processing-actions').style.display = 'none';
+    } catch (e) {
+      toast(`Erro ao parar: ${e.message}`, 'err');
+    }
+  }
+
+  function resetImport() {
+    resetImportUI();
+    setDropState('', 'Arraste ou clique para selecionar', 'Aceita .xlsx e .csv · Planilha DDM ou genérica (CPF, Nome)');
+    fileInput.value = '';
+  }
+
+  loadLines();
+  loadSipGroups();
+  setInterval(loadLines, 120_000);
+  </script>
+  </body>
+  </html>

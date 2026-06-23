@@ -1297,6 +1297,121 @@ def import_status(job_id):
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+from flask import Response, stream_with_context
 
+@app.route("/api/stream")
+def stream():
+    token = _bearer_token()
+    if API_AUTH_TOKEN and not _valid_secret(token, API_AUTH_TOKEN):
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    def _build_payload():
+        payload = {}
+        try:
+            wavoip_token = wavoip_login()
+            devices      = wavoip_get_devices(wavoip_token)
+            device_map   = {d.get("token"): d for d in devices}
+            active_counts = _active_line_counts(DEVICE_PRIORITY)
+            overrides    = _line_overrides_map()
+            cooldowns    = {t: _is_line_in_cooldown(t) for t in DEVICE_PRIORITY}
+            payload["lines"] = [{
+                "id":               (device_map.get(t) or {}).get("id"),
+                "name":             (device_map.get(t) or {}).get("name") or f"Linha {idx + 1}",
+                "phone":            (device_map.get(t) or {}).get("phone"),
+                "status":           (device_map.get(t) or {}).get("status") or "missing",
+                "disabled":         (device_map.get(t) or {}).get("disabled"),
+                "calls_made":       (device_map.get(t) or {}).get("calls_made"),
+                "needs_restart":    (device_map.get(t) or {}).get("needs_restart"),
+                "token":            t,
+                "phone_number_id":  WAVOIP_VAPI_MAP.get(t) or "",
+                "phone_number_short": ((WAVOIP_VAPI_MAP.get(t) or "")[:8] + "...") if WAVOIP_VAPI_MAP.get(t) else "",
+                "env_name":         WAVOIP_ENV_MAP.get(t) or "",
+                "configured":       bool(WAVOIP_VAPI_MAP.get(t)),
+                "max_concurrent":   LINE_MAX_CONCURRENT,
+                "active_calls":     active_counts.get(t, 0),
+                "free_slots":       max(0, LINE_MAX_CONCURRENT - active_counts.get(t, 0)),
+                "paused":           bool((overrides.get(t) or {}).get("paused")),
+                "pause_reason":     (overrides.get(t) or {}).get("reason", ""),
+                "cooldown":         bool(cooldowns.get(t)),
+                "healthy":          t in device_map
+                                    and (device_map[t].get("status") == "open")
+                                    and device_map[t].get("disabled") == 0
+                                    and device_map[t].get("phone") is not None
+                                    and bool(WAVOIP_VAPI_MAP.get(t))
+                                    and not bool(cooldowns.get(t))
+                                    and not bool((overrides.get(t) or {}).get("paused")),
+            } for idx, t in enumerate(DEVICE_PRIORITY)]
+        except Exception as e:
+            payload["lines_error"] = str(e)
+
+        try:
+            payload["campaigns"] = supabase.table("campaigns")\
+                .select("*").order("created_at", desc=True).execute().data or []
+        except Exception as e:
+            payload["campaigns_error"] = str(e)
+
+        try:
+            camps = supabase.table("campaigns")\
+                .select("id, name").eq("status", "em_andamento").execute().data or []
+            if camps:
+                camp_ids = [c["id"] for c in camps]
+                camp_map = {c["id"]: c["name"] for c in camps}
+                result   = supabase.table("campaign_calls")\
+                    .select("*")\
+                    .in_("campaign_id", camp_ids)\
+                    .in_("status", ["em_andamento", "atendido", "enfileirado", "erro"])\
+                    .order("created_at", desc=True)\
+                    .limit(100).execute()
+                monitor_rows = []
+                for r in (result.data or []):
+                    meta = _line_meta_from_debito(r)
+                    monitor_rows.append({
+                        "id":              r["id"],
+                        "cpf":             r["cpf"],
+                        "phone":           r["phone"],
+                        "status":          r["status"],
+                        "campaign":        camp_map.get(r["campaign_id"], "—"),
+                        "created_at":      r["created_at"],
+                        "line_token":      r.get("line_token") or (meta or {}).get("line_token", ""),
+                        "line_name":       r.get("line_name") or (meta or {}).get("line_name", ""),
+                        "phone_number_id": r.get("phone_number_id") or (meta or {}).get("phone_number_id", ""),
+                    })
+                payload["monitor"] = {
+                    "data": monitor_rows,
+                    "stats": {
+                        "em_andamento": sum(1 for r in monitor_rows if r["status"] in ("em_andamento", "enfileirado")),
+                        "atendido":     sum(1 for r in monitor_rows if r["status"] == "atendido"),
+                        "erro":         sum(1 for r in monitor_rows if r["status"] == "erro"),
+                    }
+                }
+            else:
+                payload["monitor"] = {"data": [], "stats": {"em_andamento": 0, "atendido": 0, "erro": 0}}
+        except Exception as e:
+            payload["monitor_error"] = str(e)
+
+        return payload
+
+    def generate():
+        # heartbeat inicial
+        yield "event: connected\ndata: {}\n\n"
+        while True:
+            try:
+                data = _build_payload()
+                yield f"data: {json.dumps(data, default=str)}\n\n"
+            except GeneratorExit:
+                break
+            except Exception as e:
+                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            time.sleep(4)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control":               "no-cache",
+            "X-Accel-Buffering":           "no",
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
