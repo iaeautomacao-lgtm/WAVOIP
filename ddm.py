@@ -71,13 +71,14 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
         raise DDMHardError("DDM_TOKEN nao configurado")
 
     try:
-        logger.warning("[DDM_DEBUG] CPF=%s consultando DDM", cpf)
+        cpf_tail = re.sub(r"\D", "", str(cpf))[-4:]
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s consultando DDM", cpf_tail)
         r = requests.get(
             DDM_CALCULA,
             params={"tk": DDM_TOKEN, "Doc": cpf},
             timeout=DDM_TIMEOUT_SECONDS,
         )
-        logger.warning("[DDM_DEBUG] CPF=%s STATUS=%s BODY=%s", cpf, r.status_code, r.text[:500])
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s STATUS=%s BODY_LEN=%s", cpf_tail, r.status_code, len(r.text or ""))
 
         if r.status_code == 429 or r.status_code >= 500:
             raise DDMSoftError(f"DDM indisponivel ({r.status_code})")
@@ -85,10 +86,10 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
             raise DDMHardError(f"Token invalido ({r.status_code})")
         r.raise_for_status()
     except requests.exceptions.Timeout:
-        logger.warning("[DDM_DEBUG] CPF=%s TIMEOUT", cpf)
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s TIMEOUT", re.sub(r"\D", "", str(cpf))[-4:])
         raise DDMSoftError("timeout")
     except requests.exceptions.ConnectionError:
-        logger.warning("[DDM_DEBUG] CPF=%s CONEXAO_CAIU", cpf)
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s CONEXAO_CAIU", re.sub(r"\D", "", str(cpf))[-4:])
         raise DDMSoftError("conexao caiu")
     except requests.exceptions.HTTPError as e:
         code = getattr(getattr(e, "response", None), "status_code", 0)
@@ -109,7 +110,7 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
 
     erro_ddm = _get_any(raw, "ERRO", "erro") if isinstance(raw, dict) else ""
     if erro_ddm:
-        logger.warning("[DDM_DEBUG] CPF=%s ERRO_GENERICO_RECEBIDO", cpf)
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s ERRO_GENERICO_RECEBIDO", re.sub(r"\D", "", str(cpf))[-4:])
         raise DDMHardError("ERRO_GENERICO_DDM")
 
     return _safe_dict(raw)
@@ -185,14 +186,14 @@ def processar_debito_result(cpf: str) -> Dict[str, Any]:
         dados = consultar_debitos_cpf(cpf)
         debito = _montar_debito(dados)
         if debito is None:
-            logger.warning("[DDM_DEBUG] CPF=%s SEM_DEBITO_JSON_VALIDO", cpf)
+            logger.warning("[DDM_DEBUG] CPF_FINAL=%s SEM_DEBITO_JSON_VALIDO", re.sub(r"\D", "", str(cpf))[-4:])
             return {"ok": True, "error": "", "debito": None, "_no_debt": True}
         return {"ok": True, "error": "", "debito": debito}
     except DDMSoftError as e:
-        logger.warning("[DDM_DEBUG] CPF=%s SOFT_ERROR=%s", cpf, e)
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s SOFT_ERROR=%s", re.sub(r"\D", "", str(cpf))[-4:], e)
         return {"ok": False, "error": str(e), "debito": None, "_soft": True}
     except Exception as e:
-        logger.warning("[DDM_DEBUG] CPF=%s ERRO=%s", cpf, e)
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s ERRO=%s", re.sub(r"\D", "", str(cpf))[-4:], e)
         return {"ok": False, "error": str(e), "debito": None, "_soft": False}
 
 

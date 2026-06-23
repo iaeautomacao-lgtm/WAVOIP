@@ -9,7 +9,6 @@ teste.csv
 dist/
 build/
 .celery*
-migrations/
 *.log
 *.sqlite3
 *.db

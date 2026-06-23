@@ -992,6 +992,19 @@ const API = '';
 const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[ch]));
+const jsArg = (v) => escapeHtml(JSON.stringify(String(v ?? '')).replace(/</g, '\\u003c'));
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => {
+  const token = sessionStorage.getItem('api_auth_token') || localStorage.getItem('api_auth_token') || '';
+  const url = typeof input === 'string' ? input : (input?.url || '');
+  const isApi = url.startsWith('/api/') || url.startsWith(`${location.origin}/api/`) || url.startsWith(`${API}/api/`);
+  if (token && isApi) {
+    const headers = new Headers(init.headers || {});
+    headers.set('X-API-Token', token);
+    init = { ...init, headers };
+  }
+  return nativeFetch(input, init);
+};
 
 setInterval(() => {
   document.getElementById('clock').textContent = new Date().toLocaleTimeString('pt-BR');
@@ -1034,7 +1047,7 @@ async function loadLines() {
     linesData = json.data;
     renderLines(linesData);
   } catch(e) {
-    document.getElementById('lines-grid').innerHTML = `<div class="loader">Erro: ${e.message}</div>`;
+    document.getElementById('lines-grid').innerHTML = `<div class="loader">Erro: ${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -1044,10 +1057,10 @@ function renderLines(lines) {
   grid.innerHTML = lines.map(l => `
     <div class="line-card ${l.paused ? 'paused' : l.healthy ? 'healthy' : l.status === 'connecting' ? 'warn' : 'down'}">
       <div class="top-bar"></div>
-      <div class="line-name">${l.name || 'Dispositivo'}</div>
-      <div class="line-number ${!l.phone ? 'empty' : ''}">${l.phone ? l.phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3') : 'Sem número'}</div>
+      <div class="line-name">${escapeHtml(l.name || 'Dispositivo')}</div>
+      <div class="line-number ${!l.phone ? 'empty' : ''}">${l.phone ? escapeHtml(String(l.phone).replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3')) : 'Sem número'}</div>
       <div class="line-tags">
-        <span class="tag ${l.status==='open'?'tag-green':l.status==='connecting'?'tag-amber':'tag-red'}">${l.status}</span>
+        <span class="tag ${l.status==='open'?'tag-green':l.status==='connecting'?'tag-amber':'tag-red'}">${escapeHtml(l.status)}</span>
         ${l.disabled ? '<span class="tag tag-red">off</span>' : '<span class="tag tag-brand">on</span>'}
         ${l.needs_restart ? '<span class="tag tag-amber">restart</span>' : ''}
         ${l.configured ? '<span class="tag tag-brand">vapi</span>' : '<span class="tag tag-red">sem vapi</span>'}
@@ -1056,14 +1069,14 @@ function renderLines(lines) {
       </div>
       <div class="line-meta">Chamadas: <b>${l.calls_made ?? 0}</b></div>
       <div class="line-slot-meta">Slots: <b>${l.active_calls ?? 0}</b> / ${l.max_concurrent ?? 2}</div>
-      <div class="line-slot-meta">Env: <b>${l.env_name || '—'}</b></div>
-      <div class="line-slot-meta">Vapi: <b>${l.phone_number_short || '—'}</b></div>
-      <div class="line-slot-meta" title="${l.token || ''}">Token: <b>${(l.token || '').slice(0, 8)}...</b></div>
-      ${l.pause_reason ? `<div class="line-slot-meta">Motivo: ${l.pause_reason}</div>` : ''}
+      <div class="line-slot-meta">Env: <b>${escapeHtml(l.env_name || '—')}</b></div>
+      <div class="line-slot-meta">Vapi: <b>${escapeHtml(l.phone_number_short || '—')}</b></div>
+      <div class="line-slot-meta" title="${escapeHtml(l.token || '')}">Token: <b>${escapeHtml((l.token || '').slice(0, 8))}...</b></div>
+      ${l.pause_reason ? `<div class="line-slot-meta">Motivo: ${escapeHtml(l.pause_reason)}</div>` : ''}
       <div class="line-controls">
         ${l.paused
-          ? `<button class="call-btn" onclick="resumeLine('${l.token}')">Retomar</button>`
-          : `<button class="del-btn" onclick="pauseLine('${l.token}', '${(l.name || 'linha').replace(/'/g, "\\'")}')">Pausar</button>`}
+          ? `<button class="call-btn" onclick="resumeLine(${jsArg(l.token)})">Retomar</button>`
+          : `<button class="del-btn" onclick="pauseLine(${jsArg(l.token)}, ${jsArg(l.name || 'linha')})">Pausar</button>`}
       </div>
     </div>
   `).join('');
@@ -1098,8 +1111,8 @@ function renderCampaignLinePicker(lines) {
     const checked = !disabled && (previous.length ? previous.includes(l.token) : true);
     const label = `${l.name || 'Linha'} · ${l.phone || 'sem numero'} · ${l.active_calls ?? 0}/${l.max_concurrent ?? 2}`;
     return `<label class="campaign-line-option ${disabled ? 'disabled' : ''}">
-      <input type="checkbox" class="campaign-line-check" value="${l.token}" ${disabled ? 'disabled' : ''} ${checked ? 'checked' : ''}>
-      <span>${label}</span>
+      <input type="checkbox" class="campaign-line-check" value="${escapeHtml(l.token)}" ${disabled ? 'disabled' : ''} ${checked ? 'checked' : ''}>
+      <span>${escapeHtml(label)}</span>
     </label>`;
   }).join('');
 }
@@ -1153,8 +1166,8 @@ function renderTokenChecks(containerId, selected = [], onlyHealthy = false, defa
     const disabled = onlyHealthy && !l.healthy;
     const checked = wanted.size ? wanted.has(l.token) : (defaultAll && (!onlyHealthy || l.healthy));
     return `<label class="compact-check">
-      <input type="checkbox" value="${l.token}" ${disabled ? 'disabled' : ''} ${checked && !disabled ? 'checked' : ''}>
-      ${l.name || l.phone || 'Linha'}
+      <input type="checkbox" value="${escapeHtml(l.token)}" ${disabled ? 'disabled' : ''} ${checked && !disabled ? 'checked' : ''}>
+      ${escapeHtml(l.name || l.phone || 'Linha')}
     </label>`;
   }).join('');
 }
@@ -1185,7 +1198,7 @@ function renderGroupOptions() {
     const current = sel.value;
     const first = sel.id === 'campaign-group-select' ? 'Grupo de SIPs...' : 'Sem grupo fixo';
     sel.innerHTML = `<option value="">${first}</option>` + sipGroups.map(g =>
-      `<option value="${g.id}">${g.name}</option>`
+      `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`
     ).join('');
     if (current) sel.value = current;
   });
@@ -1200,12 +1213,12 @@ function renderGroupsTable() {
   }
   tbody.innerHTML = sipGroups.map(g => `
     <tr>
-      <td>${g.name}</td>
+      <td>${escapeHtml(g.name)}</td>
       <td class="td-mono">${campaignLinesLabel(g.line_tokens)}</td>
       <td>
         <div style="display:flex;gap:6px">
-          <button class="call-btn" onclick="editSipGroup('${g.id}')">Editar</button>
-          <button class="del-btn" onclick="deleteSipGroup('${g.id}', '${g.name.replace(/'/g, "\\'")}')">Excluir</button>
+          <button class="call-btn" onclick="editSipGroup(${jsArg(g.id)})">Editar</button>
+          <button class="del-btn" onclick="deleteSipGroup(${jsArg(g.id)}, ${jsArg(g.name)})">Excluir</button>
         </div>
       </td>
     </tr>
@@ -1311,7 +1324,7 @@ function populateModalLines(lines) {
   const sel     = document.getElementById('modal-line-select');
   const healthy = lines.filter(l => l.healthy);
   sel.innerHTML = healthy.length
-    ? healthy.map(l => `<option value="${l.id}">${l.name} — ${l.phone}</option>`).join('')
+    ? healthy.map(l => `<option value="${escapeHtml(l.id)}">${escapeHtml(l.name)} — ${escapeHtml(l.phone)}</option>`).join('')
     : '<option value="">Nenhuma linha disponível</option>';
 }
 
@@ -1329,7 +1342,7 @@ async function loadContacts() {
     renderContacts(json.data, json.page, json.pages, json.total);
   } catch(e) {
     document.getElementById('contacts-body').innerHTML =
-      `<tr><td colspan="5"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+      `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
   }
 }
 
@@ -1341,17 +1354,17 @@ function renderContacts(rows, page, pages, total) {
     tbody.innerHTML = rows.map(c => {
       const phones = Array.isArray(c.phones) ? c.phones : (c.phones ? [c.phones] : []);
       return `<tr>
-        <td>${c.name || '—'}</td>
-        <td class="td-mono">${c.cpf || c.cpf_norm || '—'}</td>
-        <td class="td-dim">${c.institution || '—'}</td>
-        <td class="td-mono">${phones.slice(0,2).join(', ') || '—'}</td>
+        <td>${escapeHtml(c.name || '—')}</td>
+        <td class="td-mono">${escapeHtml(c.cpf || c.cpf_norm || '—')}</td>
+        <td class="td-dim">${escapeHtml(c.institution || '—')}</td>
+        <td class="td-mono">${escapeHtml(phones.slice(0,2).join(', ') || '—')}</td>
         <td>
           <div style="display:flex;gap:6px">
             <button class="call-btn" ${!phones.length?'disabled':''}
-              onclick='openModal(${JSON.stringify({id:c.id,name:c.name,phones})})'>
+              onclick='openModal(${escapeHtml(JSON.stringify({id:c.id,name:c.name,phones}).replace(/</g, "\\u003c"))})'>
               ↗ Ligar
             </button>
-            <button class="del-btn" onclick='deleteContact("${c.id}","${c.name}")'>✕</button>
+            <button class="del-btn" onclick='deleteContact(${jsArg(c.id)}, ${jsArg(c.name)})'>✕</button>
           </div>
         </td>
       </tr>`;
@@ -1399,7 +1412,7 @@ async function loadCalls() {
   } catch(e) {
     console.error('loadCalls failed', e);
     document.getElementById('calls-body').innerHTML =
-      `<tr><td colspan="5"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+      `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
   }
 }
 
@@ -1420,8 +1433,8 @@ function renderCalls(rows, page, pages, total) {
       const camp = c.campaign_name || (c.campaign_id ? `Campanha ${String(c.campaign_id).slice(0,8)}` : '—');
       return `<tr>
         <td class="td-mono" style="color:var(--muted)">${(c.id||'').slice(0,8)}…</td>
-        <td>${c.cpf || '—'}<br><span class="td-dim">${camp}</span></td>
-        <td><span class="cs ${cls}">${c.status||'—'}</span></td>
+        <td>${escapeHtml(c.cpf || '—')}<br><span class="td-dim">${escapeHtml(camp)}</span></td>
+        <td><span class="cs ${cls}">${escapeHtml(c.status||'—')}</span></td>
         <td class="td-mono">${dur}</td>
         <td class="td-dim">${date}</td>
       </tr>`;
@@ -1446,7 +1459,7 @@ async function loadMonitor() {
       'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
   } catch(e) {
     document.getElementById('monitor-body').innerHTML =
-      `<tr><td colspan="5"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+      `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
   }
 }
 
@@ -1475,8 +1488,8 @@ function renderMonitor(rows, stats) {
       <td class="td-mono">${cpf}</td>
       <td class="td-mono">${tel}</td>
       <td><span class="cs ${s.cls}">${s.label}</span></td>
-      <td class="td-dim">${r.line_name || '—'}</td>
-      <td class="td-dim">${r.campaign}</td>
+      <td class="td-dim">${escapeHtml(r.line_name || '—')}</td>
+      <td class="td-dim">${escapeHtml(r.campaign)}</td>
       <td class="td-dim">${date}</td>
     </tr>`;
   }).join('');
@@ -1501,7 +1514,7 @@ async function loadCampaigns() {
     renderCampaigns(json.data);
   } catch(e) {
     document.getElementById('campaigns-body').innerHTML =
-      `<tr><td colspan="7"><div class="loader">Erro: ${e.message}</div></td></tr>`;
+      `<tr><td colspan="7"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
   }
 }
 
@@ -1525,7 +1538,7 @@ function renderCampaigns(rows) {
     const canStart = c.status === 'rascunho' || c.status === 'pausada';
     const canPause = c.status === 'em_andamento';
     return `<tr>
-      <td>${c.name}</td>
+      <td>${escapeHtml(c.name)}</td>
       <td><span class="cs ${s.cls}">${s.label}</span></td>
       <td class="td-mono">${sipLabel}</td>
       <td class="td-mono">${c.total ?? 0}</td>
@@ -1533,10 +1546,10 @@ function renderCampaigns(rows) {
       <td class="td-dim">${date}</td>
       <td>
         <div style="display:flex;gap:6px">
-          ${canStart ? `<button class="call-btn" onclick="startCampaign('${c.id}')">▶ Iniciar</button>` : ''}
-          ${canPause ? `<button class="call-btn" onclick="pauseCampaign('${c.id}')">⏸ Pausar</button>` : ''}
-          <button class="call-btn" onclick="openCampaignLinesModal('${c.id}')">SIPs</button>
-          <button class="del-btn" onclick="deleteCampaign('${c.id}','${c.name}')">✕</button>
+          ${canStart ? `<button class="call-btn" onclick="startCampaign(${jsArg(c.id)})">▶ Iniciar</button>` : ''}
+          ${canPause ? `<button class="call-btn" onclick="pauseCampaign(${jsArg(c.id)})">⏸ Pausar</button>` : ''}
+          <button class="call-btn" onclick="openCampaignLinesModal(${jsArg(c.id)})">SIPs</button>
+          <button class="del-btn" onclick="deleteCampaign(${jsArg(c.id)}, ${jsArg(c.name)})">✕</button>
         </div>
       </td>
     </tr>`;
@@ -1641,7 +1654,7 @@ async function loadDashboard() {
     renderDashboard(json);
   } catch(e) {
     document.getElementById('dashboard-alerts').innerHTML =
-      `<div class="alert-item danger">Erro ao carregar dashboard: ${e.message}</div>`;
+      `<div class="alert-item danger">Erro ao carregar dashboard: ${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -1674,7 +1687,7 @@ function renderDashboardAlerts() {
     return;
   }
   wrap.innerHTML = alerts.map(a =>
-    `<div class="alert-item ${a.type === 'danger' ? 'danger' : a.type === 'warn' ? 'warn' : ''}">${a.text}</div>`
+    `<div class="alert-item ${a.type === 'danger' ? 'danger' : a.type === 'warn' ? 'warn' : ''}">${escapeHtml(a.text)}</div>`
   ).join('');
 }
 
@@ -1686,16 +1699,16 @@ function renderDashboardCampaigns(rows) {
   }
   tbody.innerHTML = rows.map(c => `
     <tr>
-      <td>${c.name || '—'}</td>
-      <td><span class="cs ${c.status === 'em_andamento' ? 'cs-in-progress' : c.status === 'finalizada' ? 'cs-ended' : c.status === 'pausada' ? 'cs-failed' : 'cs-queued'}">${c.status || '—'}</span></td>
-      <td class="td-dim">${c.group || '—'}</td>
+      <td>${escapeHtml(c.name || '—')}</td>
+      <td><span class="cs ${c.status === 'em_andamento' ? 'cs-in-progress' : c.status === 'finalizada' ? 'cs-ended' : c.status === 'pausada' ? 'cs-failed' : 'cs-queued'}">${escapeHtml(c.status || '—')}</span></td>
+      <td class="td-dim">${escapeHtml(c.group || '—')}</td>
       <td class="td-mono">${campaignLinesLabel(c.line_tokens)}</td>
       <td class="td-mono">${c.total || 0}</td>
       <td class="td-mono">${c.active || 0}</td>
       <td class="td-mono">${c.answered || 0}</td>
       <td class="td-mono">${c.formalized || 0}</td>
       <td class="td-mono">${c.errors || 0}</td>
-      <td><button class="call-btn" onclick="openCampaignLinesModal('${c.id}')">SIPs</button></td>
+      <td><button class="call-btn" onclick="openCampaignLinesModal(${jsArg(c.id)})">SIPs</button></td>
     </tr>
   `).join('');
 }
@@ -1751,7 +1764,7 @@ function renderDashboardGroupsReport(rows) {
   }
   tbody.innerHTML = rows.map(g => `
     <tr>
-      <td>${g.name || 'Sem grupo'}</td>
+      <td>${escapeHtml(g.name || 'Sem grupo')}</td>
       <td class="td-mono">${g.campaigns || 0}</td>
       <td class="td-mono">${g.total || 0}</td>
       <td class="td-mono">${g.active || 0}</td>
@@ -1771,8 +1784,8 @@ function renderDashboardLines(rows) {
   tbody.innerHTML = rows.map(r => {
     const line = lineByToken(r.token);
     return `<tr>
-      <td>${r.name || line.name || 'Linha'}</td>
-      <td class="td-dim">${(r.groups || []).join(', ') || '—'}</td>
+      <td>${escapeHtml(r.name || line.name || 'Linha')}</td>
+      <td class="td-dim">${escapeHtml((r.groups || []).join(', ') || '—')}</td>
       <td class="td-mono">${line.active_calls ?? 0}/${line.max_concurrent ?? 2}</td>
       <td class="td-mono">${r.total || 0}</td>
       <td class="td-mono">${r.active || 0}</td>
@@ -1781,8 +1794,8 @@ function renderDashboardLines(rows) {
       <td class="td-mono">${r.errors || 0}</td>
       <td>
         ${line.paused
-          ? `<button class="call-btn" onclick="resumeLine('${r.token}')">Retomar</button>`
-          : `<button class="del-btn" onclick="pauseLine('${r.token}', '${(r.name || 'linha').replace(/'/g, "\\'")}')">Pausar</button>`}
+          ? `<button class="call-btn" onclick="resumeLine(${jsArg(r.token)})">Retomar</button>`
+          : `<button class="del-btn" onclick="pauseLine(${jsArg(r.token)}, ${jsArg(r.name || 'linha')})">Pausar</button>`}
       </td>
     </tr>`;
   }).join('');
@@ -1830,7 +1843,7 @@ function openModal(contact) {
   modalContact = contact;
   document.getElementById('modal-contact-name').textContent = contact.name || '—';
   document.getElementById('modal-phone-select').innerHTML =
-    (contact.phones||[]).map(p => `<option value="${p}">${p}</option>`).join('');
+    (contact.phones||[]).map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   populateModalLines(linesData);
   document.getElementById('call-modal').classList.add('open');
 }
@@ -1886,8 +1899,13 @@ function restoreImportState() {
     if (status === 'done') {
       importRows = parsed.result || [];
       renderImportPreview({ rows: importRows, total: parsed.total, with_debt: parsed.with_debt, validating: false });
-      setProgress(100, `✓ Concluído — ${(parsed.with_debt || 0).toLocaleString('pt-BR')} contatos com débito`, 'green');
-      setDropState('done', `✓ ${(parsed.total || 0).toLocaleString('pt-BR')} contatos carregados`, `${(parsed.with_debt || 0).toLocaleString('pt-BR')} com débito · clique para trocar o arquivo}`);
+      const beforeCall = importRows.some(r => r.validation_status === 'pending');
+      setProgress(100, beforeCall
+        ? `✓ Concluído — ${(parsed.total || importRows.length || 0).toLocaleString('pt-BR')} contatos carregados`
+        : `✓ Concluído — ${(parsed.with_debt || 0).toLocaleString('pt-BR')} contatos com débito`, 'green');
+      setDropState('done', `✓ ${(parsed.total || 0).toLocaleString('pt-BR')} contatos carregados`, beforeCall
+        ? 'DDM será validado antes da chamada · clique para trocar o arquivo'
+        : `${(parsed.with_debt || 0).toLocaleString('pt-BR')} com débito · clique para trocar o arquivo`);
       setTimeout(hideProgress, 3000);
       sessionStorage.removeItem('import_job_id');
     } else if (status === 'error') {
@@ -1956,6 +1974,54 @@ function setDropState(state, title, sub) {
 
 async function handleImportFile(file) {
   const mb  = (file.size / 1024 / 1024).toFixed(1);
+  resetImportUI();
+  setDropState('uploading', `Preparando ${file.name} (${mb} MB)...`, 'Aguarde...');
+  setProgress(2, 'Enviando arquivo...', 'amber');
+  try {
+    const importJson = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.upload.addEventListener('progress', e => {
+        if (e.lengthComputable) {
+          const pct = Math.round(5 + (e.loaded / e.total) * 70);
+          const sent = (e.loaded / 1024 / 1024).toFixed(1);
+          const total = (e.total / 1024 / 1024).toFixed(1);
+          setProgress(pct, `Enviando ${sent} / ${total} MB...`, 'amber');
+        }
+      });
+      xhr.addEventListener('load', () => {
+        let json = {};
+        try { json = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
+        if (xhr.status >= 200 && xhr.status < 300 && json.ok) resolve(json);
+        else reject(new Error(json.error || `Upload falhou: HTTP ${xhr.status}`));
+      });
+      xhr.addEventListener('error', () => reject(new Error('Erro de rede no upload')));
+      xhr.addEventListener('abort', () => reject(new Error('Upload cancelado')));
+      xhr.open('POST', `${API}/api/import/upload`);
+      const token = sessionStorage.getItem('api_auth_token') || localStorage.getItem('api_auth_token') || '';
+      if (token) xhr.setRequestHeader('X-API-Token', token);
+      const form = new FormData();
+      form.append('file', file);
+      xhr.send(form);
+    });
+    importSessionId = importJson.job_id;
+    try {
+      sessionStorage.setItem('import_job_id', JSON.stringify({
+        job_id: importJson.job_id,
+        status: 'processing',
+      }));
+    } catch(_) {
+      sessionStorage.removeItem('import_job_id');
+    }
+    setDropState('uploading', 'Processamento iniciado', 'Validando arquivo...');
+    setProgress(78, 'Processamento iniciado...', 'amber');
+    await pollImportJob(importJson.job_id);
+  } catch(e) {
+    setDropState('', 'Falha no upload/processamento', e.message);
+    setProgress(100, `Erro: ${e.message}`, 'red');
+    toast(`Erro: ${e.message}`, 'err');
+    setTimeout(hideProgress, 5000);
+  }
+  return;
   const ext = file.name.split('.').pop().toLowerCase();
   resetImportUI();
   setDropState('uploading', `Preparando ${file.name} (${mb} MB)…`, 'Aguarde...');
@@ -2050,13 +2116,18 @@ async function pollImportJob(jobId) {
         if (json.status === 'done') {
           clearInterval(_pollTimer);
           importSessionId = jobId;
-          setProgress(100, `✓ Concluído — ${withDebt.toLocaleString('pt-BR')} contatos com débito`, 'green');
-          setDropState('done', `✓ ${total.toLocaleString('pt-BR')} contatos carregados`,
-            `${withDebt.toLocaleString('pt-BR')} com débito · clique para trocar o arquivo`);
           const rows = Array.isArray(json.result) ? json.result : [];
+          const beforeCall = rows.some(r => r.validation_status === 'pending');
+          setProgress(100, beforeCall
+            ? `✓ Concluído — ${total.toLocaleString('pt-BR')} contatos carregados`
+            : `✓ Concluído — ${withDebt.toLocaleString('pt-BR')} contatos com débito`, 'green');
+          setDropState('done', `✓ ${total.toLocaleString('pt-BR')} contatos carregados`,
+            beforeCall ? 'DDM será validado antes da chamada · clique para trocar o arquivo' : `${withDebt.toLocaleString('pt-BR')} com débito · clique para trocar o arquivo`);
           importRows = rows;
           renderImportPreview({ rows, total, with_debt: withDebt, validating: false });
-          toast(`✓ ${total.toLocaleString('pt-BR')} linhas processadas — ${withDebt.toLocaleString('pt-BR')} com débito`, 'ok');
+          toast(beforeCall
+            ? `✓ ${total.toLocaleString('pt-BR')} linhas carregadas — DDM antes da chamada`
+            : `✓ ${total.toLocaleString('pt-BR')} linhas processadas — ${withDebt.toLocaleString('pt-BR')} com débito`, 'ok');
           setTimeout(hideProgress, 3000);
           resolve(json);
         } else if (json.status === 'error') {
@@ -2095,13 +2166,13 @@ function renderImportPreview(data) {
       `Preview — ${rows.length.toLocaleString('pt-BR')} de ${(data.total || rows.length).toLocaleString('pt-BR')}`;
     document.getElementById('import-body').innerHTML = rows.slice(0, 500).map(r => `
       <tr>
-        <td>${r.name || '—'}</td>
-        <td class="td-mono">${r.cpf_raw || r.cpf || '—'}</td>
-        <td class="td-mono">${r.phone || '—'}</td>
+        <td>${escapeHtml(r.name || '—')}</td>
+        <td class="td-mono">${escapeHtml(r.cpf_raw || r.cpf || '—')}</td>
+        <td class="td-mono">${escapeHtml(r.phone || '—')}</td>
         <td>${r.has_debt
           ? '<span class="debt-yes">✓ sim</span>'
           : r.validation_status === 'pending'
-            ? '<span class="debt-no">validando</span>'
+            ? (data.validating ? '<span class="debt-no">validando</span>' : '<span class="debt-no">antes da chamada</span>')
             : r.ddm_error
             ? `<span class="debt-error" title="${escapeHtml(r.ddm_error)}">! ${escapeHtml(r.ddm_error || 'erro DDM')}</span>`
             : '<span class="debt-no">— não</span>'}</td>

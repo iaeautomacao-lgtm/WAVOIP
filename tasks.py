@@ -6,15 +6,18 @@ import uuid
 import json
 import requests
 import threading
+import logging
 from decimal import Decimal, InvalidOperation
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from celery import Celery
-from supabase import create_client
+from mysql_adapter import create_client
 from typing import Optional, Dict, Any
 from ddm import processar_debito as _processar_debito, processar_debito_result as _processar_debito_result
 
+
+logger = logging.getLogger(__name__)
 
 
 def env(name: str, default: str = "") -> str:
@@ -29,10 +32,6 @@ VAPI_BASE            = "https://api.vapi.ai"
 WAVOIP_EMAIL         = env("WAVOIP_EMAIL")
 WAVOIP_PASSWORD      = env("WAVOIP_PASSWORD")
 WAVOIP_BASE          = "https://api.wavoip.com"
-SUPABASE_URL         = env("SUPABASE_URL")
-SUPABASE_KEY         = env("SUPABASE_KEY")
-SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
-SUPABASE_BUCKET      = env("SUPABASE_BUCKET", "imports")
 
 # ── Email (SMTP) ──────────────────────────────────────────────
 SMTP_HOST     = env("SMTP_HOST", "smtp.gmail.com")
@@ -59,8 +58,8 @@ DDM_ERROR_RECHECK_DELAY_SECONDS = max(0, int(env("DDM_ERROR_RECHECK_DELAY_SECOND
 DDM_ERROR_RECHECK_CONCURRENCY = max(1, int(env("DDM_ERROR_RECHECK_CONCURRENCY", "4")))
 IMPORT_REDIS_TTL_SECONDS = max(3600, int(env("IMPORT_REDIS_TTL_SECONDS", "86400")))
 
-supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
-supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase       = create_client()
+supabase_admin = supabase
 
 WATCHDOG_TIMEOUT_MIN = int(os.getenv("WATCHDOG_TIMEOUT_MIN", "8"))   # minutos sem webhook → re-dispara
 WATCHDOG_MAX_RETRIES = int(os.getenv("WATCHDOG_MAX_RETRIES", "3"))    # tentativas antes de marcar erro
@@ -155,6 +154,23 @@ def _import_rows_key(job_id: str) -> str:
     return f"import_job:{job_id}:rows"
 
 
+def _import_stop_key(job_id: str) -> str:
+    return f"import_job:{job_id}:stop"
+
+
+def _is_import_stopped(job_id: str) -> bool:
+    try:
+        if redis_client().exists(_import_stop_key(job_id)):
+            return True
+    except Exception:
+        pass
+    try:
+        job = supabase.table("import_jobs").select("status").eq("id", job_id).execute().data
+        return bool(job and job[0].get("status") == "stopped")
+    except Exception:
+        return False
+
+
 def _set_import_state(job_id: str, state: dict):
     try:
         redis_client().setex(
@@ -200,7 +216,7 @@ def _get_import_rows(job_id: str) -> list:
 
 def _delete_import_state(job_id: str):
     try:
-        redis_client().delete(_import_state_key(job_id), _import_rows_key(job_id))
+        redis_client().delete(_import_state_key(job_id), _import_rows_key(job_id), _import_stop_key(job_id))
     except Exception:
         pass
 
@@ -532,6 +548,8 @@ def _update_job_progress(job_id: str, total: int, processed: int, with_debt: int
 
 
 def _set_job_error(job_id: str, error_msg: str):
+    if _is_import_stopped(job_id):
+        return
     try:
         supabase.table("import_jobs").update({
             "status": "error",
@@ -1415,6 +1433,8 @@ def process_import(self, job_id: str, rows: list):
     result    = []
 
     for row in rows:
+        if _is_import_stopped(job_id):
+            return
         cpf   = str(row.get("cpf", "")).strip()
         name  = str(row.get("name", "")).strip()
         phone = str(row.get("phone", "")).strip()
@@ -1442,6 +1462,8 @@ def process_import(self, job_id: str, rows: list):
                 pass
 
     try:
+        if _is_import_stopped(job_id):
+            return
         supabase.table("import_jobs").update({
             "status":    "done",
             "processed": processed,
@@ -1459,6 +1481,8 @@ def process_file(self, job_id: str, file_id: str, fname: str):
     import redis as redis_lib
 
     try:
+        if _is_import_stopped(job_id):
+            return
         r    = redis_lib.from_url(os.getenv("REDIS_URL"))
         data = r.get(f"import:{file_id}")
         if not data:
@@ -1473,8 +1497,11 @@ def process_file(self, job_id: str, file_id: str, fname: str):
 
         r.delete(f"import:{file_id}")
 
+        if _is_import_stopped(job_id):
+            return
+
         if len(df) > 20000:
-            _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite. Use o upload via Storage para arquivos grandes.")
+            _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite atual de 20000 linhas.")
             return
 
         _process_dataframe(job_id, df, fname)
@@ -1490,9 +1517,14 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
     Baixa do Supabase Storage e processa sem limite de tamanho.
     Sem timeout HTTP — roda inteiramente no container Celery.
     """
+    _set_job_error(job_id, "Importacao via Supabase Storage foi desativada. Use /api/import/upload.")
+    return {"ok": False, "error": "storage_disabled"}
+
     import pandas as pd
 
     try:
+        if _is_import_stopped(job_id):
+            return {"ok": False, "stopped": True}
         # Atualiza status para processing
         supabase.table("import_jobs").update({
             "status": "processing"
@@ -1539,6 +1571,9 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
         if resp is None:
             raise Exception("Falha ao baixar arquivo do Supabase Storage")
 
+        if _is_import_stopped(job_id):
+            return {"ok": False, "stopped": True}
+
         raw_bytes = resp.content
         if not raw_bytes:
             raise Exception("Arquivo baixado do Supabase Storage veio vazio")
@@ -1559,6 +1594,9 @@ def process_import_from_storage(self, job_id: str, storage_path: str, fname: str
             df = pd.read_csv(buf, dtype=str, sep=None, engine="python", encoding=encoding)
 
         # Processa o dataframe — delete só acontece após sucesso completo
+        if _is_import_stopped(job_id):
+            return {"ok": False, "stopped": True}
+
         _process_dataframe(job_id, df, fname_lower)
 
         # Remove arquivo do bucket APENAS após processamento bem-sucedido
@@ -1581,6 +1619,9 @@ def _process_dataframe(job_id: str, df, fname: str):
     independentemente do layout original.
     """
     import pandas as pd
+
+    if _is_import_stopped(job_id):
+        return
 
     df.columns = [str(c).strip() for c in df.columns]
     cols_lower = [c.lower() for c in df.columns]
@@ -1607,6 +1648,8 @@ def _process_dataframe(job_id: str, df, fname: str):
 
     pending_rows = []
     for idx, r in df.iterrows():
+        if _is_import_stopped(job_id):
+            return
         row = {str(k): ("" if pd.isna(v) else str(v).strip()) for k, v in r.items()}
         cpf_norm = _norm_cpf(row.get(cpf_col, ""))
         if not cpf_norm:
@@ -1653,6 +1696,9 @@ def _process_dataframe(job_id: str, df, fname: str):
             },
         })
 
+    if _is_import_stopped(job_id):
+        return
+
     _set_import_rows(job_id, pending_rows)
     _set_import_state(job_id, {
         "status": "done",
@@ -1679,6 +1725,8 @@ def _process_dataframe(job_id: str, df, fname: str):
 
 
 def _validate_import_rows(job_id: str):
+    if _is_import_stopped(job_id):
+        return
     state = _get_import_state(job_id)
     pending_rows = _get_import_rows(job_id)
     job = supabase.table("import_jobs").select("*").eq("id", job_id).execute().data
@@ -1751,6 +1799,8 @@ def _validate_import_rows(job_id: str):
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         futures = {executor.submit(validate_contact, item): item["cpf"] for item in unique_items}
         for future in as_completed(futures):
+            if _is_import_stopped(job_id):
+                return
             row = future.result()
             validation = {
                 "debito": row.get("debito"),
@@ -1804,6 +1854,8 @@ def _validate_import_rows(job_id: str):
         row.pop("meta", None)
 
     try:
+        if _is_import_stopped(job_id):
+            return
         supabase.table("import_jobs").update({
             "status":    "done",
             "total":     total,

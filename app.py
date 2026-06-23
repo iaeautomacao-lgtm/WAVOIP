@@ -7,15 +7,15 @@ import time
 import uuid
 import json
 import logging
+import hmac
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
-from supabase import create_client, Client
+from mysql_adapter import create_client, MySQLClient as Client
 from tasks import process_file, process_import_from_storage, formalizar_acordo, fill_campaign_capacity, fill_campaign_capacity_task, _get_import_rows
 
 app = Flask(__name__)
-CORS(app)
 
 def env(name: str, default: str = "") -> str:
     value = os.getenv(name, default)
@@ -32,16 +32,42 @@ WAVOIP_BASE       = "https://api.wavoip.com"
 VAPI_API_KEY      = env("VAPI_API_KEY")
 VAPI_ASSISTANT_ID = env("VAPI_ASSISTANT_ID")
 VAPI_BASE         = "https://api.vapi.ai"
-SUPABASE_URL      = env("SUPABASE_URL")
-SUPABASE_KEY      = env("SUPABASE_KEY")
-SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
-SUPABASE_BUCKET   = env("SUPABASE_BUCKET", "imports")
 REDIS_URL         = env("REDIS_URL", "redis://localhost:6379/0")
 LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "2")))
 LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
+API_AUTH_TOKEN    = env("API_AUTH_TOKEN")
+VAPI_WEBHOOK_SECRET = env("VAPI_WEBHOOK_SECRET")
+CORS_ORIGINS      = [x.strip() for x in env("CORS_ORIGINS").split(",") if x.strip()]
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+if CORS_ORIGINS:
+    CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
+
+
+def _bearer_token() -> str:
+    auth = request.headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth.split(" ", 1)[1].strip()
+    return request.headers.get("X-API-Token", "").strip()
+
+
+def _valid_secret(provided: str, expected: str) -> bool:
+    return bool(provided and expected and hmac.compare_digest(provided, expected))
+
+
+@app.before_request
+def require_api_auth():
+    if not API_AUTH_TOKEN:
+        return None
+    if not request.path.startswith("/api/"):
+        return None
+    if request.path == "/api/webhook/vapi":
+        return None
+    if _valid_secret(_bearer_token(), API_AUTH_TOKEN):
+        return None
+    return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+supabase: Client = create_client()
+supabase_admin: Client = supabase
 
 WAVOIP_VAPI_MAP = {
     "ed49616d-fb19-46df-96b8-decab4cde3cf": env("VAPI_PHONE_NUMBER_ID_1"),
@@ -932,6 +958,16 @@ def delete_campaign(campaign_id):
 @app.route("/api/webhook/vapi", methods=["POST"])
 def vapi_webhook():
     try:
+        if VAPI_WEBHOOK_SECRET:
+            provided = (
+                request.headers.get("X-Vapi-Secret", "").strip() or
+                request.headers.get("X-Webhook-Secret", "").strip() or
+                _bearer_token() or
+                request.args.get("secret", "").strip()
+            )
+            if not _valid_secret(provided, VAPI_WEBHOOK_SECRET):
+                return jsonify({"ok": False, "error": "unauthorized"}), 401
+
         body = request.json or {}
 
         # O Vapi envia tudo dentro de body["message"]
@@ -954,11 +990,11 @@ def vapi_webhook():
             if msg.get("status") == "in-progress" and call_id:
                 try:
                     supabase.table("campaign_calls").update({"status": "atendido", "answered": True})\
-                        .eq("vapi_call_id", call_id).execute()
+                        .eq("vapi_call_id", call_id).neq("status", "finalizado").execute()
                 except Exception:
                     try:
                         supabase.table("campaign_calls").update({"status": "atendido"})\
-                            .eq("vapi_call_id", call_id).execute()
+                            .eq("vapi_call_id", call_id).neq("status", "finalizado").execute()
                     except Exception:
                         pass
             return jsonify({"ok": True}), 200
@@ -981,6 +1017,10 @@ def vapi_webhook():
         row         = res.data[0]
         campaign_id = row["campaign_id"]
         debito      = row.get("debito_data") or {}
+
+        if row.get("status") == "finalizado":
+            logging.warning(f"[WEBHOOK] call_id={call_id} ja finalizado; ignorando duplicado")
+            return jsonify({"ok": True, "duplicate": True}), 200
 
         ended_reason = msg.get("endedReason") or body.get("endedReason", "")
         duration = int(float(msg.get("durationSeconds") or body.get("durationSeconds") or 0))
@@ -1040,7 +1080,12 @@ def vapi_webhook():
         if camp:
             camp = camp[0]
             if camp["status"] not in ("pausada", "finalizada"):
-                finished = (camp.get("finished") or 0) + 1
+                finished_res = supabase.table("campaign_calls")\
+                    .select("id", count="exact")\
+                    .eq("campaign_id", campaign_id)\
+                    .in_("status", ["finalizado", "erro", "sem_debito", "sem_telefone", "falha_sem_linha"])\
+                    .execute()
+                finished = finished_res.count or 0
                 try:
                     supabase.table("campaigns").update({
                         "finished": finished, "updated_at": "now()"
@@ -1090,9 +1135,13 @@ def import_upload():
             "processed": 0,
         }).execute().data[0]
 
-        process_file.apply_async(args=[job["id"], file_id, fname], queue="imports")
+        task = process_file.apply_async(args=[job["id"], file_id, fname], queue="imports")
+        try:
+            supabase.table("import_jobs").update({"celery_task_id": task.id}).eq("id", job["id"]).execute()
+        except Exception:
+            pass
 
-        return jsonify({"ok": True, "mode": "async", "job_id": job["id"]})
+        return jsonify({"ok": True, "mode": "async", "job_id": job["id"], "task_id": task.id})
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -1102,6 +1151,10 @@ def import_upload():
 
 @app.route("/api/upload/presigned", methods=["GET"])
 def get_presigned_url():
+    return jsonify({
+        "ok": False,
+        "error": "Upload via Storage foi desativado. Use /api/import/upload.",
+    }), 410
     try:
         ext       = request.args.get("ext", "csv").lstrip(".")
         file_path = f"uploads/{uuid.uuid4()}.{ext}"
@@ -1142,6 +1195,10 @@ def get_presigned_url():
 
 @app.route("/api/import/from-storage", methods=["POST"])
 def import_from_storage():
+    return jsonify({
+        "ok": False,
+        "error": "Importacao via Storage foi desativada. Use /api/import/upload.",
+    }), 410
     try:
         data         = request.json or {}
         storage_path = data.get("path")
@@ -1163,9 +1220,13 @@ def import_from_storage():
             "result":    {"filename": filename, "storage_path": storage_path, "size_bytes": size_bytes},
         }).execute().data[0]
 
-        process_import_from_storage.apply_async(args=[job["id"], storage_path, fname], queue="imports")
+        task = process_import_from_storage.apply_async(args=[job["id"], storage_path, fname], queue="imports")
+        try:
+            supabase.table("import_jobs").update({"celery_task_id": task.id}).eq("id", job["id"]).execute()
+        except Exception:
+            pass
 
-        return jsonify({"ok": True, "job_id": job["id"], "status": "queued"})
+        return jsonify({"ok": True, "job_id": job["id"], "task_id": task.id, "status": "queued"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -1175,15 +1236,22 @@ def import_stop(job_id):
     import tasks as tasks_mod
     try:
         celery_app = tasks_mod.celery
-        celery_app.control.revoke(job_id, terminate=True, signal='SIGKILL')
-
         job = supabase.table("import_jobs").select("*").eq("id", job_id).execute()
+        task_id = ""
+        if job.data:
+            task_id = (job.data[0].get("celery_task_id") or "").strip()
+        redis_client().setex(f"import_job:{job_id}:stop", 86400, "stopped")
+        celery_app.control.revoke(task_id or job_id, terminate=True, signal='SIGTERM')
         if job.data:
             supabase.table("import_jobs").update({
                 "status": "stopped"
             }).eq("id", job_id).execute()
     except Exception as e:
         logging.warning(f"[IMPORT_STOP] erro=%s", e)
+        try:
+            redis_client().setex(f"import_job:{job_id}:stop", 86400, "stopped")
+        except Exception:
+            pass
         supabase.table("import_jobs").update({"status": "stopped"}).eq("id", job_id).execute()
     return jsonify({"ok": True, "status": "stopped"})
 

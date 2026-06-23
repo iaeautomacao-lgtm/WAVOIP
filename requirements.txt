@@ -2,11 +2,10 @@ flask==3.0.3
 flask-cors==4.0.1
 requests==2.32.3
 python-dotenv==1.0.1
-supabase==2.4.6
+pymysql==1.1.1
 pandas==2.2.3
 openpyxl==3.1.4
 celery==5.3.6
 redis==5.0.3
 gunicorn==21.2.0
-gevent
-redis
+gevent==24.2.1
