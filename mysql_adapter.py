@@ -22,7 +22,17 @@ JSON_COLUMNS = {
 
 def env(name: str, default: str = "") -> str:
     value = os.getenv(name, default)
-    return value.strip().strip('"').strip("'") if isinstance(value, str) else value
+    if isinstance(value, str):
+        value = value.strip().strip('"').strip("'")
+        return value if value else default
+    return value if value is not None else default
+
+
+def env_int(name: str, default: int) -> int:
+    try:
+        return int(env(name, str(default)))
+    except (TypeError, ValueError):
+        return default
 
 
 @dataclass
@@ -39,7 +49,7 @@ class MySQLClient:
     def __init__(self):
         self.config = {
             "host": env("MYSQL_HOST", "localhost"),
-            "port": int(env("MYSQL_PORT", "3306")),
+            "port": env_int("MYSQL_PORT", 3306),
             "user": env("MYSQL_USER", "root"),
             "password": env("MYSQL_PASSWORD"),
             "database": env("MYSQL_DATABASE", "wavoip"),
