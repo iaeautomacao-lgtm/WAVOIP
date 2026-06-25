@@ -1156,7 +1156,7 @@ def get_presigned_url():
         "error": "Upload via Storage foi desativado. Use /api/import/upload.",
     }), 410
     try:
-        ext       = request.args.get("ext", "csv").lstrip(".")
+        ext = request.args.get("ext", "csv").lstrip(".")
         file_path = f"uploads/{uuid.uuid4()}.{ext}"
 
         res = supabase_admin.storage.from_(SUPABASE_BUCKET).create_signed_upload_url(file_path)
@@ -1200,10 +1200,10 @@ def import_from_storage():
         "error": "Importacao via Storage foi desativada. Use /api/import/upload.",
     }), 410
     try:
-        data         = request.json or {}
+        data = request.json or {}
         storage_path = data.get("path")
-        filename     = data.get("filename", "import.csv")
-        size_bytes   = data.get("size_bytes", 0)
+        filename= data.get("filename", "import.csv")
+        size_bytes= data.get("size_bytes", 0)
 
         if not storage_path:
             return jsonify({"ok": False, "error": "path obrigatório"}), 400
@@ -1213,7 +1213,7 @@ def import_from_storage():
             return jsonify({"ok": False, "error": "Formato inválido. Use .csv ou .xlsx"}), 400
 
         job = supabase.table("import_jobs").insert({
-            "status":    "queued",
+            "status": "queued",
             "total":     0,
             "with_debt": 0,
             "processed": 0,

@@ -57,6 +57,8 @@ DDM_ERROR_RECHECK_ROUNDS = max(0, int(env("DDM_ERROR_RECHECK_ROUNDS", "0")))
 DDM_ERROR_RECHECK_DELAY_SECONDS = max(0, int(env("DDM_ERROR_RECHECK_DELAY_SECONDS", "60")))
 DDM_ERROR_RECHECK_CONCURRENCY = max(1, int(env("DDM_ERROR_RECHECK_CONCURRENCY", "4")))
 IMPORT_REDIS_TTL_SECONDS = max(3600, int(env("IMPORT_REDIS_TTL_SECONDS", "86400")))
+BOLETO_RETRY_DELAY_SECONDS = max(60, int(env("BOLETO_RETRY_DELAY_SECONDS", "600")))
+BOLETO_RETRY_MAX = max(1, int(env("BOLETO_RETRY_MAX", "12")))
 
 supabase       = create_client()
 supabase_admin = supabase
@@ -1033,6 +1035,21 @@ def _ddm_find_first(obj, names: set) -> str:
     return ""
 
 
+def _valid_linha_digitavel(value: str) -> str:
+    value = str(value or "").strip()
+    digits = re.sub(r"\D", "", value)
+    return value if len(digits) >= 30 else ""
+
+
+def _valid_payment_url(value: str) -> str:
+    value = str(value or "").strip()
+    return value if re.match(r"^https?://", value, re.IGNORECASE) else ""
+
+
+def _has_payment_info(link_boleto: str = "", link_pix: str = "", linha_dig: str = "") -> bool:
+    return bool(_valid_payment_url(link_boleto) or _valid_payment_url(link_pix) or _valid_linha_digitavel(linha_dig))
+
+
 def _ddm_get_payment_links(iddev: str) -> dict:
     """Busca links de boleto/pix pelo iddev."""
     r = requests.get(
@@ -1086,16 +1103,16 @@ def _ddm_get_payment_links(iddev: str) -> dict:
     link_pix = link_pix or _ddm_find_first(data, {
         "pix", "linkpix", "urlpix", "pixurl", "qrcodepix", "qrcode"
     })
-    linha_dig = linha_dig or _ddm_find_first(data, {
+    linha_dig = _valid_linha_digitavel(linha_dig or _ddm_find_first(data, {
         "linhadigitavel", "linhadig", "digitalline", "digitableline"
-    })
+    }))
     vencimento = vencimento or _ddm_find_first(data, {
         "vencimento", "datavencimento", "duedate"
     })
 
     return {
-        "link_boleto": link_boleto,
-        "link_pix":    link_pix,
+        "link_boleto": _valid_payment_url(link_boleto),
+        "link_pix":    _valid_payment_url(link_pix),
         "linha_dig":   linha_dig,
         "vencimento":  vencimento,
     }
@@ -1119,7 +1136,7 @@ def _ddm_formalizar_acordo(cpf: str) -> dict:
 
     link_boleto = _ddm_find_first(data, {"linkboleto", "boletourl", "urlboleto"})
     link_pix    = _ddm_find_first(data, {"linkpix", "pixurl", "urlpix", "qrcodepix", "qrcode"})
-    linha_dig   = _ddm_find_first(data, {"linhaboleto", "linhadigitavel", "linhadig", "digitalline", "digitableline"})
+    linha_dig   = _valid_linha_digitavel(_ddm_find_first(data, {"linhaboleto", "linhadigitavel", "linhadig", "digitalline", "digitableline"}))
     vencimento  = _ddm_find_first(data, {"vencimento", "datavencimento", "duedate"})
     nr_acordo   = _ddm_find_first(data, {"nracordo", "numeroacordo", "acordo"})
     idcalc      = _ddm_find_first(data, {"idcalc", "calculoid"})
@@ -1129,8 +1146,8 @@ def _ddm_formalizar_acordo(cpf: str) -> dict:
 
     return {
         "raw": data,
-        "link_boleto": link_boleto,
-        "link_pix": link_pix,
+        "link_boleto": _valid_payment_url(link_boleto),
+        "link_pix": _valid_payment_url(link_pix),
         "linha_dig": linha_dig,
         "vencimento": vencimento,
         "nr_acordo": nr_acordo,
@@ -1284,6 +1301,117 @@ def _enviar_email_acordo(
         srv.sendmail(SMTP_FROM, [destinatario], msg.as_string())
 
 
+def _buscar_pagamento_acordo(dados: dict) -> dict:
+    debito = dados.get("debito") if isinstance(dados.get("debito"), dict) else {}
+    candidatos = [
+        dados.get("idcalc"),
+        dados.get("iddev"),
+        debito.get("idcalc"),
+        debito.get("iddev"),
+        dados.get("nr_acordo"),
+        dados.get("cpf"),
+    ]
+    vistos = set()
+    for candidato in candidatos:
+        iddev = str(candidato or "").strip()
+        if not iddev or iddev in vistos:
+            continue
+        vistos.add(iddev)
+        try:
+            pagamentos = _ddm_get_payment_links(iddev)
+            if _has_payment_info(
+                pagamentos.get("link_boleto", ""),
+                pagamentos.get("link_pix", ""),
+                pagamentos.get("linha_dig", ""),
+            ):
+                return pagamentos
+        except Exception as e:
+            logger.warning("[DDM] boleto ainda indisponivel id=%s erro=%s", iddev, e)
+    return {"link_boleto": "", "link_pix": "", "linha_dig": "", "vencimento": ""}
+
+
+def _salvar_acordo_formalizado(payload: dict):
+    return supabase.table("acordos_formalizados").insert(payload).execute()
+
+
+def _atualizar_acordo_formalizado(dados: dict, update: dict):
+    campaign_call_id = dados.get("campaign_call_id", "")
+    nr_acordo = dados.get("nr_acordo", "")
+    cpf = dados.get("cpf", "")
+    query = supabase.table("acordos_formalizados").update(update)
+    if campaign_call_id:
+        return query.eq("campaign_call_id", campaign_call_id).execute()
+    if nr_acordo:
+        query = query.eq("nr_acordo", nr_acordo)
+        if cpf:
+            query = query.eq("cpf", cpf)
+        return query.execute()
+    if cpf:
+        return query.eq("cpf", cpf).eq("email_enviado", False).execute()
+    return None
+
+
+def _agendar_verificacao_boleto(dados: dict, tentativa: int = 1):
+    verificar_boleto_acordo.apply_async(
+        args=[dados, tentativa],
+        countdown=BOLETO_RETRY_DELAY_SECONDS,
+    )
+
+
+@celery.task(name="tasks.verificar_boleto_acordo")
+def verificar_boleto_acordo(dados: dict, tentativa: int = 1):
+    pagamentos = _buscar_pagamento_acordo(dados)
+    link_boleto = pagamentos.get("link_boleto", "")
+    link_pix    = pagamentos.get("link_pix", "")
+    linha_dig   = pagamentos.get("linha_dig", "")
+    vencimento  = pagamentos.get("vencimento", "") or dados.get("vencimento", "")
+
+    if not _has_payment_info(link_boleto, link_pix, linha_dig):
+        if tentativa < BOLETO_RETRY_MAX:
+            _agendar_verificacao_boleto(dados, tentativa + 1)
+            return {"ok": True, "pending": True, "tentativa": tentativa}
+        logger.warning(
+            "[FORMALIZAR] boleto nao gerado apos %s tentativas cpf_final=%s nr_acordo=%s",
+            tentativa,
+            _norm_cpf(dados.get("cpf", ""))[-4:],
+            dados.get("nr_acordo", ""),
+        )
+        return {"ok": False, "pending": True, "tentativa": tentativa}
+
+    email_enviado = False
+    email = dados.get("email", "")
+    if email:
+        _enviar_email_acordo(
+            destinatario    = email,
+            nome            = dados.get("nome", "Cliente"),
+            instituicao     = dados.get("instituicao", ""),
+            valor           = dados.get("valor", ""),
+            forma_pagamento = dados.get("forma_pagamento", "A vista"),
+            link_boleto     = link_boleto,
+            link_pix        = link_pix,
+            linha_dig       = linha_dig,
+            vencimento      = vencimento,
+        )
+        email_enviado = True
+
+    _atualizar_acordo_formalizado(dados, {
+        "link_boleto":   link_boleto,
+        "link_pix":      link_pix,
+        "linha_dig":     linha_dig,
+        "vencimento":    vencimento,
+        "email_enviado": email_enviado,
+    })
+
+    return {
+        "ok": True,
+        "pending": False,
+        "email_enviado": email_enviado,
+        "link_boleto": link_boleto,
+        "link_pix": link_pix,
+        "linha_boleto": linha_dig,
+    }
+
+
 @celery.task(bind=True, max_retries=2, soft_time_limit=45, time_limit=60, name="tasks.formalizar_acordo")
 def formalizar_acordo(self, dados: dict):
     """
@@ -1335,7 +1463,7 @@ def formalizar_acordo(self, dados: dict):
                 logging.warning("[DDM] erro ao formalizar acordo cpf_final=%s erro=%s", _norm_cpf(cpf)[-4:], e)
 
         # 1. Busca iddev e links de pagamento na API DDM
-        if cpf and not (link_boleto or link_pix):
+        if cpf and not _has_payment_info(link_boleto, link_pix, linha_dig):
             try:
                 iddev = _ddm_get_iddev(cpf)
                 if iddev:
@@ -1349,7 +1477,7 @@ def formalizar_acordo(self, dados: dict):
                 # Não bloqueia o envio do email se a API DDM falhar
                 pass
 
-        if cpf and not (link_boleto or link_pix):
+        if cpf and not _has_payment_info(link_boleto, link_pix, linha_dig):
             try:
                 iddev = idcalc
                 if not iddev:
@@ -1363,7 +1491,7 @@ def formalizar_acordo(self, dados: dict):
                     link_pix    = pagamentos["link_pix"]
                     linha_dig   = pagamentos["linha_dig"]
                     vencimento  = pagamentos["vencimento"]
-                if not (link_boleto or link_pix):
+                if not _has_payment_info(link_boleto, link_pix, linha_dig):
                     import logging
                     logging.warning("[DDM] sem link de pagamento cpf_final=%s id=%s", _norm_cpf(cpf)[-4:], iddev)
             except Exception as e:
@@ -1373,9 +1501,11 @@ def formalizar_acordo(self, dados: dict):
         if cpf and not email:
             email = _ddm_get_email(cpf, idcalc)
 
-        # 2. Envia email para o devedor
+        pagamento_pronto = _has_payment_info(link_boleto, link_pix, linha_dig)
+
+        # 2. Envia email para o devedor apenas quando existir pagamento real
         email_enviado = False
-        if email:
+        if email and pagamento_pronto:
             try:
                 _enviar_email_acordo(
                     destinatario    = email,
@@ -1392,27 +1522,51 @@ def formalizar_acordo(self, dados: dict):
             except Exception as e:
                 import logging
                 logging.error(f"[FORMALIZAR] erro SMTP: {e}")  # ADD ISSO
+        elif email and not pagamento_pronto:
+            logger.warning(
+                "[FORMALIZAR] acordo pendente de boleto cpf_final=%s nr_acordo=%s",
+                _norm_cpf(cpf)[-4:],
+                nr_acordo,
+            )
 
         # 3. Registra acordo no Supabase
+        acordo_payload = {
+            "cpf":             cpf,
+            "nome":            nome,
+            "email":           email,
+            "instituicao":     instituicao,
+            "valor":           valor,
+            "forma_pagamento": forma_pagamento,
+            "link_boleto":     link_boleto,
+            "link_pix":        link_pix,
+            "linha_dig":       linha_dig,
+            "vencimento":      vencimento,
+            "nr_acordo":       nr_acordo,
+            "email_enviado":   email_enviado,
+            "vapi_call_id":    vapi_call_id,
+            "campaign_call_id": campaign_call_id,
+        }
         try:
-            supabase.table("acordos_formalizados").insert({
+            _salvar_acordo_formalizado(acordo_payload)
+        except Exception as e:
+            logger.error(f"[FORMALIZAR] erro ao salvar no Supabase: {e}")
+
+        if email and not pagamento_pronto:
+            _agendar_verificacao_boleto({
                 "cpf":             cpf,
                 "nome":            nome,
                 "email":           email,
                 "instituicao":     instituicao,
                 "valor":           valor,
                 "forma_pagamento": forma_pagamento,
-                "link_boleto":     link_boleto,
-                "link_pix":        link_pix,
-                "linha_dig":       linha_dig,
                 "vencimento":      vencimento,
                 "nr_acordo":       nr_acordo,
-                "email_enviado":   email_enviado,
+                "idcalc":          idcalc,
+                "iddev":           idcalc,
+                "debito":          debito,
                 "vapi_call_id":    vapi_call_id,
                 "campaign_call_id": campaign_call_id,
-            }).execute()
-        except Exception as e:
-            logger.error(f"[FORMALIZAR] erro ao salvar no Supabase: {e}")
+            })
 
         return {
             "ok":            True,
@@ -1421,6 +1575,7 @@ def formalizar_acordo(self, dados: dict):
             "link_boleto":   link_boleto,
             "linha_boleto":  linha_dig,
             "nr_acordo":     nr_acordo,
+            "boleto_pendente": bool(email and not pagamento_pronto),
         }
 
     except Exception as exc:
