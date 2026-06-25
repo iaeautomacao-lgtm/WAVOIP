@@ -47,7 +47,12 @@ def _bearer_token() -> str:
     auth = request.headers.get("Authorization", "")
     if auth.lower().startswith("bearer "):
         return auth.split(" ", 1)[1].strip()
-    return request.headers.get("X-API-Token", "").strip()
+    token = request.headers.get("X-API-Token", "").strip()
+    if token:
+        return token
+    if request.path == "/api/stream":
+        return request.args.get("token", "").strip()
+    return ""
 
 
 def _valid_secret(provided: str, expected: str) -> bool:

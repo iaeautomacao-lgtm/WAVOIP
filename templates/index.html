@@ -1037,6 +1037,8 @@
   let dashboardData = null;
   let editingGroupId = null;
   let editingCampaign = null;
+  let realtimeSource = null;
+  let realtimeConnected = false;
 
   async function loadLines() {
     document.getElementById('lines-grid').innerHTML = '<div class="loader"><div class="spin"></div>Carregando linhas...</div>';
@@ -1051,7 +1053,7 @@
     }
   }
 
-  function renderLines(lines) {
+  function renderLines(lines, refreshCampaigns = true) {
     const grid = document.getElementById('lines-grid');
     if (!lines.length) { grid.innerHTML = '<div class="loader">Nenhuma linha encontrada.</div>'; return; }
     grid.innerHTML = lines.map(l => `
@@ -1090,7 +1092,67 @@
     document.getElementById('healthy-count').textContent = `${ok}/${lines.length} linhas ok`;
     renderCampaignLinePicker(lines);
     renderGroupLinePicker();
-    if (campaignsLoaded) loadCampaigns();
+    if (refreshCampaigns && campaignsLoaded) loadCampaigns();
+  }
+
+  function activeTabName() {
+    return document.querySelector('.tab.active')?.dataset.tab || 'lines';
+  }
+
+  function applyRealtimePayload(payload) {
+    if (!payload || typeof payload !== 'object') return;
+
+    if (Array.isArray(payload.lines)) {
+      linesData = payload.lines;
+      renderLines(linesData, false);
+    }
+
+    if (Array.isArray(payload.campaigns)) {
+      campaignRows = payload.campaigns;
+      if (campaignsLoaded || activeTabName() === 'campaigns') {
+        campaignsLoaded = true;
+        renderCampaigns(campaignRows);
+      }
+    }
+
+    if (payload.monitor) {
+      renderMonitor(payload.monitor.data || [], payload.monitor.stats || { em_andamento: 0, atendido: 0, erro: 0 });
+      document.getElementById('monitor-updated').textContent =
+        'Tempo real: ' + new Date().toLocaleTimeString('pt-BR');
+    }
+
+    if (activeTabName() === 'dashboard') {
+      dashboardData = {
+        ...(dashboardData || {}),
+        campaigns: payload.campaigns || [],
+        lines: payload.lines || [],
+        totals: dashboardData?.totals || {},
+        groups_report: dashboardData?.groups_report || [],
+      };
+      renderDashboardLines(payload.lines || []);
+      renderCampaignViz(payload.campaigns || []);
+      renderDashboardCampaigns(payload.campaigns || []);
+      renderDashboardAlerts();
+    }
+  }
+
+  function startRealtime() {
+    if (!window.EventSource || realtimeSource) return;
+    const token = sessionStorage.getItem('api_auth_token') || localStorage.getItem('api_auth_token') || '';
+    const url = `${API}/api/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    realtimeSource = new EventSource(url);
+    realtimeSource.addEventListener('connected', () => {
+      realtimeConnected = true;
+    });
+    realtimeSource.onmessage = (event) => {
+      realtimeConnected = true;
+      try {
+        applyRealtimePayload(JSON.parse(event.data));
+      } catch (_) {}
+    };
+    realtimeSource.onerror = () => {
+      realtimeConnected = false;
+    };
   }
 
   async function ensureLinesLoaded() {
@@ -1497,7 +1559,9 @@
 
   function startMonitor() {
     if (monitorTimer) clearInterval(monitorTimer);
-    monitorTimer = setInterval(loadMonitor, 5000);
+    monitorTimer = setInterval(() => {
+      if (!realtimeConnected) loadMonitor();
+    }, 5000);
   }
 
   let campaignsLoaded = false;
@@ -2239,7 +2303,10 @@
 
   loadLines();
   loadSipGroups();
-  setInterval(loadLines, 120_000);
+  startRealtime();
+  setInterval(() => {
+    if (!realtimeConnected) loadLines();
+  }, 120_000);
   </script>
   </body>
   </html>

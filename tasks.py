@@ -673,6 +673,15 @@ def _merge_debito_with_import_meta(row: dict, debito: dict) -> dict:
     return merged
 
 
+def _imported_debito_is_usable(row: dict) -> bool:
+    debito = row.get("debito_data") if isinstance(row.get("debito_data"), dict) else {}
+    if not debito:
+        return False
+    if debito.get("PgtoAvista") or debito.get("CalculoBoleto"):
+        return True
+    return bool(debito.get("idcalc") or debito.get("iddev") or debito.get("instituicao"))
+
+
 def _validate_debt_before_call(row: dict) -> dict:
     cpf = row.get("cpf", "")
     if not cpf:
@@ -684,6 +693,8 @@ def _validate_debt_before_call(row: dict) -> dict:
 
     result = _processar_debito_result(cpf)
     if not result.get("ok"):
+        if _imported_debito_is_usable(row):
+            return {"ok": True, "debito": row.get("debito_data") or {}, "stale_ddm": True}
         supabase.table("campaign_calls").update({
             "status": "erro",
             "error": f"ddm: {result.get('error', 'erro DDM')}",
