@@ -56,7 +56,6 @@ DDM_IMPORT_RETRIES = max(0, int(env("DDM_IMPORT_RETRIES", "2")))
 DDM_ERROR_RECHECK_ROUNDS = max(0, int(env("DDM_ERROR_RECHECK_ROUNDS", "0")))
 DDM_ERROR_RECHECK_DELAY_SECONDS = max(0, int(env("DDM_ERROR_RECHECK_DELAY_SECONDS", "60")))
 DDM_ERROR_RECHECK_CONCURRENCY = max(1, int(env("DDM_ERROR_RECHECK_CONCURRENCY", "4")))
-DDM_PRECALL_GAP_SECONDS = max(0.0, float(env("DDM_PRECALL_GAP_SECONDS", "1.0")))
 IMPORT_REDIS_TTL_SECONDS = max(3600, int(env("IMPORT_REDIS_TTL_SECONDS", "86400")))
 BOLETO_RETRY_DELAY_SECONDS = max(60, int(env("BOLETO_RETRY_DELAY_SECONDS", "600")))
 BOLETO_RETRY_MAX = max(1, int(env("BOLETO_RETRY_MAX", "12")))
@@ -777,14 +776,9 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
         fired = 0
         skipped = 0
         slot_index = 0
-        ddm_checks = 0
         for row in pending:
             if slot_index >= len(slots):
                 break
-
-            if ddm_checks and DDM_PRECALL_GAP_SECONDS:
-                time.sleep(DDM_PRECALL_GAP_SECONDS)
-            ddm_checks += 1
 
             validation = _validate_debt_before_call(row)
             if not validation.get("ok"):
