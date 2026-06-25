@@ -19,3 +19,6 @@ build/
 *.tmp
 *.zip
 *.tar.gz
+.env
+env
+
