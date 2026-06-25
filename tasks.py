@@ -682,6 +682,26 @@ def _imported_debito_is_usable(row: dict) -> bool:
     return bool(debito.get("idcalc") or debito.get("iddev") or debito.get("instituicao"))
 
 
+def _previous_usable_debito(cpf: str) -> dict:
+    cpf = str(cpf or "").strip()
+    if not cpf:
+        return {}
+    try:
+        rows = supabase.table("campaign_calls") \
+            .select("debito_data") \
+            .eq("cpf", cpf) \
+            .order("updated_at", desc=True) \
+            .limit(20) \
+            .execute().data or []
+    except Exception:
+        return {}
+
+    for row in rows:
+        if _imported_debito_is_usable(row):
+            return row.get("debito_data") or {}
+    return {}
+
+
 def _validate_debt_before_call(row: dict) -> dict:
     cpf = row.get("cpf", "")
     if not cpf:
@@ -695,6 +715,9 @@ def _validate_debt_before_call(row: dict) -> dict:
     if not result.get("ok"):
         if _imported_debito_is_usable(row):
             return {"ok": True, "debito": row.get("debito_data") or {}, "stale_ddm": True}
+        previous_debito = _previous_usable_debito(cpf)
+        if previous_debito:
+            return {"ok": True, "debito": _merge_debito_with_import_meta(row, previous_debito), "stale_ddm": True}
         supabase.table("campaign_calls").update({
             "status": "erro",
             "error": f"ddm: {result.get('error', 'erro DDM')}",
