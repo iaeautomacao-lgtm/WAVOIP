@@ -24,7 +24,7 @@ def env(name: str, default: str = "") -> str:
     value = os.getenv(name, default)
     return value.strip().strip('"').strip("'") if isinstance(value, str) else value
 
-
+#credenciais
 REDIS_URL            = env("REDIS_URL", "redis://localhost:6379/0")
 VAPI_API_KEY         = env("VAPI_API_KEY")
 VAPI_ASSISTANT_ID    = env("VAPI_ASSISTANT_ID")
