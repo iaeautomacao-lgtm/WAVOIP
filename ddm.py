@@ -156,11 +156,20 @@ def _montar_debito(dados: Dict[str, Any]) -> Optional[Dict]:
     nome_devedor = _find_first(dados, "NomeDev", "nome_dev", "NomeDevedor", "nome_devedor")
     total_nominal = _find_first(dados, "TotalNominal", "total_nominal", "ValorTotal", "valor_total") or "0,00"
 
+    max_parcelas = len(parcelas)
+    max_parcela_val = parcela_valor(parcelas[-1]) if parcelas else "0,00"
+    primeiro_venc = _find_first(dados, "PrimeiroVencto", "PrimeiroVencimento", "DtVenc", "Vencimento", "VencimentoAcordo")
+    if not primeiro_venc and parcelas:
+        primeiro_venc = _find_first(parcelas[0], "Vencimento", "DataVencimento", "Venc", "DtVenc")
+    if not primeiro_venc:
+        primeiro_venc = "em dois dias"
+
     return {
         "instituicao":    nome_cliente,
         "nome_devedor":   nome_devedor,
         "numero_debitos": str(len(lista_debitos)),
         "idcalc":         idcalc,
+        "PrimeiroVencto": primeiro_venc,
         "PgtoAvista": {
             "ValorTotal":    total_nominal,
             "PercDesconto":  "0",
@@ -170,12 +179,12 @@ def _montar_debito(dados: Dict[str, Any]) -> Optional[Dict]:
         "CalculoBoleto": {
             "SubtotalBoleto":    valor_avista,
             "HonorarioBoleto":   "0,00",
-            "ValorCobrarBoleto": valor_avista,
+            "ValorCobrarBoleto": max_parcela_val,
         },
-        "ParcelasBoleto": str(len(parcelas)),
+        "ParcelasBoleto": str(max_parcelas),
         "PgtoParceladoCartao": {
-            "Parcelas":     str(len(parcelas)),
-            "ValorParcela": valor_avista,
+            "Parcelas":     str(max_parcelas),
+            "ValorParcela": max_parcela_val,
             "ValorFinal":   valor_avista,
         },
     }

@@ -420,6 +420,7 @@ def vapi_call(
                     "CalculoBoleto":       debito.get("CalculoBoleto", {}),
                     "ParcelasBoleto":      debito.get("ParcelasBoleto", "0"),
                     "PgtoParceladoCartao": debito.get("PgtoParceladoCartao", {}),
+                    "PrimeiroVencto":      debito.get("PrimeiroVencto", "em dois dias"),
                 }
             }
 

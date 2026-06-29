@@ -302,7 +302,7 @@ def _group_map() -> dict:
         return {}
 
 
-def vapi_call(phone: str) -> dict:
+def vapi_call(phone: str, name: str = "", cpf: str = "", debito: dict = None) -> dict:
     global _round_robin_idx
     phone_e164 = _phone_e164(phone)
     digits = re.sub(r"\D", "", phone_e164)
@@ -327,14 +327,32 @@ def vapi_call(phone: str) -> dict:
         if not phone_id:
             last_error = f"Linha '{line.get('name')}' sem phoneNumberId mapeado"
             continue
+
+        payload = {
+            "phoneNumberId": phone_id,
+            "assistantId":   VAPI_ASSISTANT_ID,
+            "customer":      {"number": phone_e164, "name": name}
+        }
+
+        if debito:
+            payload["assistantOverrides"] = {
+                "variableValues": {
+                    "instituicao":         debito.get("instituicao", ""),
+                    "Valorcpf":            cpf,
+                    "NominalPrinc":        debito.get("PgtoAvista", {}).get("ValorTotal", "0,00"),
+                    "PgtoAvista":          debito.get("PgtoAvista", {}),
+                    "CalculoBoleto":       debito.get("CalculoBoleto", {}),
+                    "ParcelasBoleto":      debito.get("ParcelasBoleto", "0"),
+                    "PgtoParceladoCartao": debito.get("PgtoParceladoCartao", {}),
+                    "PrimeiroVencto":      debito.get("PrimeiroVencto", "em dois dias"),
+                }
+            }
+
         try:
-            res = requests.post(f"{VAPI_BASE}/call/phone", json={
-                "phoneNumberId": phone_id,
-                "assistantId":   VAPI_ASSISTANT_ID,
-                "customer":      {"number": phone_e164}
-            }, headers={
+            res = requests.post(f"{VAPI_BASE}/call/phone", json=payload, headers={
                 "Authorization": f"Bearer {VAPI_API_KEY}",
-                "Content-Type":  "application/json"
+                "Content-Type":  "application/json",
+                "User-Agent":    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             }, timeout=15)
             if res.ok:
                 return res.json()
@@ -707,9 +725,28 @@ def make_call():
     try:
         body  = request.json
         phone = body.get("phone")
+        contact_id = body.get("contact_id")
         if not phone:
             return jsonify({"ok": False, "error": "phone obrigatório"}), 400
-        vapi_data = vapi_call(phone)
+
+        name = ""
+        cpf = ""
+        debito = None
+
+        if contact_id:
+            try:
+                contact = supabase.table("contacts").select("*").eq("id", contact_id).execute().data
+                if contact:
+                    name = contact[0].get("name", "")
+                    cpf = contact[0].get("cpf", "")
+                    # Busca ultimo debito daquele CPF registrado nas chamadas de campanha
+                    calls = supabase.table("campaign_calls").select("debito_data").eq("cpf", cpf).order("updated_at", desc=True).limit(1).execute().data
+                    if calls and calls[0].get("debito_data"):
+                        debito = calls[0].get("debito_data")
+            except Exception as e:
+                logging.error(f"Erro ao obter dados do contato para chamada manual: {e}")
+
+        vapi_data = vapi_call(phone, name=name, cpf=cpf, debito=debito)
         return jsonify({"ok": True, "call_id": vapi_data.get("id"), "data": vapi_data})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
