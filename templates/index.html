@@ -637,6 +637,8 @@
       .alert-item {
         font-size: .75rem; padding: 8px 12px;
         border-radius: var(--radius); border: 1px solid;
+        background: var(--green-bg); border-color: var(--green-border); color: var(--green);
+      }
       .alert-item.danger { background: var(--red-bg); border-color: var(--red-border); color: var(--red); }
       .alert-item.warn   { background: var(--amber-bg); border-color: var(--amber-border); color: var(--amber); }
 
@@ -1236,6 +1238,364 @@
       realtimeConnected = false;
     };
   }
+
+  async function ensureLinesLoaded() {
+    if (!linesData.length) await loadLines();
+  }
+
+  function renderCampaignLinePicker(lines) {
+    const picker = document.getElementById('campaign-line-picker');
+    if (!picker) return;
+    const previous = getSelectedCampaignLines();
+    const usable = lines.filter(l => l.configured);
+    if (!usable.length) {
+      picker.innerHTML = '<div class="td-dim">Nenhuma SIP com phoneNumberId configurado.</div>';
+      return;
+    }
+    picker.innerHTML = usable.map(l => {
+      const disabled = !l.healthy;
+      const checked = !disabled && (previous.length ? previous.includes(l.token) : true);
+      const label = `${l.name || 'Linha'} · ${l.phone || 'sem numero'} · ${l.active_calls ?? 0}/${l.max_concurrent ?? 2}`;
+      return `<label class="campaign-line-option ${disabled ? 'disabled' : ''}">
+        <input type="checkbox" class="campaign-line-check" value="${escapeHtml(l.token)}" ${disabled ? 'disabled' : ''} ${checked ? 'checked' : ''}>
+        <span>${escapeHtml(label)}</span>
+      </label>`;
+    }).join('');
+  }
+
+  function getSelectedCampaignLines() {
+    return Array.from(document.querySelectorAll('.campaign-line-check:checked:not(:disabled)')).map(el => el.value);
+  }
+
+  function lineLabelByToken(token) {
+    const line = linesData.find(l => l.token === token);
+    if (!line) return token ? token.slice(0, 6) : 'linha';
+    return line.name || line.phone || token.slice(0, 6);
+  }
+
+  function campaignLinesLabel(tokens) {
+    if (!Array.isArray(tokens) || !tokens.length) return 'todas';
+    const labels = tokens.map(lineLabelByToken);
+    if (labels.length <= 2) return labels.join(', ');
+    return `${labels.slice(0, 2).join(', ')} +${labels.length - 2}`;
+  }
+
+  function lineByToken(token) {
+    return linesData.find(l => l.token === token) || {};
+  }
+
+  function groupById(id) {
+    return sipGroups.find(g => g.id === id);
+  }
+
+  function setCheckedTokens(containerId, tokens) {
+    const wanted = new Set(tokens || []);
+    document.querySelectorAll(`#${containerId} input[type="checkbox"]`).forEach(input => {
+      input.checked = wanted.has(input.value);
+    });
+  }
+
+  function checkedTokens(containerId) {
+    return Array.from(document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`)).map(el => el.value);
+  }
+
+  function renderTokenChecks(containerId, selected = [], onlyHealthy = false, defaultAll = true) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const wanted = new Set(selected || []);
+    const lines = linesData.filter(l => l.configured);
+    if (!lines.length) {
+      el.innerHTML = '<span class="td-dim">Nenhuma SIP com Vapi configurada.</span>';
+      return;
+    }
+    el.innerHTML = lines.map(l => {
+      const disabled = onlyHealthy && !l.healthy;
+      const checked = wanted.size ? wanted.has(l.token) : (defaultAll && (!onlyHealthy || l.healthy));
+      return `<label class="compact-check">
+        <input type="checkbox" value="${escapeHtml(l.token)}" ${disabled ? 'disabled' : ''} ${checked && !disabled ? 'checked' : ''}>
+        ${escapeHtml(l.name || l.phone || 'Linha')}
+      </label>`;
+    }).join('');
+  }
+
+  function renderGroupLinePicker() {
+    renderTokenChecks('group-line-picker', editingGroupId ? (groupById(editingGroupId)?.line_tokens || []) : [], false, false);
+  }
+
+  async function loadSipGroups() {
+    try {
+      const res = await fetch(`${API}/api/sip-groups`);
+      const json = await res.json();
+      sipGroups = json.data || [];
+    } catch(e) {
+      sipGroups = [];
+    }
+    renderGroupOptions();
+    renderGroupsTable();
+    renderGroupLinePicker();
+  }
+
+  function renderGroupOptions() {
+    const selects = [
+      document.getElementById('campaign-group-select'),
+      document.getElementById('edit-campaign-group-select')
+    ].filter(Boolean);
+    selects.forEach(sel => {
+      const current = sel.value;
+      const first = sel.id === 'campaign-group-select' ? 'Grupo de SIPs...' : 'Sem grupo fixo';
+      sel.innerHTML = `<option value="">${first}</option>` + sipGroups.map(g =>
+        `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`
+      ).join('');
+      if (current) sel.value = current;
+    });
+  }
+
+  function renderGroupsTable() {
+    const tbody = document.getElementById('groups-body');
+    if (!tbody) return;
+    if (!sipGroups.length) {
+      tbody.innerHTML = '<tr><td colspan="3"><div class="loader">Nenhum grupo criado.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = sipGroups.map(g => `
+      <tr>
+        <td>${escapeHtml(g.name)}</td>
+        <td class="td-mono">${campaignLinesLabel(g.line_tokens)}</td>
+        <td>
+          <div style="display:flex;gap:6px">
+            <button class="call-btn" onclick="editSipGroup(${jsArg(g.id)})">Editar</button>
+            <button class="del-btn" onclick="deleteSipGroup(${jsArg(g.id)}, ${jsArg(g.name)})">Excluir</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function editSipGroup(id) {
+    const group = groupById(id);
+    if (!group) return;
+    editingGroupId = id;
+    document.getElementById('group-name-input').value = group.name;
+    renderTokenChecks('group-line-picker', group.line_tokens || [], false);
+  }
+
+  function resetGroupForm() {
+    editingGroupId = null;
+    const input = document.getElementById('group-name-input');
+    if (input) input.value = '';
+    renderTokenChecks('group-line-picker', [], false, false);
+  }
+
+  async function saveSipGroup() {
+    await ensureLinesLoaded();
+    const name = document.getElementById('group-name-input').value.trim();
+    const line_tokens = checkedTokens('group-line-picker');
+    if (!name) { toast('Digite o nome do grupo.', 'err'); return; }
+    if (!line_tokens.length) { toast('Selecione ao menos uma SIP.', 'err'); return; }
+    try {
+      const url = editingGroupId ? `${API}/api/sip-groups/${editingGroupId}` : `${API}/api/sip-groups`;
+      const res = await fetch(url, {
+        method: editingGroupId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, line_tokens })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('Grupo salvo.', 'ok');
+      resetGroupForm();
+      await loadSipGroups();
+      loadDashboard();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  async function deleteSipGroup(id, name) {
+    if (!confirm(`Excluir grupo "${name}"?`)) return;
+    try {
+      const res = await fetch(`${API}/api/sip-groups/${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('Grupo excluído.', 'ok');
+      await loadSipGroups();
+      loadDashboard();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  function applyCampaignGroupSelection() {
+    const group = groupById(document.getElementById('campaign-group-select').value);
+    if (group) setCheckedTokens('campaign-line-picker', group.line_tokens || []);
+  }
+
+  function applyEditGroupSelection() {
+    const group = groupById(document.getElementById('edit-campaign-group-select').value);
+    if (group) setCheckedTokens('edit-campaign-line-picker', group.line_tokens || []);
+  }
+
+  async function pauseLine(token, name) {
+    const reason = prompt(`Motivo para pausar ${name || 'linha'}:`, 'pausa operacional');
+    if (reason === null) return;
+    try {
+      const res = await fetch(`${API}/api/lines/${token}/pause`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('SIP pausada.', 'ok');
+      await loadLines();
+      loadDashboard();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  async function resumeLine(token) {
+    try {
+      const res = await fetch(`${API}/api/lines/${token}/resume`, { method: 'POST' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast('SIP retomada.', 'ok');
+      await loadLines();
+      loadDashboard();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  function populateModalLines(lines) {
+    const sel     = document.getElementById('modal-line-select');
+    const healthy = lines.filter(l => l.healthy);
+    sel.innerHTML = healthy.length
+      ? healthy.map(l => `<option value="${escapeHtml(l.id)}">${escapeHtml(l.name)} — ${escapeHtml(l.phone)}</option>`).join('')
+      : '<option value="">Nenhuma linha disponível</option>';
+  }
+
+  let contactsLoaded = false, contactsPage_ = 1, contactsSearch = '', searchTimer;
+
+  async function loadContacts() {
+    contactsLoaded = true;
+    document.getElementById('contacts-body').innerHTML =
+      '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+    try {
+      const params = new URLSearchParams({ page: contactsPage_, per_page: 50, search: contactsSearch });
+      const res  = await fetch(`${API}/api/contacts?${params}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      renderContacts(json.data, json.page, json.pages, json.total);
+    } catch(e) {
+      document.getElementById('contacts-body').innerHTML =
+        `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
+    }
+  }
+
+  function renderContacts(rows, page, pages, total) {
+    const tbody = document.getElementById('contacts-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="loader">Nenhum contato encontrado.</div></td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(c => {
+        const phones = Array.isArray(c.phones) ? c.phones : (c.phones ? [c.phones] : []);
+        return `<tr>
+          <td>${escapeHtml(c.name || '—')}</td>
+          <td class="td-mono">${escapeHtml(c.cpf || c.cpf_norm || '—')}</td>
+          <td class="td-dim">${escapeHtml(c.institution || '—')}</td>
+          <td class="td-mono">${escapeHtml(phones.slice(0,2).join(', ') || '—')}</td>
+          <td>
+            <div style="display:flex;gap:6px">
+              <button class="call-btn" ${!phones.length?'disabled':''}
+                onclick='openModal(${escapeHtml(JSON.stringify({id:c.id,name:c.name,phones}).replace(/</g, "\\u003c"))})'>
+                ↗ Ligar
+              </button>
+              <button class="del-btn" onclick='deleteContact(${jsArg(c.id)}, ${jsArg(c.name)})'>✕</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+    document.getElementById('contacts-page-info').textContent = `${page} / ${pages} — ${total} contatos`;
+    document.getElementById('contacts-prev').disabled = page <= 1;
+    document.getElementById('contacts-next').disabled = page >= pages;
+  }
+
+  function contactsPage(dir) { contactsPage_ += dir; loadContacts(); }
+
+  document.getElementById('contacts-search').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { contactsSearch = e.target.value; contactsPage_ = 1; loadContacts(); }, 400);
+  });
+
+  async function deleteContact(id, name) {
+    if (!confirm(`Excluir "${name}"?`)) return;
+    try {
+      const res  = await fetch(`${API}/api/contacts/${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast(`✓ ${name} excluído`, 'ok');
+      loadContacts();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  let callsLoaded = false, callsPage_ = 1;
+
+  async function loadCalls() {
+    callsLoaded = true;
+    document.getElementById('calls-body').innerHTML =
+      '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+    try {
+      const res  = await fetch(`${API}/api/calls?page=${callsPage_}&per_page=50`);
+      const json = await res.json();
+      if (!json.ok) {
+        console.error('loadCalls error', json);
+        throw new Error(json.error);
+      }
+      renderCalls(json.data, json.page, json.pages, json.total);
+    } catch(e) {
+      console.error('loadCalls failed', e);
+      document.getElementById('calls-body').innerHTML =
+        `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
+    }
+  }
+
+  function renderCalls(rows, page, pages, total) {
+    const tbody = document.getElementById('calls-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6"><div class="loader">Sem histórico.</div></td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(c => {
+        const statusMap = {
+          finalizado: 'cs-ended', atendido: 'cs-ended',
+          em_andamento: 'cs-in-progress', erro: 'cs-failed',
+          pendente: 'cs-queued', enfileirado: 'cs-queued', sem_debito: 'cs-queued',
+        };
+        const cls  = statusMap[c.status] || 'cs-queued';
+        const dur  = c.duration ? `${Math.floor(c.duration/60)}m ${c.duration%60}s` : '—';
+        const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
+        const camp = c.campaign_name || (c.campaign_id ? `Campanha ${String(c.campaign_id).slice(0,8)}` : '—');
+        
+        // Botão para ver transcrição / áudio
+        const hasDetails = c.recording_url || c.transcript;
+        const detailsBtn = hasDetails 
+          ? `<button class="call-btn" onclick="openDetails('${c.id}', '${escapeHtml(c.cpf || 'Chamada')}', ${jsArg(c.recording_url)}, ${jsArg(c.transcript)})">👁 Ver conversa</button>`
+          : `<span class="td-dim" style="font-style:italic">sem gravação</span>`;
+
+        return `<tr>
+          <td class="td-mono" style="color:var(--muted)">${(c.id||'').slice(0,8)}…</td>
+          <td>${escapeHtml(c.cpf || '—')}<br><span class="td-dim">${escapeHtml(camp)}</span></td>
+          <td><span class="cs ${cls}">${escapeHtml(c.status||'—')}</span></td>
+          <td class="td-mono">${dur}</td>
+          <td class="td-dim">${date}</td>
+          <td>${detailsBtn}</td>
+        </tr>`;
+      }).join('');
+    }
+    document.getElementById('calls-page-info').textContent = `${page} / ${pages} — ${total} chamadas`;
+    document.getElementById('calls-prev').disabled = page <= 1;
     document.getElementById('calls-next').disabled = page >= pages;
   }
 
