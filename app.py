@@ -9,7 +9,7 @@ import json
 import logging
 import hmac
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from mysql_adapter import create_client, MySQLClient as Client
@@ -403,9 +403,16 @@ def index():
 @app.route("/api/lines", methods=["GET"])
 def get_lines():
     try:
-        token   = wavoip_login()
-        devices = wavoip_get_devices(token)
-        device_map = {d.get("token"): d for d in devices}
+        wavoip_error = None
+        try:
+            token   = wavoip_login()
+            devices = wavoip_get_devices(token)
+            device_map = {d.get("token"): d for d in devices}
+        except Exception as api_err:
+            logging.error(f"Erro ao obter dispositivos da Wavoip: {api_err}")
+            device_map = {}
+            wavoip_error = str(api_err)
+
         active_counts = _active_line_counts(DEVICE_PRIORITY)
         overrides = _line_overrides_map()
         cooldowns = {t: _is_line_in_cooldown(t) for t in DEVICE_PRIORITY}
@@ -413,7 +420,7 @@ def get_lines():
             "id":              (device_map.get(t) or {}).get("id"),
             "name":            (device_map.get(t) or {}).get("name") or f"Linha {idx + 1}",
             "phone":           (device_map.get(t) or {}).get("phone"),
-            "status":          (device_map.get(t) or {}).get("status") or "missing",
+            "status":          "erro api" if wavoip_error else ((device_map.get(t) or {}).get("status") or "missing"),
             "disabled":        (device_map.get(t) or {}).get("disabled"),
             "calls_made":      (device_map.get(t) or {}).get("calls_made"),
             "needs_restart":   (device_map.get(t) or {}).get("needs_restart"),
@@ -428,7 +435,8 @@ def get_lines():
             "paused":          bool((overrides.get(t) or {}).get("paused")),
             "pause_reason":    (overrides.get(t) or {}).get("reason", ""),
             "cooldown":        bool(cooldowns.get(t)),
-            "healthy":         t in device_map
+            "healthy":         not wavoip_error
+                               and t in device_map
                                and (device_map[t].get("status") == "open")
                                and device_map[t].get("disabled") == 0
                                and device_map[t].get("phone") is not None
@@ -436,7 +444,11 @@ def get_lines():
                                and not bool(cooldowns.get(t))
                                and not bool((overrides.get(t) or {}).get("paused")),
         } for idx, t in enumerate(DEVICE_PRIORITY)]
-        return jsonify({"ok": True, "data": lines})
+        return jsonify({
+            "ok": True, 
+            "data": lines,
+            "wavoip_error": wavoip_error
+        })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
