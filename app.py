@@ -179,6 +179,8 @@ def wavoip_login() -> str:
         return _wavoip_token
     res = requests.post(f"{WAVOIP_BASE}/v2/login", json={
         "email": WAVOIP_EMAIL, "password": WAVOIP_PASSWORD
+    }, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }, timeout=10)
     res.raise_for_status()
     _wavoip_token    = res.json()["data"]["token"]
@@ -188,7 +190,10 @@ def wavoip_login() -> str:
 
 def wavoip_get_devices(token: str) -> list:
     res = requests.get(f"{WAVOIP_BASE}/v2/devices/me",
-        headers={"Authorization": f"Bearer {token}"}, timeout=10)
+        headers={
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }, timeout=10)
     res.raise_for_status()
     return res.json().get("data", [])
 
