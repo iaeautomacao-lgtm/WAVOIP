@@ -21,4 +21,5 @@ build/
 *.tar.gz
 .env
 env
+.venv/
 

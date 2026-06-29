@@ -105,6 +105,8 @@ CREATE TABLE IF NOT EXISTS campaign_calls (
   line_token text,
   line_name text,
   phone_number_id text,
+  recording_url text,
+  transcript text,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );

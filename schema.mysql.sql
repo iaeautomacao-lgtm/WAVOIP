@@ -76,6 +76,8 @@ CREATE TABLE IF NOT EXISTS campaign_calls (
   line_token varchar(128),
   line_name varchar(255),
   phone_number_id varchar(128),
+  recording_url varchar(512) DEFAULT NULL,
+  transcript longtext DEFAULT NULL,
   created_at timestamp DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_campaign_calls_campaign_status_order (campaign_id, status, order_idx),

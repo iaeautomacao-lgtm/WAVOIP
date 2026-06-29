@@ -74,6 +74,23 @@ def require_api_auth():
 supabase: Client = create_client()
 supabase_admin: Client = supabase
 
+def run_migrations():
+    try:
+        conn = supabase.connect()
+        with conn.cursor() as cur:
+            cur.execute("SHOW COLUMNS FROM `campaign_calls` LIKE 'recording_url'")
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE `campaign_calls` ADD COLUMN `recording_url` VARCHAR(512) DEFAULT NULL")
+                print("Migration: Added recording_url to campaign_calls")
+            cur.execute("SHOW COLUMNS FROM `campaign_calls` LIKE 'transcript'")
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE `campaign_calls` ADD COLUMN `transcript` LONGTEXT DEFAULT NULL")
+                print("Migration: Added transcript to campaign_calls")
+    except Exception as e:
+        print(f"Migration warning: {e}")
+
+run_migrations()
+
 WAVOIP_VAPI_MAP = {
     "ed49616d-fb19-46df-96b8-decab4cde3cf": env("VAPI_PHONE_NUMBER_ID_1"),
     "c8af8686-ca83-4eef-b757-f53940426011": env("VAPI_PHONE_NUMBER_ID_2"),
@@ -556,7 +573,7 @@ def get_calls():
         per_page = int(request.args.get("per_page", 50))
         offset   = (page - 1) * per_page
         result   = supabase.table("campaign_calls").select(
-            "id, cpf, status, created_at, duration, campaign_id", count="exact"
+            "id, cpf, status, created_at, duration, campaign_id, recording_url, transcript", count="exact"
         ).order("created_at", desc=True).range(offset, offset + per_page - 1).execute()
         rows = []
         camp_ids = set()
@@ -568,6 +585,8 @@ def get_calls():
                 "duration": row.get("duration") or row.get("call_duration"),
                 "created_at": row.get("created_at"),
                 "campaign_id": row.get("campaign_id"),
+                "recording_url": row.get("recording_url"),
+                "transcript": row.get("transcript"),
             }
             rows.append(r)
             cid = r.get("campaign_id")
@@ -590,6 +609,78 @@ def get_calls():
             "page": page,
             "pages": -(-result.count // per_page) if result.count else 1,
         })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/acordos", methods=["GET"])
+def get_acordos():
+    try:
+        page     = int(request.args.get("page", 1))
+        per_page = int(request.args.get("per_page", 50))
+        offset   = (page - 1) * per_page
+        conn = supabase.connect()
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS total FROM acordos_formalizados")
+            total = (cur.fetchone() or {}).get("total", 0)
+
+            sql = """
+                SELECT a.*, c.recording_url, c.transcript
+                FROM acordos_formalizados a
+                LEFT JOIN campaign_calls c ON a.campaign_call_id = c.id
+                ORDER BY a.created_at DESC
+                LIMIT %s OFFSET %s
+            """
+            cur.execute(sql, [per_page, offset])
+            rows = cur.fetchall()
+
+            # Normalização de tipos
+            for r in rows:
+                for k, v in r.items():
+                    if isinstance(v, (datetime, date)):
+                        r[k] = v.isoformat()
+                    elif isinstance(v, Decimal):
+                        r[k] = float(v)
+
+        return jsonify({
+            "ok":    True,
+            "data":  rows,
+            "total": total,
+            "page":  page,
+            "pages": -(-total // per_page) if total else 1,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/acordos/<acordo_id>/resend-email", methods=["POST"])
+def resend_acordo_email(acordo_id):
+    try:
+        acordo = supabase.table("acordos_formalizados").select("*").eq("id", acordo_id).execute().data
+        if not acordo:
+            return jsonify({"ok": False, "error": "Acordo não encontrado"}), 404
+        acordo = acordo[0]
+
+        from tasks import verificar_boleto_acordo
+        dados = {
+            "cpf":             acordo.get("cpf"),
+            "nome":            acordo.get("nome"),
+            "email":           acordo.get("email"),
+            "instituicao":     acordo.get("instituicao"),
+            "valor":           acordo.get("valor"),
+            "forma_pagamento": acordo.get("forma_pagamento"),
+            "vencimento":      acordo.get("vencimento"),
+            "nr_acordo":       acordo.get("nr_acordo"),
+            "idcalc":          acordo.get("vapi_call_id"), # fallback
+            "vapi_call_id":    acordo.get("vapi_call_id"),
+            "campaign_call_id": acordo.get("campaign_call_id"),
+        }
+
+        res = verificar_boleto_acordo(dados, tentativa=1)
+        if res.get("email_enviado"):
+            return jsonify({"ok": True, "message": "Email enviado com sucesso"})
+        else:
+            return jsonify({"ok": False, "error": "Links de pagamento ainda não estão disponíveis ou e-mail inválido"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -1044,12 +1135,22 @@ def vapi_webhook():
             ""
         )
 
+        recording_url = (
+            msg.get("recordingUrl") or
+            body.get("recordingUrl") or
+            msg.get("artifact", {}).get("recordingUrl") or
+            body.get("artifact", {}).get("recordingUrl") or
+            ""
+        )
+
         logging.warning(f"[WEBHOOK] end-of-call call_id={call_id} transcript_len={len(transcript)} ended_reason={ended_reason}")
 
         supabase.table("campaign_calls").update({
-            "status":   "finalizado",
-            "error":    ended_reason,
-            "duration": duration,
+            "status":        "finalizado",
+            "error":         ended_reason,
+            "duration":      duration,
+            "recording_url": recording_url,
+            "transcript":    transcript,
         }).eq("id", row["id"]).execute()
 
         # ── Detecta acordo formalizado e dispara task de email ────────
