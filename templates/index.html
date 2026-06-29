@@ -916,6 +916,7 @@
         <div class="kpi-strip" id="dashboard-kpis">
           <div class="kpi brand"><div class="kpi-label">Campanhas ativas</div><div class="kpi-val" id="dash-active">0</div></div>
           <div class="kpi green"><div class="kpi-label">Atendidas</div><div class="kpi-val" id="dash-answered">0</div></div>
+          <div class="kpi brand"><div class="kpi-label">Taxa de Alô</div><div class="kpi-val" id="dash-alo-rate">0%</div></div>
           <div class="kpi amber"><div class="kpi-label">Formalizadas</div><div class="kpi-val" id="dash-formalized">0</div></div>
           <div class="kpi red"><div class="kpi-label">Erros</div><div class="kpi-val" id="dash-errors">0</div></div>
         </div>
@@ -969,9 +970,9 @@
           <div class="dash-panel-head"><span class="dash-panel-title">Relatório por campanha</span></div>
           <div class="table-card" style="margin:12px;border-radius:8px">
             <table>
-              <thead><tr><th>Campanha</th><th>Status</th><th>Grupo</th><th>SIPs</th><th>Total</th><th>Ativas</th><th>Atendidas</th><th>Formalizadas</th><th>Erros</th><th>Ações</th></tr></thead>
+              <thead><tr><th>Campanha</th><th>Status</th><th>Grupo</th><th>SIPs</th><th>Total</th><th>Ativas</th><th>Atendidas</th><th>Taxa Alô</th><th>Formalizadas</th><th>Erros</th><th>Ações</th></tr></thead>
               <tbody id="dashboard-campaigns-body">
-                <tr><td colspan="10"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+                <tr><td colspan="11"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
               </tbody>
             </table>
           </div>
@@ -1818,6 +1819,7 @@
     const totals = data.totals || {};
     document.getElementById('dash-active').textContent     = totals.campaigns_active || 0;
     document.getElementById('dash-answered').textContent   = totals.answered || 0;
+    document.getElementById('dash-alo-rate').textContent   = `${totals.alo_rate ?? 0}%`;
     document.getElementById('dash-formalized').textContent = totals.formalized || 0;
     document.getElementById('dash-errors').textContent     = totals.errors || 0;
     renderDashboardAlerts();
@@ -1850,7 +1852,7 @@
   function renderDashboardCampaigns(rows) {
     const tbody = document.getElementById('dashboard-campaigns-body');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="10"><div class="loader">Nenhuma campanha para relatar.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11"><div class="loader">Nenhuma campanha para relatar.</div></td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(c => `
@@ -1862,6 +1864,7 @@
         <td class="td-mono">${c.total || 0}</td>
         <td class="td-mono">${c.active || 0}</td>
         <td class="td-mono">${c.answered || 0}</td>
+        <td class="td-mono"><b>${c.alo_rate ?? 0}%</b></td>
         <td class="td-mono">${c.formalized || 0}</td>
         <td class="td-mono">${c.errors || 0}</td>
         <td><button class="call-btn" onclick="openCampaignLinesModal(${jsArg(c.id)})">SIPs</button></td>
@@ -1894,12 +1897,13 @@
       const formalized = c.formalized || 0;
       const errors = c.errors || 0;
       const total = c.total || 0;
+      const aloRate = c.alo_rate || 0;
       return `<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);padding:10px 12px;border-radius:10px">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
           <div style="font-weight:600;font-size:.92rem;color:var(--text)">${name}</div>
           <div class="td-dim" style="display:flex; gap:10px;font-size:.8rem">
             <span>Total <b style="color:var(--text)">${total}</b></span>
-            <span>Atendidas <b style="color:var(--green)">${answered}</b></span>
+            <span>Atendidas <b style="color:var(--green)">${answered} (${aloRate}%)</b></span>
             <span>Formalizadas <b style="color:var(--brand)">${formalized}</b></span>
             <span>Erros <b style="color:#e74c3c">${errors}</b></span>
           </div>

@@ -786,7 +786,9 @@ def dashboard_summary():
 
         formalized_call_ids = {a.get("campaign_call_id") for a in accords if a.get("campaign_call_id")}
         email_sent = sum(1 for a in accords if a.get("email_enviado"))
-        campaign_map = {c["id"]: c for c in campaigns}
+        attempted_calls = sum(1 for r in calls if r.get("status") not in ("pendente", "enfileirado"))
+        answered_calls = sum(1 for r in calls if r.get("answered") or r.get("status") == "atendido")
+        alo_rate = round((answered_calls / attempted_calls * 100), 1) if attempted_calls > 0 else 0.0
 
         totals = {
             "campaigns": len(campaigns),
@@ -796,11 +798,12 @@ def dashboard_summary():
             "calls": len(calls),
             "pending": sum(1 for r in calls if r.get("status") == "pendente"),
             "active": sum(1 for r in calls if r.get("status") in ("enfileirado", "em_andamento", "atendido")),
-            "answered": sum(1 for r in calls if r.get("answered") or r.get("status") == "atendido"),
+            "answered": answered_calls,
             "finished": sum(1 for r in calls if r.get("status") == "finalizado"),
             "errors": sum(1 for r in calls if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
             "formalized": len(accords),
             "email_sent": email_sent,
+            "alo_rate": alo_rate,
         }
 
         by_campaign = []
@@ -811,6 +814,9 @@ def dashboard_summary():
         for camp in campaigns:
             rows = calls_by_campaign.get(camp.get("id"), [])
             camp_formalized = sum(1 for r in rows if r.get("id") in formalized_call_ids)
+            camp_attempted = sum(1 for r in rows if r.get("status") not in ("pendente", "enfileirado"))
+            camp_answered = sum(1 for r in rows if r.get("answered") or r.get("status") == "atendido")
+            camp_alo_rate = round((camp_answered / camp_attempted * 100), 1) if camp_attempted > 0 else 0.0
             by_campaign.append({
                 "id": camp.get("id"),
                 "name": camp.get("name"),
@@ -821,9 +827,10 @@ def dashboard_summary():
                 "total": camp.get("total") or len(rows),
                 "finished": camp.get("finished") or sum(1 for r in rows if r.get("status") == "finalizado"),
                 "active": sum(1 for r in rows if r.get("status") in ("enfileirado", "em_andamento", "atendido")),
-                "answered": sum(1 for r in rows if r.get("answered") or r.get("status") == "atendido"),
+                "answered": camp_answered,
                 "errors": sum(1 for r in rows if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
                 "formalized": camp_formalized,
+                "alo_rate": camp_alo_rate,
                 "created_at": camp.get("created_at"),
             })
 
