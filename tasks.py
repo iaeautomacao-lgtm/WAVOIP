@@ -42,6 +42,7 @@ SMTP_FROM     = env("SMTP_FROM", "atendimento@ddm.adv.br")
 SMTP_TIMEOUT  = int(env("SMTP_TIMEOUT", "10"))
 SMTP_SECURITY = env("SMTP_SECURITY", "starttls").lower()
 SMTP_FORCE_IPV4 = env("SMTP_FORCE_IPV4", "true").lower() in ("1", "true", "yes", "sim")
+DEBUG_EMAIL_RECIPIENT = env("DEBUG_EMAIL_RECIPIENT", "")
 
 # ── DDM Acordos ───────────────────────────────────────────────
 DDM_TOKEN    = env("DDM_TOKEN")
@@ -1204,6 +1205,11 @@ def _enviar_email_acordo(
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
+    original_destinatario = destinatario
+    if DEBUG_EMAIL_RECIPIENT:
+        logger.info("[EMAIL_DEBUG] Redirecionando e-mail de %s para %s", destinatario, DEBUG_EMAIL_RECIPIENT)
+        destinatario = DEBUG_EMAIL_RECIPIENT
+
     link_principal = link_pix or link_boleto or ""
 
     # Monta seção de pagamento do email
@@ -1291,7 +1297,10 @@ def _enviar_email_acordo(
 </html>"""
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"Acordo formalizado — {instituicao}"
+    subject = f"Acordo formalizado — {instituicao}"
+    if DEBUG_EMAIL_RECIPIENT:
+        subject = f"[DEBUG] (Para: {original_destinatario}) " + subject
+    msg["Subject"] = subject
     msg["From"]    = SMTP_FROM
     msg["To"]      = destinatario
     msg.attach(MIMEText(html, "html"))
