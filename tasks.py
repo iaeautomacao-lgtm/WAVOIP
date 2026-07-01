@@ -698,6 +698,37 @@ def _previous_usable_debito(cpf: str) -> dict:
     return {}
 
 
+def _build_fallback_debito_from_meta(meta: dict) -> dict:
+    nominal = meta.get("nominal") or meta.get("nominal_princ") or meta.get("nominal_val") or "0,00"
+    instituicao = meta.get("instituicao") or "Faculdade"
+    
+    return {
+        "instituicao":    instituicao,
+        "nome_devedor":   meta.get("name") or "Aluno",
+        "numero_debitos": "1",
+        "idcalc":         meta.get("iddev") or meta.get("imported_id") or "",
+        "iddev":          meta.get("iddev") or "",
+        "PrimeiroVencto": "em dois dias",
+        "PgtoAvista": {
+            "ValorTotal":    nominal,
+            "PercDesconto":  "0",
+            "ValorDesconto": "0,00",
+            "ValorFinal":    nominal,
+        },
+        "CalculoBoleto": {
+            "SubtotalBoleto":    nominal,
+            "HonorarioBoleto":   "0,00",
+            "ValorCobrarBoleto": nominal,
+        },
+        "ParcelasBoleto": "1",
+        "PgtoParceladoCartao": {
+            "Parcelas":     "1",
+            "ValorParcela": nominal,
+            "ValorFinal":   nominal,
+        },
+    }
+
+
 def _validate_debt_before_call(row: dict) -> dict:
     cpf = row.get("cpf", "")
     if not cpf:
@@ -709,11 +740,21 @@ def _validate_debt_before_call(row: dict) -> dict:
 
     result = _processar_debito_result(cpf)
     if not result.get("ok"):
+        # Fallback 1: se temos metadados válidos da planilha na linha importada, usa para construir o débito
+        debito_data = row.get("debito_data") or {}
+        if isinstance(debito_data, dict) and (debito_data.get("instituicao") or debito_data.get("nominal") or debito_data.get("iddev")):
+            fallback = _build_fallback_debito_from_meta({**debito_data, "name": row.get("name", "Aluno")})
+            return {"ok": True, "debito": _merge_debito_with_import_meta(row, fallback), "stale_ddm": True}
+
+        # Fallback 2: se o debito_data importado for usável diretamente
         if _imported_debito_is_usable(row):
             return {"ok": True, "debito": row.get("debito_data") or {}, "stale_ddm": True}
+
+        # Fallback 3: tenta histórico de débitos utilizáveis passados
         previous_debito = _previous_usable_debito(cpf)
         if previous_debito:
             return {"ok": True, "debito": _merge_debito_with_import_meta(row, previous_debito), "stale_ddm": True}
+
         supabase.table("campaign_calls").update({
             "status": "erro",
             "error": f"ddm: {result.get('error', 'erro DDM')}",
@@ -1875,6 +1916,10 @@ def _process_dataframe(job_id: str, df, fname: str):
     val_col = first_col(["val_atualizado", "val_nominal"])
     is_ddm = val_col is not None
 
+    # Detecta colunas de valor e instituição para fallback
+    valor_col = first_col(["val_atualizado", "val_nominal", "nominal", "valor", "nominal_princ"])
+    inst_col = first_col(["instituicao", "cliente", "carteira", "ies"])
+
     if not cpf_col or not nome_col:
         _set_job_error(job_id, f"Colunas obrigatórias não encontradas. Colunas detectadas: {list(df.columns)}")
         return
@@ -1889,6 +1934,11 @@ def _process_dataframe(job_id: str, df, fname: str):
             continue
 
         nome = row.get(nome_col, "").strip() or ""
+        
+        # Pega valores da planilha para fallback caso a DDM falhe em tempo real
+        nominal_val = row.get(val_col or valor_col, "").strip() if (val_col or valor_col) else ""
+        inst_val = row.get(inst_col, "").strip() if inst_col else ""
+
         if is_ddm:
             phones = _all_phones_ddm(row, list(df.columns))
             phone = phones[0] if phones else ""
@@ -1900,12 +1950,19 @@ def _process_dataframe(job_id: str, df, fname: str):
                 "cidade": row.get("cidade", "").strip(),
                 "all_phones": phones,
                 "email": row.get("email", "").strip(),
+                "nominal": nominal_val or "0,00",
+                "nominal_princ": nominal_val or "0,00",
+                "instituicao": inst_val or "Faculdade",
             }
             if phone_col and phone_col in row:
                 meta["raw_phone_fallback"] = row.get(phone_col, "").strip()
         else:
             phone = _first_phone_hires(row, list(df.columns)) if phone_col else ""
-            meta = {}
+            meta = {
+                "nominal": nominal_val or "0,00",
+                "nominal_princ": nominal_val or "0,00",
+                "instituicao": inst_val or "Faculdade",
+            }
 
         if not phone:
             continue
