@@ -66,54 +66,106 @@ def _find_first(obj, *names) -> str:
     return ""
 
 
+def _consolidate_calc_response(data_list: list) -> dict:
+    consolidated = {}
+    parcelas_list = []
+    debitos_list = []
+    
+    for item in data_list:
+        if not isinstance(item, dict):
+            continue
+        
+        # Dados Gerais
+        if "Dados" in item:
+            consolidated.update(item["Dados"])
+            
+        # Lista de Débitos
+        if "Calculos" in item:
+            calculos = item["Calculos"] or []
+            for calc in calculos:
+                if isinstance(calc, dict) and "debitos" in calc:
+                    debitos_list.append(calc["debitos"])
+                    
+        # Pagamento à Vista
+        if "PgtoAvista" in item:
+            avista = item["PgtoAvista"] or {}
+            consolidated["PgtoAvista"] = avista
+            # Adiciona a vista na lista de parcelas
+            parcelas_list.append({
+                "ValorParcela": avista.get("ValorFinal") or avista.get("ValorTotal") or "0,00",
+                "ValorFinal": avista.get("ValorFinal") or avista.get("ValorTotal") or "0,00",
+            })
+            
+        # Opções Parceladas
+        if "PgtoParceladoBoleto" in item:
+            parcelas_list.append(item["PgtoParceladoBoleto"])
+            
+        if "PgtoParceladoCartao" in item:
+            consolidated["PgtoParceladoCartao"] = item["PgtoParceladoCartao"]
+            
+    consolidated["ListaParcelas"] = {"Parcelas": parcelas_list}
+    consolidated["ListaDebitos"] = {"Debito": debitos_list}
+    
+    # Define chaves top-level para o _montar_debito encontrar
+    consolidated["TotalNominal"] = consolidated.get("nominal") or consolidated.get("nominal_princ") or consolidated.get("PgtoAvista", {}).get("ValorTotal") or "0,00"
+    consolidated["Cliente"] = consolidated.get("instituicao") or consolidated.get("Cliente") or ""
+    consolidated["NomeDev"] = consolidated.get("nome") or consolidated.get("NomeDevedor") or ""
+    consolidated["PrimeiroVencto"] = consolidated.get("PrimeiroVencto") or ""
+    consolidated["idcalc"] = consolidated.get("CalculoID") or consolidated.get("iddev") or ""
+    
+    return consolidated
+
+
 def consultar_debitos_cpf(cpf: str) -> Dict:
     if not DDM_TOKEN:
         raise DDMHardError("DDM_TOKEN nao configurado")
 
+    cpf_norm = re.sub(r"\D", "", str(cpf))
+    cpf_tail = cpf_norm[-4:]
+    logger.warning("[DDM_DEBUG] CPF_FINAL=%s consultando localiza_dev.php", cpf_tail)
+
     try:
-        cpf_tail = re.sub(r"\D", "", str(cpf))[-4:]
-        logger.warning("[DDM_DEBUG] CPF_FINAL=%s consultando DDM", cpf_tail)
-        r = requests.get(
-            DDM_CALCULA,
-            params={"tk": DDM_TOKEN, "Doc": cpf},
+        # 1. Localiza iddev pelo CPF
+        r1 = requests.get(
+            "https://ddmacordos.com/calc/localiza_dev.php",
+            params={"tk": DDM_TOKEN, "cpf": cpf_norm},
             timeout=DDM_TIMEOUT_SECONDS,
         )
-        logger.warning("[DDM_DEBUG] CPF_FINAL=%s STATUS=%s BODY_LEN=%s", cpf_tail, r.status_code, len(r.text or ""))
+        r1.raise_for_status()
+        data1 = r1.json()
+        if not isinstance(data1, list) or len(data1) == 0:
+            logger.warning("[DDM_DEBUG] CPF_FINAL=%s devedor nao localizado", cpf_tail)
+            return {}
 
-        if r.status_code == 429 or r.status_code >= 500:
-            raise DDMSoftError(f"DDM indisponivel ({r.status_code})")
-        if r.status_code in (401, 403):
-            raise DDMHardError(f"Token invalido ({r.status_code})")
-        r.raise_for_status()
+        dev = data1[0]
+        iddev = dev.get("iddev")
+        if not iddev:
+            logger.warning("[DDM_DEBUG] CPF_FINAL=%s sem iddev", cpf_tail)
+            return {}
+
+        # 2. Consulta débitos no calc/ com cli=ddm
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s consultando calc/ iddev=%s", cpf_tail, iddev)
+        r2 = requests.get(
+            "https://ddmacordos.com/calc/",
+            params={"tk": DDM_TOKEN, "idDev": iddev, "cli": "ddm"},
+            timeout=DDM_TIMEOUT_SECONDS,
+        )
+        r2.raise_for_status()
+        raw = r2.json()
     except requests.exceptions.Timeout:
-        logger.warning("[DDM_DEBUG] CPF_FINAL=%s TIMEOUT", re.sub(r"\D", "", str(cpf))[-4:])
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s TIMEOUT", cpf_tail)
         raise DDMSoftError("timeout")
     except requests.exceptions.ConnectionError:
-        logger.warning("[DDM_DEBUG] CPF_FINAL=%s CONEXAO_CAIU", re.sub(r"\D", "", str(cpf))[-4:])
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s CONEXAO_CAIU", cpf_tail)
         raise DDMSoftError("conexao caiu")
-    except requests.exceptions.HTTPError as e:
-        code = getattr(getattr(e, "response", None), "status_code", 0)
-        if code in (429, 500, 502, 503, 504):
-            raise DDMSoftError(f"DDM indisponivel ({code})")
-        raise DDMHardError(str(e))
-    except DDMSoftError:
-        raise
-    except DDMHardError:
-        raise
     except Exception as e:
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s ERRO=%s", cpf_tail, e)
         raise DDMSoftError(str(e))
 
-    try:
-        raw = r.json()
-    except Exception as e:
-        raise DDMHardError(f"Resposta invalida: {e}")
-
-    erro_ddm = _get_any(raw, "ERRO", "erro") if isinstance(raw, dict) else ""
-    if erro_ddm:
-        logger.warning("[DDM_DEBUG] CPF_FINAL=%s ERRO_GENERICO_RECEBIDO", re.sub(r"\D", "", str(cpf))[-4:])
-        raise DDMHardError("ERRO_GENERICO_DDM")
-
-    return _safe_dict(raw)
+    # Consolida os itens da lista em um único dicionário para compatibilidade com _montar_debito
+    data_list = raw if isinstance(raw, list) else [raw]
+    consolidated = _consolidate_calc_response(data_list)
+    return consolidated
 
 
 def _montar_debito(dados: Dict[str, Any]) -> Optional[Dict]:
