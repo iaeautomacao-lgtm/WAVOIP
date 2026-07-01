@@ -750,8 +750,14 @@ def manual_formalizar_acordo():
 @app.route("/api/debug-import")
 def debug_import():
     try:
-        jobs = supabase.table("import_jobs").select("*").order("created_at", desc=True).limit(1).execute().data
-        return jsonify(jobs)
+        acordos = supabase.table("acordos_formalizados").select("*").order("created_at", desc=True).limit(5).execute().data
+        calls = supabase.table("campaign_calls").select("*").order("updated_at", desc=True).limit(5).execute().data
+        jobs = supabase.table("import_jobs").select("*").order("created_at", desc=True).limit(5).execute().data
+        return jsonify({
+            "acordos": acordos,
+            "calls": calls,
+            "jobs": jobs
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
