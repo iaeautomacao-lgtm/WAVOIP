@@ -760,6 +760,26 @@ def manual_formalizar_acordo():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/run-migration")
+def run_migration():
+    try:
+        from mysql_adapter import create_client
+        client = create_client()
+        with client.connect() as conn:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute("ALTER TABLE campaigns ADD COLUMN assistant_id VARCHAR(255) NULL;")
+                    msg = "Coluna assistant_id adicionada com sucesso à tabela campaigns."
+                except Exception as e:
+                    if "Duplicate column name" in str(e):
+                        msg = "A coluna assistant_id já existe na tabela campaigns."
+                    else:
+                        raise e
+        return jsonify({"ok": True, "message": msg})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/debug-import")
 def debug_import():
     try:
@@ -992,6 +1012,7 @@ def create_campaign():
         contacts   = body.get("contacts", [])
         line_tokens = _clean_line_tokens(body.get("line_tokens", []))
         sip_group_id = (body.get("sip_group_id") or "").strip()
+        assistant_id = (body.get("assistant_id") or "").strip()
 
         if not name:
             return jsonify({"ok": False, "error": "Nome obrigatório"}), 400
@@ -1021,6 +1042,8 @@ def create_campaign():
         }
         if sip_group_id:
             camp_payload["sip_group_id"] = sip_group_id
+        if assistant_id:
+            camp_payload["assistant_id"] = assistant_id
         try:
             camp = supabase.table("campaigns").insert(camp_payload).execute().data[0]
         except Exception:

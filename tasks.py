@@ -417,9 +417,12 @@ def vapi_call(
         if not phone_id:
             continue
 
+        campaign_assistant_id = contact.get("campaign_assistant_id") or ""
+        assistant_id = campaign_assistant_id if campaign_assistant_id else _get_assistant_id(debito)
+
         payload: Dict[str, Any] = {
             "phoneNumberId": phone_id,
-            "assistantId":   _get_assistant_id(debito),
+            "assistantId":   assistant_id,
             "customer":      {"number": phone_e164, "name": name},
         }
 
@@ -820,6 +823,7 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
             return {"ok": False, "error": "campanha nao encontrada", "fired": 0}
 
         camp = camp_rows[0]
+        campaign_assistant_id = camp.get("assistant_id") or ""
         if camp.get("status") != "em_andamento":
             return {"ok": True, "status": camp.get("status"), "fired": 0}
 
@@ -891,6 +895,7 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
                 "line_token":      meta["line_token"],
                 "line_name":       meta["line_name"],
                 "phone_number_id": meta["phone_number_id"],
+                "campaign_assistant_id": campaign_assistant_id,
             })
             fired += 1
 

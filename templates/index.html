@@ -941,6 +941,7 @@
 
         <div class="import-actions" id="import-actions" style="display:none">
           <input class="campaign-name-input" type="text" id="campaign-name-input" placeholder="Nome da campanha..." />
+          <input class="campaign-name-input" type="text" id="campaign-assistant-input" placeholder="ID do Assistente Vapi (Opcional)..." style="max-width: 320px;" />
           <select class="mini-select" id="campaign-group-select" onchange="applyCampaignGroupSelection()">
             <option value="">Grupo de SIPs...</option>
           </select>
@@ -2036,6 +2037,7 @@
     await ensureLinesLoaded();
     const line_tokens = getSelectedCampaignLines();
     const sip_group_id = document.getElementById('campaign-group-select')?.value || '';
+    const assistant_id = document.getElementById('campaign-assistant-input')?.value.trim() || '';
     if (!line_tokens.length) {
       toast('Selecione ao menos uma SIP para esta campanha.', 'err');
       return;
@@ -2044,8 +2046,8 @@
     btn.disabled = true; btn.textContent = 'Salvando…';
     try {
       const body = importSessionId
-        ? { name, session_id: importSessionId, line_tokens, sip_group_id }
-        : { name, contacts: importRows.filter(r => r.phone), line_tokens, sip_group_id };
+        ? { name, session_id: importSessionId, line_tokens, sip_group_id, assistant_id }
+        : { name, contacts: importRows.filter(r => r.phone), line_tokens, sip_group_id, assistant_id };
       const res  = await fetch(`${API}/api/campaigns`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
