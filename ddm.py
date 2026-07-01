@@ -143,11 +143,17 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
             logger.warning("[DDM_DEBUG] CPF_FINAL=%s sem iddev", cpf_tail)
             return {}
 
-        # 2. Consulta débitos no calc/ com cli=ddm
-        logger.warning("[DDM_DEBUG] CPF_FINAL=%s consultando calc/ iddev=%s", cpf_tail, iddev)
+        # Mapeia dinamicamente o cli com base no sistema retornado pela DDM
+        sistema = dev.get("sistema", "").strip().lower()
+        cli = "ddm"
+        if sistema == "cruzeirodosul":
+            cli = "cruzeiro"
+
+        # 2. Consulta débitos no calc/ com o cli dinâmico correspondente
+        logger.warning("[DDM_DEBUG] CPF_FINAL=%s consultando calc/ iddev=%s cli=%s", cpf_tail, iddev, cli)
         r2 = requests.get(
             "https://ddmacordos.com/calc/",
-            params={"tk": DDM_TOKEN, "idDev": iddev, "cli": "ddm"},
+            params={"tk": DDM_TOKEN, "idDev": iddev, "cli": cli},
             timeout=DDM_TIMEOUT_SECONDS,
         )
         r2.raise_for_status()
