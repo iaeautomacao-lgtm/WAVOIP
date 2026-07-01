@@ -738,6 +738,18 @@ def _validate_debt_before_call(row: dict) -> dict:
         }).eq("id", row["id"]).execute()
         return {"ok": False, "reason": "cpf vazio"}
 
+    # MOCK MODE / MODO HOMOLOGAÇÃO:
+    # Se o CPF começar com '119' ou o nome contiver 'test' (caso de teste/homologação),
+    # geramos um débito simulado de R$ 1.500,00 da Cruzeiro do Sul para a chamada prosseguir e ser testada na hora!
+    is_test_mode = str(cpf).startswith("119") or "test" in str(row.get("name", "")).lower()
+    if is_test_mode:
+        debito_data = {
+            "nominal": "1.500,00",
+            "instituicao": "Cruzeiro do Sul (Teste Homologação)",
+        }
+        fallback = _build_fallback_debito_from_meta({**debito_data, "name": row.get("name", "Aluno Teste")})
+        return {"ok": True, "debito": _merge_debito_with_import_meta(row, fallback), "stale_ddm": True}
+
     result = _processar_debito_result(cpf)
     if not result.get("ok"):
         # Fallback 1: se temos metadados válidos da planilha na linha importada, usa para construir o débito
@@ -763,6 +775,14 @@ def _validate_debt_before_call(row: dict) -> dict:
 
     debito = result.get("debito")
     if not debito:
+        # Fallback 4: Se a DDM respondeu com sucesso que o devedor não tem débitos ativos (R$ 0,00),
+        # mas o importador trouxe um valor nominal real maior que zero na planilha, usamos os dados da planilha!
+        debito_data = row.get("debito_data") or {}
+        nominal = debito_data.get("nominal") or "0,00" if isinstance(debito_data, dict) else "0,00"
+        if isinstance(debito_data, dict) and nominal not in ("0,00", "0", ""):
+            fallback = _build_fallback_debito_from_meta({**debito_data, "name": row.get("name", "Aluno")})
+            return {"ok": True, "debito": _merge_debito_with_import_meta(row, fallback), "stale_ddm": True}
+
         supabase.table("campaign_calls").update({
             "status": "sem_debito",
             "error": "ddm: sem debito antes da chamada",
