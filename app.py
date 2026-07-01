@@ -758,28 +758,6 @@ def manual_formalizar_acordo():
         return jsonify({"ok": True, "message": "Formalização de acordo enfileirada com sucesso"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/api/run-migration")
-def run_migration():
-    try:
-        from mysql_adapter import create_client
-        client = create_client()
-        with client.connect() as conn:
-            with conn.cursor() as cur:
-                try:
-                    cur.execute("ALTER TABLE campaigns ADD COLUMN assistant_id VARCHAR(255) NULL;")
-                    msg = "Coluna assistant_id adicionada com sucesso à tabela campaigns."
-                except Exception as e:
-                    if "Duplicate column name" in str(e):
-                        msg = "A coluna assistant_id já existe na tabela campaigns."
-                    else:
-                        raise e
-        return jsonify({"ok": True, "message": msg})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
 @app.route("/api/debug-import")
 def debug_import():
     try:
