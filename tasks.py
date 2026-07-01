@@ -1080,6 +1080,13 @@ def _has_payment_info(link_boleto: str = "", link_pix: str = "", linha_dig: str 
     return bool(_valid_payment_url(link_boleto) or _valid_payment_url(link_pix) or _valid_linha_digitavel(linha_dig))
 
 
+def _map_sistema_to_cli(sistema: str) -> str:
+    s = str(sistema or "").strip().lower()
+    if s in ("cruzeirodosul", "cruzeiro_do_sul", "cruzeiro"):
+        return "cruzeiro"
+    return s
+
+
 def _ddm_get_payment_links(iddev: str, cli: str = "ddm") -> dict:
     """Busca links de boleto/pix pelo iddev."""
     r = requests.get(
@@ -1167,7 +1174,7 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1) -> dict:
         
     dev = data1[0]
     iddev = dev.get("iddev")
-    sistema = dev.get("sistema") or "ddm"
+    sistema = _map_sistema_to_cli(dev.get("sistema") or "ddm")
     email = dev.get("email") or dev.get("email_aluno") or dev.get("email_responsavel") or ""
     nome = dev.get("nome") or ""
     
