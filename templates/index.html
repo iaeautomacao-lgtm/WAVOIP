@@ -4,46 +4,58 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CallOps — DDM</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <style>
       :root {
-        /* DDM Brand */
-        --brand:        #FF5706;
-        --brand-dark:   #CC4500;
-        --brand-light:  #FF8A4C;
-        --brand-bg:     rgba(255,87,6,.08);
-        --brand-border: rgba(255,87,6,.25);
+        /* DDM Design System Tokens */
+        --brand:          #FF5706;
+        --brand-dark:     #E84B00;
+        --brand-light:    #FF8754;
+        --brand-bg:       #FFF3EC;
+        --brand-border:   #FFE0D1;
 
-        /* Light theme */
-        --bg:       #F9FAFB;
-        --surface:  #FFFFFF;
-        --surface2: #F3F4F6;
-        --surface3: #E5E7EB;
-        --border:   #E5E7EB;
-        --border2:  #D1D5DB;
-        --text:     #1A1A2E;
-        --text2:    #374151;
-        --muted:    #9CA3AF;
-        --muted2:   #6B7280;
+        /* Core Palette */
+        --bg:             #F4F4F6;
+        --surface:        #FFFFFF;
+        --surface2:       #FAF7F4;
+        --surface3:       #E8E8EC;
+        --border:         #E8E8EC;
+        --border2:        #BFBFC1;
+        --text:           #1F1F1F;
+        --text2:          #3D3D3D;
+        --muted:          #939598;
+        --muted2:         #BFBFC1;
 
-        /* Status */
-        --green:        #10B981;
-        --green-bg:     rgba(16,185,129,.1);
-        --green-border: rgba(16,185,129,.3);
-        --red:          #EF4444;
-        --red-bg:       rgba(239,68,68,.08);
-        --red-border:   rgba(239,68,68,.25);
-        --amber:        #F59E0B;
-        --amber-bg:     rgba(245,158,11,.1);
-        --amber-border: rgba(245,158,11,.3);
-        --blue:         #3B82F6;
-        --blue-bg:      rgba(59,130,246,.08);
-        --blue-border:  rgba(59,130,246,.25);
+        /* Status Semantics */
+        --green:          #2BAE66;
+        --green-bg:       rgba(43, 174, 102, 0.08);
+        --green-border:   rgba(43, 174, 102, 0.2);
+        --red:            #D8362F;
+        --red-bg:         rgba(216, 54, 47, 0.08);
+        --red-border:     rgba(216, 54, 47, 0.2);
+        --amber:          #E8A100;
+        --amber-bg:       rgba(232, 161, 0, 0.08);
+        --amber-border:   rgba(232, 161, 0, 0.2);
+        --blue:           #1F7AE0;
+        --blue-bg:        rgba(31, 122, 224, 0.08);
+        --blue-border:    rgba(31, 122, 224, 0.2);
 
-        --radius:  8px;
-        --radius2: 12px;
-        --poppins: 'Poppins', sans-serif;
-        --inter:   'Inter', sans-serif;
+        /* Radius Scale */
+        --radius:         6px;
+        --radius2:        12px;
+        --radius-lg:      20px;
+        --radius-xl:      32px;
+        --radius-pill:    999px;
+
+        /* Shadows */
+        --shadow-sm:      0 1px 2px rgba(20,16,12,.06);
+        --shadow-md:      0 8px 24px rgba(20,16,12,.08);
+        --shadow-lg:      0 24px 60px rgba(20,16,12,.12);
+        --shadow-orange:  0 12px 30px rgba(255,87,6,.28);
+
+        /* Typography */
+        --poppins:        'Poppins', system-ui, sans-serif;
+        --inter:          'Inter', system-ui, -apple-system, sans-serif;
       }
 
       *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -187,9 +199,10 @@
         padding: 16px 20px;
         position: relative;
         overflow: hidden;
-        transition: border-color .15s, transform .15s;
+        box-shadow: var(--shadow-sm);
+        transition: border-color .15s, transform .15s, box-shadow .15s;
       }
-      .kpi:hover { border-color: var(--border2); transform: translateY(-1px); }
+      .kpi:hover { border-color: var(--border2); transform: translateY(-1px); box-shadow: var(--shadow-md); }
       .kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
       .kpi.brand::before { background: var(--brand); }
       .kpi.green::before { background: var(--green); }
@@ -224,9 +237,10 @@
         padding: 16px;
         position: relative;
         overflow: hidden;
-        transition: border-color .15s, transform .15s;
+        box-shadow: var(--shadow-sm);
+        transition: border-color .15s, transform .15s, box-shadow .15s;
       }
-      .line-card:hover { transform: translateY(-2px); }
+      .line-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
       .line-card .top-bar { position: absolute; top: 0; left: 0; right: 0; height: 2px; }
       .line-card.healthy .top-bar { background: var(--green); }
       .line-card.healthy { border-color: rgba(16,185,129,.2); }
@@ -271,35 +285,64 @@
       /* ── BOTÕES ── */
       .btn {
         display: inline-flex; align-items: center; gap: 6px;
-        font-family: var(--inter);
+        font-family: var(--poppins);
         font-size: .75rem;
-        font-weight: 500;
-        padding: 7px 16px;
-        border-radius: var(--radius);
+        font-weight: 600;
+        padding: 8px 18px;
+        border-radius: var(--radius-pill);
         cursor: pointer;
-        transition: all .15s;
+        transition: all .15s ease;
         border: none;
-        letter-spacing: .01em;
+        letter-spacing: .02em;
       }
-      .btn-primary { background: var(--brand); color: #fff; }
-      .btn-primary:hover { background: var(--brand-dark); }
-      .btn-success { background: var(--green); color: #fff; }
-      .btn-success:hover { opacity: .88; }
-      .btn-success:disabled { opacity: .35; cursor: not-allowed; }
+      .btn-primary { 
+        background: var(--brand); 
+        color: #fff; 
+        box-shadow: var(--shadow-orange);
+      }
+      .btn-primary:hover { 
+        background: var(--brand-dark); 
+        transform: translateY(-1px);
+      }
+      .btn-success { 
+        background: var(--green); 
+        color: #fff; 
+      }
+      .btn-success:hover { 
+        opacity: .9; 
+        transform: translateY(-1px);
+      }
+      .btn-success:disabled { 
+        opacity: .35; 
+        cursor: not-allowed; 
+        transform: none;
+      }
       .btn-ghost {
         background: transparent;
-        border: 1px solid var(--border2);
-        color: var(--text2);
+        border: 1.5px solid var(--border2);
+        color: var(--text);
       }
-      .btn-ghost:hover { border-color: var(--brand); color: var(--brand); }
+      .btn-ghost:hover { 
+        border-color: var(--brand); 
+        color: var(--brand); 
+        background: var(--brand-bg);
+      }
       .btn-danger {
         background: transparent;
-        border: 1px solid var(--red-border);
+        border: 1.5px solid var(--red-border);
         color: var(--red);
       }
-      .btn-danger:hover { background: var(--red-bg); }
-      .btn-warn { background: #f59e0b; color: #fff; }
-      .btn-warn:hover { background: #d97706; }
+      .btn-danger:hover { 
+        background: var(--red-bg); 
+      }
+      .btn-warn { 
+        background: var(--amber); 
+        color: #fff; 
+      }
+      .btn-warn:hover { 
+        background: #C28600; 
+        transform: translateY(-1px);
+      }
 
       /* ── TABELAS ── */
       .table-card {
@@ -307,9 +350,10 @@
         border: 1px solid var(--border);
         border-radius: var(--radius2);
         overflow: hidden;
+        box-shadow: var(--shadow-sm);
       }
       table { width: 100%; border-collapse: collapse; }
-      thead tr { border-bottom: 1px solid var(--border); background: #F9FAFB; }
+      thead tr { border-bottom: 1px solid var(--border); background: var(--bg); }
       thead th {
         padding: 10px 16px;
         text-align: left;
