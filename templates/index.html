@@ -2352,8 +2352,8 @@
             importRows = rows;
             renderImportPreview({ rows, total, with_debt: withDebt, validating: false });
             toast(beforeCall
-              ? `✓ ${total.toLocaleString('pt-BR')} linhas carregadas — DDM antes da chamada`
-              : `✓ ${total.toLocaleString('pt-BR')} linhas processadas — ${withDebt.toLocaleString('pt-BR')} com débito`, 'ok');
+              ? `✓ ${total.toLocaleString('pt-BR')} contatos importados — DDM antes da chamada`
+              : `✓ ${total.toLocaleString('pt-BR')} contatos processados — ${withDebt.toLocaleString('pt-BR')} com débito`, 'ok');
             setTimeout(hideProgress, 3000);
             resolve(json);
           } else if (json.status === 'error') {
