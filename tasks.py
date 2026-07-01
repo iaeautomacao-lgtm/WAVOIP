@@ -1080,11 +1080,11 @@ def _has_payment_info(link_boleto: str = "", link_pix: str = "", linha_dig: str 
     return bool(_valid_payment_url(link_boleto) or _valid_payment_url(link_pix) or _valid_linha_digitavel(linha_dig))
 
 
-def _ddm_get_payment_links(iddev: str) -> dict:
+def _ddm_get_payment_links(iddev: str, cli: str = "ddm") -> dict:
     """Busca links de boleto/pix pelo iddev."""
     r = requests.get(
         f"{DDM_BASE}/calc/",
-        params={"tk": DDM_TOKEN, "idDev": iddev, "cli": "ddm"},
+        params={"tk": DDM_TOKEN, "idDev": iddev, "cli": cli},
         timeout=15,
     )
     r.raise_for_status()
@@ -1210,6 +1210,7 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1) -> dict:
         "nome": nome,
         "cpf": cpf,
         "email": email,
+        "sistema": sistema,
     }
 
 
@@ -1366,6 +1367,7 @@ def _enviar_email_acordo(
 
 def _buscar_pagamento_acordo(dados: dict) -> dict:
     debito = dados.get("debito") if isinstance(dados.get("debito"), dict) else {}
+    cli = str(dados.get("sistema") or dados.get("cli") or debito.get("sistema") or "ddm").strip().lower()
     candidatos = [
         dados.get("idcalc"),
         dados.get("iddev"),
@@ -1381,7 +1383,7 @@ def _buscar_pagamento_acordo(dados: dict) -> dict:
             continue
         vistos.add(iddev)
         try:
-            pagamentos = _ddm_get_payment_links(iddev)
+            pagamentos = _ddm_get_payment_links(iddev, cli=cli)
             if _has_payment_info(
                 pagamentos.get("link_boleto", ""),
                 pagamentos.get("link_pix", ""),
@@ -1389,7 +1391,7 @@ def _buscar_pagamento_acordo(dados: dict) -> dict:
             ):
                 return pagamentos
         except Exception as e:
-            logger.warning("[DDM] boleto ainda indisponivel id=%s erro=%s", iddev, e)
+            logger.warning("[DDM] boleto ainda indisponivel id=%s cli=%s erro=%s", iddev, cli, e)
     return {"link_boleto": "", "link_pix": "", "linha_dig": "", "vencimento": ""}
 
 
