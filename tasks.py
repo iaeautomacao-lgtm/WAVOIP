@@ -1148,42 +1148,67 @@ def _ddm_get_payment_links(iddev: str) -> dict:
     }
 
 
-def _ddm_formalizar_acordo(cpf: str) -> dict:
-    """Formaliza acordo na DDM"""
-    if not DDM_AGREEMENT_TOKEN:
-        raise RuntimeError("DDM_AGREEMENT_TOKEN nao configurado")
+def _ddm_formalizar_acordo(cpf: str, parc: int = 1) -> dict:
+    """Formaliza acordo na DDM usando o novo fluxo do calc/efetiva_acordo.php"""
+    token = DDM_TOKEN or DDM_AGREEMENT_TOKEN
+    if not token:
+        raise RuntimeError("DDM_TOKEN ou DDM_AGREEMENT_TOKEN nao configurado")
 
     cpf = _norm_cpf(cpf)
-    url = "https://www.ddmacordos.com/ws_ddm/ws/CalculaDebitos.php"
-    r = requests.get(url, params={
-        "tk": DDM_AGREEMENT_TOKEN,
-        "OpcaoAcordo": "1",
-        "TipoAcordo": "1",
-        "Doc": cpf,
+    
+    # 1. Localiza o iddev e o sistema pelo CPF
+    url_loc = "https://ddmacordos.com/calc/localiza_dev.php"
+    r1 = requests.get(url_loc, params={"tk": token, "cpf": cpf}, timeout=15)
+    r1.raise_for_status()
+    data1 = r1.json()
+    
+    if not isinstance(data1, list) or len(data1) == 0:
+        raise RuntimeError(f"Nenhum devedor encontrado na DDM para o CPF {cpf}")
+        
+    dev = data1[0]
+    iddev = dev.get("iddev")
+    sistema = dev.get("sistema") or "ddm"
+    email = dev.get("email") or dev.get("email_aluno") or dev.get("email_responsavel") or ""
+    nome = dev.get("nome") or ""
+    
+    if not iddev:
+        raise RuntimeError(f"Devedor encontrado mas sem iddev para o CPF {cpf}")
+
+    # 2. Efetiva o acordo
+    url_efe = "https://ddmacordos.com/calc/efetiva_acordo.php"
+    r2 = requests.get(url_efe, params={
+        "tk": token,
+        "idDev": iddev,
+        "cli": sistema,
+        "Parc": str(parc)
     }, timeout=30)
-    r.raise_for_status()
-    data = r.json()
-
-    link_boleto = _ddm_find_first(data, {"linkboleto", "boletourl", "urlboleto"})
-    link_pix    = _ddm_find_first(data, {"linkpix", "pixurl", "urlpix", "qrcodepix", "qrcode"})
-    linha_dig   = _valid_linha_digitavel(_ddm_find_first(data, {"linhaboleto", "linhadigitavel", "linhadig", "digitalline", "digitableline"}))
-    vencimento  = _ddm_find_first(data, {"vencimento", "datavencimento", "duedate"})
-    nr_acordo   = _ddm_find_first(data, {"nracordo", "numeroacordo", "acordo"})
-    idcalc      = _ddm_find_first(data, {"idcalc", "calculoid"})
-    nome        = _ddm_find_first(data, {"nomedev", "nomedevedor"})
-    documento   = _ddm_find_first(data, {"documento", "cpf"})
-    email       = _ddm_find_first(data, {"email"})
-
+    r2.raise_for_status()
+    
+    # Se o retorno da efetivação for JSON, extrai os links.
+    # Caso contrário, o Celery fará a consulta no /calc/ posteriormente.
+    data2 = {}
+    try:
+        if r2.text.strip():
+            data2 = r2.json()
+    except Exception:
+        pass
+        
+    link_boleto = _ddm_find_first(data2, {"linkboleto", "boletourl", "urlboleto"})
+    link_pix    = _ddm_find_first(data2, {"linkpix", "pixurl", "urlpix", "qrcodepix", "qrcode"})
+    linha_dig   = _valid_linha_digitavel(_ddm_find_first(data2, {"linhaboleto", "linhadigitavel", "linhadig", "digitalline", "digitableline"}))
+    vencimento  = _ddm_find_first(data2, {"vencimento", "datavencto", "vencto", "due_date"})
+    nr_acordo   = _ddm_find_first(data2, {"nracordo", "nr_acordo", "acordo", "agreement_number"})
+    
     return {
-        "raw": data,
+        "raw": data2,
         "link_boleto": _valid_payment_url(link_boleto),
         "link_pix": _valid_payment_url(link_pix),
         "linha_dig": linha_dig,
         "vencimento": vencimento,
         "nr_acordo": nr_acordo,
-        "idcalc": idcalc,
+        "idcalc": iddev,
         "nome": nome,
-        "cpf": documento,
+        "cpf": cpf,
         "email": email,
     }
 
@@ -1485,7 +1510,13 @@ def formalizar_acordo(self, dados: dict):
 
         if cpf:
             try:
-                acordo = _ddm_formalizar_acordo(cpf)
+                forma_pagamento = dados.get("forma_pagamento", "À vista")
+                import re
+                parc = 1
+                digits = re.findall(r"\d+", forma_pagamento)
+                if digits:
+                    parc = int(digits[0])
+                acordo = _ddm_formalizar_acordo(cpf, parc=parc)
                 link_boleto = acordo.get("link_boleto") or ""
                 link_pix    = acordo.get("link_pix") or ""
                 linha_dig   = acordo.get("linha_dig") or ""
