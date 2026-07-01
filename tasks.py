@@ -1174,7 +1174,7 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1) -> dict:
         
     dev = data1[0]
     iddev = dev.get("iddev")
-    sistema = _map_sistema_to_cli(dev.get("sistema") or "ddm")
+    sistema = "ddm"
     email = dev.get("email") or dev.get("email_aluno") or dev.get("email_responsavel") or ""
     nome = dev.get("nome") or ""
     
@@ -1374,7 +1374,7 @@ def _enviar_email_acordo(
 
 def _buscar_pagamento_acordo(dados: dict) -> dict:
     debito = dados.get("debito") if isinstance(dados.get("debito"), dict) else {}
-    cli = str(dados.get("sistema") or dados.get("cli") or debito.get("sistema") or "ddm").strip().lower()
+    cli = "ddm"
     candidatos = [
         dados.get("idcalc"),
         dados.get("iddev"),
