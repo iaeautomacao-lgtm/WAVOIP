@@ -31,7 +31,19 @@ WAVOIP_PASSWORD   = env("WAVOIP_PASSWORD")
 WAVOIP_BASE       = "https://api.wavoip.com"
 VAPI_API_KEY      = env("VAPI_API_KEY")
 VAPI_ASSISTANT_ID = env("VAPI_ASSISTANT_ID")
+VAPI_ASSISTANT_ID_CRUZEIRO = env("VAPI_ASSISTANT_ID_CRUZEIRO", VAPI_ASSISTANT_ID)
+VAPI_ASSISTANT_ID_DDM = env("VAPI_ASSISTANT_ID_DDM", VAPI_ASSISTANT_ID)
 VAPI_BASE         = "https://api.vapi.ai"
+
+
+def _get_assistant_id(debito: dict) -> str:
+    if not isinstance(debito, dict):
+        return VAPI_ASSISTANT_ID
+    inst = str(debito.get("instituicao", "")).lower()
+    if "cruzeiro" in inst:
+        return VAPI_ASSISTANT_ID_CRUZEIRO
+    # Se não for Cruzeiro, usa o do Veiga / DDM
+    return VAPI_ASSISTANT_ID_DDM
 REDIS_URL         = env("REDIS_URL", "redis://localhost:6379/0")
 LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "2")))
 LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
@@ -330,7 +342,7 @@ def vapi_call(phone: str, name: str = "", cpf: str = "", debito: dict = None) ->
 
         payload = {
             "phoneNumberId": phone_id,
-            "assistantId":   VAPI_ASSISTANT_ID,
+            "assistantId":   _get_assistant_id(debito),
             "customer":      {"number": phone_e164, "name": name}
         }
 
