@@ -720,6 +720,32 @@ def resend_acordo_email(acordo_id):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/acordos/formalizar", methods=["POST"])
+def manual_formalizar_acordo():
+    try:
+        body = request.json or {}
+        cpf = body.get("cpf")
+        if not cpf:
+            return jsonify({"ok": False, "error": "cpf obrigatório"}), 400
+            
+        dados = {
+            "cpf": cpf,
+            "nome": body.get("nome") or "Cliente",
+            "email": body.get("email") or "",
+            "instituicao": body.get("instituicao") or "",
+            "valor": body.get("valor") or "",
+            "forma_pagamento": body.get("forma_pagamento") or "À vista",
+            "campaign_call_id": body.get("campaign_call_id"),
+            "vapi_call_id": body.get("vapi_call_id") or "manual",
+        }
+        
+        # Enfileira no Celery para processamento síncrono/assíncrono
+        formalizar_acordo.delay(dados)
+        return jsonify({"ok": True, "message": "Formalização de acordo enfileirada com sucesso"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/call", methods=["POST"])
 def make_call():
     try:
