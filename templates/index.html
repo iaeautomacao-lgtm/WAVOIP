@@ -941,7 +941,9 @@
 
         <div class="import-actions" id="import-actions" style="display:none">
           <input class="campaign-name-input" type="text" id="campaign-name-input" placeholder="Nome da campanha..." />
-          <input class="campaign-name-input" type="text" id="campaign-assistant-input" placeholder="ID do Assistente Vapi (Opcional)..." style="max-width: 320px;" />
+          <select class="mini-select" id="campaign-assistant-select" style="max-width: 280px;">
+            <option value="">Assistente Dinâmico (Recomendado)...</option>
+          </select>
           <select class="mini-select" id="campaign-group-select" onchange="applyCampaignGroupSelection()">
             <option value="">Grupo de SIPs...</option>
           </select>
@@ -2037,7 +2039,7 @@
     await ensureLinesLoaded();
     const line_tokens = getSelectedCampaignLines();
     const sip_group_id = document.getElementById('campaign-group-select')?.value || '';
-    const assistant_id = document.getElementById('campaign-assistant-input')?.value.trim() || '';
+    const assistant_id = document.getElementById('campaign-assistant-select')?.value || '';
     if (!line_tokens.length) {
       toast('Selecione ao menos uma SIP para esta campanha.', 'err');
       return;
@@ -2114,7 +2116,29 @@
   const fileInput  = document.getElementById('file-input');
   const importZone = document.getElementById('import-zone');
 
+  async function loadVapiAssistants() {
+    try {
+      const res = await fetch(`${API}/api/vapi/assistants`);
+      const json = await res.json();
+      if (json.ok && json.assistants) {
+        const select = document.getElementById('campaign-assistant-select');
+        if (select) {
+          select.innerHTML = '<option value="">Assistente Dinâmico (Recomendado)...</option>';
+          json.assistants.forEach(a => {
+            const opt = document.createElement('option');
+            opt.value = a.id;
+            opt.textContent = a.name;
+            select.appendChild(opt);
+          });
+        }
+      }
+    } catch(e) {
+      console.error('Erro ao carregar assistentes Vapi:', e);
+    }
+  }
+
   function restoreImportState() {
+    loadVapiAssistants();
     try {
       const saved = sessionStorage.getItem('import_job_id');
       if (!saved) return;

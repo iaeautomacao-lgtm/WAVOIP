@@ -758,6 +758,26 @@ def manual_formalizar_acordo():
         return jsonify({"ok": True, "message": "Formalização de acordo enfileirada com sucesso"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/vapi/assistants", methods=["GET"])
+def get_vapi_assistants():
+    try:
+        r = requests.get(f"{VAPI_BASE}/assistant", headers={
+            "Authorization": f"Bearer {VAPI_API_KEY}"
+        }, timeout=15)
+        r.raise_for_status()
+        assistants = []
+        for a in r.json():
+            assistants.append({
+                "id": a.get("id"),
+                "name": a.get("name") or "Sem nome"
+            })
+        return jsonify({"ok": True, "assistants": assistants})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/debug-import")
 def debug_import():
     try:
