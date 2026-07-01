@@ -422,6 +422,7 @@ def vapi_call(
                     "ParcelasBoleto":      debito.get("ParcelasBoleto", "0"),
                     "PgtoParceladoCartao": debito.get("PgtoParceladoCartao", {}),
                     "PrimeiroVencto":      debito.get("PrimeiroVencto", "em dois dias"),
+                    "QuantidadeMensalidades": debito.get("numero_debitos", "1"),
                 }
             }
 

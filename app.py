@@ -345,6 +345,7 @@ def vapi_call(phone: str, name: str = "", cpf: str = "", debito: dict = None) ->
                     "ParcelasBoleto":      debito.get("ParcelasBoleto", "0"),
                     "PgtoParceladoCartao": debito.get("PgtoParceladoCartao", {}),
                     "PrimeiroVencto":      debito.get("PrimeiroVencto", "em dois dias"),
+                    "QuantidadeMensalidades": debito.get("numero_debitos", "1"),
                 }
             }
 
