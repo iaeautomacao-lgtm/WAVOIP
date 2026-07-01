@@ -1247,6 +1247,21 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1, debito: dict = None) -> dict
 
     cpf = _norm_cpf(cpf)
     
+    # MOCK MODE / MODO HOMOLOGAÇÃO:
+    # Se o CPF começar com '119' (caso clássico de testes),
+    # simulamos o retorno do acordo DDM com links válidos de boletos para testar o envio de e-mails!
+    if str(cpf).startswith("119"):
+        return {
+            "link_boleto": "https://ddmacordos.com/boletos/itau_DDM.php?nr_acordo=16668235&pcl=01&dwb=S&cod=bol",
+            "link_pix": "https://ddmpay.ddmacordos.com/pix/pixddmpay.php?ac=16668235&pcl=01&tk=c80a4488ae4579c679d82d81894bc620",
+            "linha_dig": "34191.09065 82350.150387 72039.040000 8 14950000215395",
+            "vencimento": "02/07/2026",
+            "nr_acordo": "16668235",
+            "idcalc": "69080",
+            "email": "caiovicenteti@gmail.com",
+            "nome": "Caio (Teste)"
+        }
+    
     # 1. Localiza o iddev e o sistema pelo CPF
     url_loc = "https://ddmacordos.com/calc/localiza_dev.php"
     r1 = requests.get(url_loc, params={"tk": token, "cpf": cpf}, timeout=15)
