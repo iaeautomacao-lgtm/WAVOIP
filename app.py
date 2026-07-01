@@ -746,6 +746,15 @@ def manual_formalizar_acordo():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/debug-import")
+def debug_import():
+    try:
+        jobs = supabase.table("import_jobs").select("*").order("created_at", desc=True).limit(1).execute().data
+        return jsonify(jobs)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/call", methods=["POST"])
 def make_call():
     try:
