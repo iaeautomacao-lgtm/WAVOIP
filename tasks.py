@@ -1217,7 +1217,29 @@ def _ddm_get_payment_links(iddev: str, cli: str = "ddm") -> dict:
     }
 
 
-def _ddm_formalizar_acordo(cpf: str, parc: int = 1) -> dict:
+def _get_discount_percentage(debito: dict, parc: int) -> str:
+    if not isinstance(debito, dict):
+        return "0"
+    try:
+        if parc <= 1:
+            pct = debito.get("PgtoAvista", {}).get("PercDesconto")
+            if pct:
+                return str(int(float(str(pct).replace(",", "."))))
+            return "0"
+        
+        lista_parcelas = debito.get("ListaParcelas", {}) or {}
+        parcelas = lista_parcelas.get("Parcelas") or []
+        for p in parcelas:
+            if isinstance(p, dict) and int(p.get("Parcelas", 0)) == parc:
+                pct = p.get("PercDescontoParcela") or p.get("PercDesconto")
+                if pct:
+                    return str(int(float(str(pct).replace(",", "."))))
+    except Exception:
+        pass
+    return "0"
+
+
+def _ddm_formalizar_acordo(cpf: str, parc: int = 1, debito: dict = None) -> dict:
     """Formaliza acordo na DDM usando o novo fluxo do calc/efetiva_acordo.php"""
     token = DDM_TOKEN or DDM_AGREEMENT_TOKEN
     if not token:
@@ -1236,21 +1258,34 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1) -> dict:
         
     dev = data1[0]
     iddev = dev.get("iddev")
+    
+    # Mapeia dinamicamente o cli com base no sistema retornado pela DDM
+    sistema_raw = dev.get("sistema", "").strip().lower()
     sistema = "ddm"
+    if sistema_raw == "cruzeirodosul":
+        sistema = "cruzeiro"
+        
     email = dev.get("email") or dev.get("email_aluno") or dev.get("email_responsavel") or ""
     nome = dev.get("nome") or ""
     
     if not iddev:
         raise RuntimeError(f"Devedor encontrado mas sem iddev para o CPF {cpf}")
 
+    # Determina o percentual de desconto dinamicamente com base nas opções consultadas
+    desconto = _get_discount_percentage(debito, parc)
+
     # 2. Efetiva o acordo
     url_efe = "https://ddmacordos.com/calc/efetiva_acordo.php"
-    r2 = requests.get(url_efe, params={
+    params = {
         "tk": token,
         "idDev": iddev,
         "cli": sistema,
         "Parc": str(parc)
-    }, timeout=30)
+    }
+    if desconto and desconto != "0":
+        params["Desconto"] = desconto
+
+    r2 = requests.get(url_efe, params=params, timeout=30)
     r2.raise_for_status()
     
     # Se o retorno da efetivação for JSON, extrai os links.
@@ -1587,7 +1622,7 @@ def formalizar_acordo(self, dados: dict):
                 digits = re.findall(r"\d+", forma_pagamento)
                 if digits:
                     parc = int(digits[0])
-                acordo = _ddm_formalizar_acordo(cpf, parc=parc)
+                acordo = _ddm_formalizar_acordo(cpf, parc=parc, debito=debito)
                 link_boleto = acordo.get("link_boleto") or ""
                 link_pix    = acordo.get("link_pix") or ""
                 linha_dig   = acordo.get("linha_dig") or ""
