@@ -1450,7 +1450,7 @@ def _enviar_email_acordo(
     msg["To"]      = destinatario
     msg.attach(MIMEText(html, "html"))
 
-    if SMTP_FORCE_IPV4 and SMTP_SECURITY != "ssl":
+    if SMTP_FORCE_IPV4:
         class SMTPIPv4(smtplib.SMTP):
             def _get_socket(self, host, port, timeout):
                 last_error = None
@@ -1469,11 +1469,33 @@ def _enviar_email_acordo(
                     raise last_error
                 raise OSError(f"Nenhum endereco IPv4 encontrado para {host}")
 
-        srv = SMTPIPv4(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
-    elif SMTP_SECURITY == "ssl":
-        srv = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
+        class SMTP_SSLIPv4(smtplib.SMTP_SSL):
+            def _get_socket(self, host, port, timeout):
+                last_error = None
+                for family, socktype, proto, _, sockaddr in socket.getaddrinfo(
+                    host, port, socket.AF_INET, socket.SOCK_STREAM
+                ):
+                    sock = socket.socket(family, socktype, proto)
+                    try:
+                        sock.settimeout(timeout)
+                        sock.connect(sockaddr)
+                        return sock
+                    except OSError as exc:
+                        last_error = exc
+                        sock.close()
+                if last_error:
+                    raise last_error
+                raise OSError(f"Nenhum endereco IPv4 encontrado para {host}")
+
+        if SMTP_SECURITY == "ssl":
+            srv = SMTP_SSLIPv4(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
+        else:
+            srv = SMTPIPv4(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
     else:
-        srv = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
+        if SMTP_SECURITY == "ssl":
+            srv = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
+        else:
+            srv = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
 
     with srv:
         srv.ehlo()
