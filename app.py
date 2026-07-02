@@ -807,64 +807,6 @@ def debug_import():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-@app.route("/api/debug-smtp")
-def debug_smtp():
-    steps = []
-    try:
-        import smtplib
-        import socket
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-        
-        steps.append("Reading environment variables...")
-        smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        smtp_user = os.getenv("SMTP_USER")
-        smtp_pass = os.getenv("SMTP_PASSWORD")
-        smtp_from = os.getenv("SMTP_FROM", "atendimento@ddm.adv.br")
-        smtp_security = os.getenv("SMTP_SECURITY", "ssl").lower()
-        
-        steps.append(f"Host: {smtp_host}, Port: {smtp_port}, User: {smtp_user}, From: {smtp_from}, Security: {smtp_security}")
-        
-        msg = MIMEMultipart()
-        msg['From'] = smtp_from
-        msg['To'] = "caiovicenteti@gmail.com"
-        msg['Subject'] = "Teste SMTP de Producao - WAVOIP"
-        msg.attach(MIMEText("Teste SMTP direto da producao Railway", 'plain', 'utf-8'))
-        
-        host_ipv4 = smtp_host
-        try:
-            steps.append("Resolving host to IPv4...")
-            host_ipv4 = socket.gethostbyname(smtp_host)
-            steps.append(f"Resolved to: {host_ipv4}")
-        except Exception as e:
-            steps.append(f"Resolve failed: {e}")
-            
-        steps.append("Connecting to SMTP server...")
-        if smtp_security == "ssl":
-            server = smtplib.SMTP_SSL(host_ipv4, smtp_port, timeout=15)
-        else:
-            server = smtplib.SMTP(host_ipv4, smtp_port, timeout=15)
-            
-        with server:
-            steps.append("Sending EHLO...")
-            server.ehlo()
-            if smtp_security == "starttls":
-                steps.append("Starting TLS...")
-                server.starttls()
-                server.ehlo()
-            steps.append("Logging in...")
-            server.login(smtp_user, smtp_pass)
-            steps.append("Sending email...")
-            server.sendmail(smtp_from, ["caiovicenteti@gmail.com"], msg.as_string())
-            
-        steps.append("Success!")
-        return jsonify({"ok": True, "steps": steps})
-    except Exception as e:
-        steps.append(f"Error: {e}")
-        return jsonify({"ok": False, "error": str(e), "steps": steps}), 500
-
-
 
 @app.route("/api/check-calls-by-cpf/<cpf>")
 def check_calls_by_cpf(cpf):
