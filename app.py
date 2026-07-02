@@ -835,6 +835,54 @@ def check_calls_by_cpf(cpf):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/debug-smtp-direct-send")
+def debug_smtp_direct_send():
+    import time
+    try:
+        import smtplib
+        import socket
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        
+        smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_user = os.getenv("SMTP_USER")
+        smtp_pass = os.getenv("SMTP_PASSWORD")
+        smtp_from = os.getenv("SMTP_FROM", "atendimento@ddm.adv.br")
+        smtp_security = os.getenv("SMTP_SECURITY", "ssl").lower()
+        debug_recipient = os.getenv("DEBUG_EMAIL_RECIPIENT", "caiovicenteti@gmail.com")
+        
+        unique_id = int(time.time())
+        msg = MIMEMultipart()
+        msg['From'] = smtp_from
+        msg['To'] = debug_recipient
+        msg['Subject'] = f"[TEST LIVE UNIQUE {unique_id}] Acordo com Valor R$ 2598,93"
+        msg.attach(MIMEText(f"Teste de envio direto com valor R$ 2598,93. Timestamp: {unique_id}", 'plain', 'utf-8'))
+        
+        host_ipv4 = smtp_host
+        try:
+            host_ipv4 = socket.gethostbyname(smtp_host)
+        except Exception:
+            pass
+            
+        if smtp_security == "ssl":
+            server = smtplib.SMTP_SSL(host_ipv4, smtp_port, timeout=15)
+        else:
+            server = smtplib.SMTP(host_ipv4, smtp_port, timeout=15)
+            
+        with server:
+            server.ehlo()
+            if smtp_security == "starttls":
+                server.starttls()
+                server.ehlo()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_from, [debug_recipient], msg.as_string())
+            
+        return jsonify({"ok": True, "message": "Email enviado!", "unique_id": unique_id, "to": debug_recipient})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/call", methods=["POST"])
 def make_call():
     try:
