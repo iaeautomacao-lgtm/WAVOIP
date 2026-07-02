@@ -430,8 +430,22 @@ def _extrair_forma_pagamento(transcript: str) -> str:
 def _extrair_valor(summary: str) -> str:
     if not summary:
         return ""
-    match = re.search(r'R\$\s*([\d.,]+)', summary)
-    return match.group(1) if match else ""
+    # Tenta achar R$ 1.234,56 ou BRL 1.234,56
+    match = re.search(r'(?:R\$\s*|BRL\s*)([\d.,]+)', summary, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # Tenta achar 1.234,56 BRL ou 1.234,56 reais
+    match = re.search(r'([\d.,]+)\s*(?:BRL|R\$|reais)', summary, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # Procura por qualquer número decimal formatado com vírgula ou ponto (e.g. 2.598,93)
+    match = re.search(r'\b([\d]{1,3}(?:\.[\d]{3})*,[\d]{2}|[\d]{1,3}(?:\,[\d]{3})*\.[\d]{2})\b', summary)
+    if match:
+        return match.group(1).strip()
+        
+    return ""
 
 
 # ── ROTAS ─────────────────────────────────────────────────────
@@ -1370,7 +1384,7 @@ def vapi_webhook():
                     "instituicao":      debito.get("instituicao", ""),
                     "idcalc":           debito.get("idcalc", ""),
                     "debito":           debito,
-                    "valor":            _extrair_valor(summary),
+                    "valor":            _extrair_valor(summary) or _extrair_valor(transcript),
                     "forma_pagamento":  _extrair_forma_pagamento(transcript),
                     "vapi_call_id":     call_id,
                     "campaign_call_id": row["id"],
