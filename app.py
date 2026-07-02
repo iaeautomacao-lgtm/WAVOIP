@@ -737,6 +737,9 @@ def resend_acordo_email(acordo_id):
             "idcalc":          acordo.get("vapi_call_id"), # fallback
             "vapi_call_id":    acordo.get("vapi_call_id"),
             "campaign_call_id": acordo.get("campaign_call_id"),
+            "link_boleto":     acordo.get("link_boleto"),
+            "link_pix":        acordo.get("link_pix"),
+            "linha_dig":       acordo.get("linha_dig"),
         }
 
         res = verificar_boleto_acordo(dados, tentativa=1)

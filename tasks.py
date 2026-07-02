@@ -1552,11 +1552,17 @@ def _agendar_verificacao_boleto(dados: dict, tentativa: int = 1):
 
 @celery.task(name="tasks.verificar_boleto_acordo")
 def verificar_boleto_acordo(dados: dict, tentativa: int = 1):
-    pagamentos = _buscar_pagamento_acordo(dados)
-    link_boleto = pagamentos.get("link_boleto", "")
-    link_pix    = pagamentos.get("link_pix", "")
-    linha_dig   = pagamentos.get("linha_dig", "")
-    vencimento  = pagamentos.get("vencimento", "") or dados.get("vencimento", "")
+    link_boleto = dados.get("link_boleto", "")
+    link_pix    = dados.get("link_pix", "")
+    linha_dig   = dados.get("linha_dig", "")
+    vencimento  = dados.get("vencimento", "")
+
+    if not _has_payment_info(link_boleto, link_pix, linha_dig):
+        pagamentos = _buscar_pagamento_acordo(dados)
+        link_boleto = pagamentos.get("link_boleto", "")
+        link_pix    = pagamentos.get("link_pix", "")
+        linha_dig   = pagamentos.get("linha_dig", "")
+        vencimento  = pagamentos.get("vencimento", "") or vencimento
 
     if not _has_payment_info(link_boleto, link_pix, linha_dig):
         if tentativa < BOLETO_RETRY_MAX:
