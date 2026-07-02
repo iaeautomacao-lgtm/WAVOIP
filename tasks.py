@@ -533,10 +533,12 @@ def _first_phone_hires(row, cols: list) -> str:
 def _all_phones_ddm(row, cols: list) -> list:
     """Extrai telefones para planilha DDM ou qualquer coluna que pareça DDM."""
     phones = []
+    cols_lower = {c.lower(): c for c in cols}
     for i in range(1, 11):
-        for key in (f"fone{i}", f"telefone{i}", f"tel{i}", f"phone{i}"):
-            if key in [c.lower() for c in cols]:
-                val = _normalize_phone(row.get(key, ""))
+        for key_cand in (f"fone{i}", f"telefone{i}", f"tel{i}", f"phone{i}"):
+            orig_key = cols_lower.get(key_cand)
+            if orig_key:
+                val = _normalize_phone(row.get(orig_key, ""))
                 if val and val != "nan" and val not in phones:
                     phones.append(val)
     return phones
