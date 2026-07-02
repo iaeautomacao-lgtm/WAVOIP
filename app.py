@@ -1428,7 +1428,34 @@ def vapi_webhook():
 def debug_check_import_error():
     try:
         jobs = supabase.table("import_jobs").select("*").order("created_at", desc=True).limit(5).execute().data
-        return jsonify({"ok": True, "jobs": jobs})
+        
+        # Run first_col analysis on the columns of the last job
+        analysis = {}
+        if jobs:
+            last_job = jobs[0]
+            err_msg = last_job.get("error") or ""
+            if "Colunas detectadas:" in err_msg:
+                # Extract the columns list string
+                cols_str = err_msg.split("Colunas detectadas:")[1].strip()
+                import ast
+                cols = ast.literal_eval(cols_str)
+                cols_lower = [c.lower() for c in cols]
+                
+                def first_col(candidates):
+                    res = []
+                    for cand in candidates:
+                        for c, cl in zip(cols, cols_lower):
+                            if cand in cl:
+                                res.append((cand, cl, c))
+                    return res
+                
+                analysis = {
+                    "detected_cols": cols,
+                    "cpf_matches": first_col(["cpf", "cpfcgc"]),
+                    "nome_matches": first_col(["nome", "name"])
+                }
+        
+        return jsonify({"ok": True, "jobs": jobs, "analysis": analysis})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
