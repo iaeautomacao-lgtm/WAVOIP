@@ -782,12 +782,14 @@ def get_vapi_assistants():
 def debug_import():
     try:
         acordos = supabase.table("acordos_formalizados").select("*").order("created_at", desc=True).limit(5).execute().data
-        calls = supabase.table("campaign_calls").select("*").order("updated_at", desc=True).limit(5).execute().data
+        calls = supabase.table("campaign_calls").select("*").order("updated_at", desc=True).limit(20).execute().data
         jobs = supabase.table("import_jobs").select("*").order("created_at", desc=True).limit(5).execute().data
+        count_calls = len(supabase.table("campaign_calls").select("id").execute().data or [])
         return jsonify({
             "acordos": acordos,
             "calls": calls,
-            "jobs": jobs
+            "jobs": jobs,
+            "count_calls": count_calls
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
