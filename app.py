@@ -1609,6 +1609,7 @@ def import_status(job_id):
             "with_debt":  job["with_debt"],
             "session_id": job["id"] if job["status"] == "done" else None,
             "result":     result_preview,
+            "error":      job.get("error"),
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
