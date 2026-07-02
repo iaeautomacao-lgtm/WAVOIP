@@ -795,6 +795,17 @@ def debug_import():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/check-calls-by-cpf/<cpf>")
+def check_calls_by_cpf(cpf):
+    try:
+        from mysql_adapter import create_client
+        db = create_client()
+        res = db.table("campaign_calls").select("*").eq("cpf", cpf).execute()
+        return jsonify({"ok": True, "data": res.data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/call", methods=["POST"])
 def make_call():
     try:
