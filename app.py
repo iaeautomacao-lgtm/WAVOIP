@@ -1211,6 +1211,45 @@ def vapi_webhook():
 
         logging.warning(f"[WEBHOOK] msg_type={msg_type} call_id={call_id}")
 
+        # ── tool-calls ────────────────────────────────────────────────
+        if msg_type == "tool-calls":
+            tool_calls = msg.get("toolCalls") or body.get("toolCalls") or []
+            results = []
+            for tc in tool_calls:
+                tc_id = tc.get("id")
+                func  = tc.get("function") or {}
+                name  = func.get("name")
+                args  = func.get("arguments") or {}
+                
+                logging.warning(f"[WEBHOOK] tool-call name={name} args={args}")
+                
+                if name == "capturar_cpf":
+                    cpf_prefixo3 = str(args.get("cpf_prefixo3") or "").strip()
+                    cpf_esperado = str(args.get("cpf_esperado") or "").strip()
+                    
+                    # Limpa caracteres não numéricos
+                    clean_prefix = re.sub(r"\D", "", cpf_prefixo3)
+                    clean_expected = re.sub(r"\D", "", cpf_esperado)
+                    expected_prefix3 = clean_expected[:3] if len(clean_expected) >= 3 else ""
+                    
+                    logging.warning(f"[WEBHOOK] capturar_cpf clean_prefix={clean_prefix} expected_prefix3={expected_prefix3}")
+                    
+                    if clean_prefix and expected_prefix3 and clean_prefix == expected_prefix3:
+                        res_val = {"cpf_prefixo3": clean_prefix}
+                    else:
+                        res_val = {"cpf_prefixo3": "invalid"}
+                        
+                    results.append({
+                        "toolCallId": tc_id,
+                        "result": res_val
+                    })
+                else:
+                    results.append({
+                        "toolCallId": tc_id,
+                        "result": {"ok": True}
+                    })
+            return jsonify({"results": results}), 200
+
         # ── status-update ─────────────────────────────────────────────
         if msg_type == "status-update":
             if msg.get("status") == "in-progress" and call_id:
