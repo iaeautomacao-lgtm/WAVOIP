@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 DDM_TOKEN    = os.getenv("DDM_TOKEN", "").strip()
+DDM_TOKEN_BUSCA = os.getenv("DDM_TOKEN_BUSCA", "2e30b68c0feda298f9d6d40ab36c1a09").strip()
 DDM_TIMEOUT_SECONDS = float(os.getenv("DDM_TIMEOUT_SECONDS", "30"))
 DDM_BASE_URL = "https://www.ddmacordos.com"
 DDM_CALCULA  = f"{DDM_BASE_URL}/ws_ddm/ws/CalculaDebitos.php"
@@ -117,8 +118,9 @@ def _consolidate_calc_response(data_list: list) -> dict:
 
 
 def consultar_debitos_cpf(cpf: str) -> Dict:
-    if not DDM_TOKEN:
-        raise DDMHardError("DDM_TOKEN nao configurado")
+    token_busca = DDM_TOKEN_BUSCA or DDM_TOKEN
+    if not token_busca:
+        raise DDMHardError("DDM_TOKEN_BUSCA nao configurado")
 
     cpf_norm = re.sub(r"\D", "", str(cpf))
     cpf_tail = cpf_norm[-4:]
@@ -128,7 +130,7 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
         # 1. Localiza iddev pelo CPF
         r1 = requests.get(
             "https://ddmacordos.com/calc/localiza_dev.php",
-            params={"tk": DDM_TOKEN, "cpf": cpf_norm},
+            params={"tk": token_busca, "cpf": cpf_norm},
             timeout=DDM_TIMEOUT_SECONDS,
         )
         r1.raise_for_status()
@@ -153,7 +155,7 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
         logger.warning("[DDM_DEBUG] CPF_FINAL=%s consultando calc/ iddev=%s cli=%s", cpf_tail, iddev, cli)
         r2 = requests.get(
             "https://ddmacordos.com/calc/",
-            params={"tk": DDM_TOKEN, "idDev": iddev, "cli": cli},
+            params={"tk": token_busca, "idDev": iddev, "cli": cli},
             timeout=DDM_TIMEOUT_SECONDS,
         )
         r2.raise_for_status()

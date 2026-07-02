@@ -58,6 +58,7 @@ DEBUG_EMAIL_RECIPIENT = env("DEBUG_EMAIL_RECIPIENT", "")
 
 # ── DDM Acordos ───────────────────────────────────────────────
 DDM_TOKEN    = env("DDM_TOKEN")
+DDM_TOKEN_BUSCA = env("DDM_TOKEN_BUSCA", "2e30b68c0feda298f9d6d40ab36c1a09")
 DDM_AGREEMENT_TOKEN = env("DDM_AGREEMENT_TOKEN", "")
 DDM_BASE     = "https://ddmacordos.com"
 DDM_TIMEOUT_SECONDS = int(env("DDM_TIMEOUT_SECONDS", "20"))
@@ -1261,9 +1262,10 @@ def _get_discount_percentage(debito: dict, parc: int) -> str:
 
 def _ddm_formalizar_acordo(cpf: str, parc: int = 1, debito: dict = None) -> dict:
     """Formaliza acordo na DDM usando o novo fluxo do calc/efetiva_acordo.php"""
-    token = DDM_TOKEN or DDM_AGREEMENT_TOKEN
-    if not token:
-        raise RuntimeError("DDM_TOKEN ou DDM_AGREEMENT_TOKEN nao configurado")
+    token_busca = DDM_TOKEN_BUSCA or DDM_TOKEN
+    token_calcula = DDM_TOKEN or DDM_AGREEMENT_TOKEN
+    if not token_busca or not token_calcula:
+        raise RuntimeError("DDM_TOKEN_BUSCA ou DDM_TOKEN nao configurado")
 
     cpf = _norm_cpf(cpf)
     
@@ -1282,9 +1284,9 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1, debito: dict = None) -> dict
             "nome": "Caio (Teste)"
         }
     
-    # 1. Localiza o iddev e o sistema pelo CPF
+    # 1. Localiza o iddev e o sistema pelo CPF usando o token_busca
     url_loc = "https://ddmacordos.com/calc/localiza_dev.php"
-    r1 = requests.get(url_loc, params={"tk": token, "cpf": cpf}, timeout=15)
+    r1 = requests.get(url_loc, params={"tk": token_busca, "cpf": cpf}, timeout=15)
     r1.raise_for_status()
     data1 = r1.json()
     
@@ -1306,31 +1308,45 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1, debito: dict = None) -> dict
     if not iddev:
         raise RuntimeError(f"Devedor encontrado mas sem iddev para o CPF {cpf}")
 
-    # Determina o percentual de desconto dinamicamente com base nas opções consultadas
-    desconto = _get_discount_percentage(debito, parc)
-
-    # 2. Efetiva o acordo
-    url_efe = "https://ddmacordos.com/calc/efetiva_acordo.php"
-    params = {
-        "tk": token,
-        "idDev": iddev,
-        "cli": sistema,
-        "Parc": str(parc)
-    }
-    if desconto and desconto != "0":
-        params["Desconto"] = desconto
-
-    r2 = requests.get(url_efe, params=params, timeout=30)
-    r2.raise_for_status()
-    
-    # Se o retorno da efetivação for JSON, extrai os links.
-    # Caso contrário, o Celery fará a consulta no /calc/ posteriormente.
     data2 = {}
-    try:
+    if int(parc or 1) <= 1:
+        # À Vista: Chama CalculaDebitos.php com o token_calcula
+        url_calc = "https://www.ddmacordos.com/ws_ddm/ws/CalculaDebitos.php"
+        params = {
+            "tk": token_calcula,
+            "OpcaoAcordo": "1",
+            "TipoAcordo": "1",
+            "Doc": cpf
+        }
+        logger.warning("[DDM_FORMALIZA] CPF_FINAL=%s formalizando À Vista no CalculaDebitos.php", cpf[-4:])
+        r2 = requests.get(url_calc, params=params, timeout=30)
+        r2.raise_for_status()
         if r2.text.strip():
-            data2 = r2.json()
-    except Exception:
-        pass
+            try:
+                data2 = r2.json()
+            except Exception:
+                pass
+    else:
+        # Parcelado: Determina o percentual de desconto e chama efetiva_acordo.php com o token_calcula
+        desconto = _get_discount_percentage(debito, parc)
+        url_efe = "https://ddmacordos.com/calc/efetiva_acordo.php"
+        params = {
+            "tk": token_calcula,
+            "idDev": iddev,
+            "cli": sistema,
+            "Parc": str(parc)
+        }
+        if desconto and desconto != "0":
+            params["Desconto"] = desconto
+
+        logger.warning("[DDM_FORMALIZA] CPF_FINAL=%s formalizando Parcelado (parc=%s) no efetiva_acordo.php", cpf[-4:], parc)
+        r2 = requests.get(url_efe, params=params, timeout=30)
+        r2.raise_for_status()
+        if r2.text.strip():
+            try:
+                data2 = r2.json()
+            except Exception:
+                pass
         
     link_boleto = _ddm_find_first(data2, {"linkboleto", "boletourl", "urlboleto"})
     link_pix    = _ddm_find_first(data2, {"linkpix", "pixurl", "urlpix", "qrcodepix", "qrcode"})
