@@ -1881,6 +1881,7 @@ def process_file(self, job_id: str, file_id: str, fname: str):
         # Limpeza preventiva: remove linhas que não têm CPF válido
         # (evita contar milhares de linhas em branco vazias do Excel como ativas)
         df = df.dropna(how="all")
+        orig_len = len(df)
         cols_lower = [str(c).strip().lower() for c in df.columns]
         cpf_col = None
         for cand in ["cpf", "cpfcgc"]:
@@ -1891,9 +1892,26 @@ def process_file(self, job_id: str, file_id: str, fname: str):
             if cpf_col:
                 break
         
+        len_after_cpf = -1
+        sample_rows = []
         if cpf_col:
+            sample_rows = df[cpf_col].head(10).tolist()
             df = df[df[cpf_col].notna()]
             df = df[df[cpf_col].astype(str).str.strip().str.replace(r'\D', '', regex=True).str.len() > 0]
+            len_after_cpf = len(df)
+
+        import json as json_lib
+        try:
+            with open("import_debug.json", "w", encoding="utf-8") as f:
+                json_lib.dump({
+                    "orig_len": orig_len,
+                    "cols": list(df.columns),
+                    "cpf_col": cpf_col,
+                    "len_after_cpf": len_after_cpf,
+                    "sample_cpfs": [str(x) for x in sample_rows]
+                }, f)
+        except Exception:
+            pass
 
         if len(df) > 20000:
             _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite atual de 20000 linhas.")

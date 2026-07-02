@@ -1428,7 +1428,16 @@ def vapi_webhook():
 def debug_check_import_error():
     try:
         jobs = supabase.table("import_jobs").select("*").order("created_at", desc=True).limit(5).execute().data
-        return jsonify({"ok": True, "jobs": jobs})
+        
+        debug_info = {}
+        try:
+            if os.path.exists("import_debug.json"):
+                with open("import_debug.json", "r", encoding="utf-8") as f:
+                    debug_info = json.load(f)
+        except Exception as e:
+            debug_info = {"error": str(e)}
+            
+        return jsonify({"ok": True, "jobs": jobs, "debug_info": debug_info})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
