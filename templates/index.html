@@ -825,6 +825,13 @@
       <div class="section" id="tab-calls">
         <div class="sec-head">
           <span class="sec-title">Histórico de chamadas</span>
+          <div style="display:flex;gap:12px;align-items:center;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text-dim);cursor:pointer;user-select:none;">
+              <input type="checkbox" id="calls-filter-answered" onchange="toggleCallsFilter()" style="cursor:pointer;" />
+              Somente chamadas atendidas/com gravação
+            </label>
+            <button class="btn btn-ghost" onclick="loadCalls(true)">↻ &nbsp;Atualizar</button>
+          </div>
         </div>
         <div class="table-card">
           <table>
@@ -1613,12 +1620,14 @@
 
   let callsLoaded = false, callsPage_ = 1;
 
-  async function loadCalls() {
+  async function loadCalls(force = false) {
+    if (force) callsPage_ = 1;
     callsLoaded = true;
     document.getElementById('calls-body').innerHTML =
-      '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+      '<tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
     try {
-      const res  = await fetch(`${API}/api/calls?page=${callsPage_}&per_page=50`);
+      const onlyAnswered = document.getElementById('calls-filter-answered')?.checked || false;
+      const res  = await fetch(`${API}/api/calls?page=${callsPage_}&per_page=50&only_answered=${onlyAnswered}`);
       const json = await res.json();
       if (!json.ok) {
         console.error('loadCalls error', json);
@@ -1628,8 +1637,13 @@
     } catch(e) {
       console.error('loadCalls failed', e);
       document.getElementById('calls-body').innerHTML =
-        `<tr><td colspan="5"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
+        `<tr><td colspan="6"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
     }
+  }
+
+  function toggleCallsFilter() {
+    callsPage_ = 1;
+    loadCalls();
   }
 
   function renderCalls(rows, page, pages, total) {

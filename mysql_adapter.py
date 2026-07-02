@@ -183,7 +183,10 @@ class QueryBuilder:
         cols = self._columns_sql()
         sql = f"SELECT {cols} FROM `{self.table_name}`{where_sql}"
         if self.order_by:
-            sql += f" ORDER BY `{self.order_by}` {'DESC' if self.order_desc else 'ASC'}"
+            if "," in str(self.order_by) or " " in str(self.order_by) or "(" in str(self.order_by):
+                sql += f" ORDER BY {self.order_by}"
+            else:
+                sql += f" ORDER BY `{self.order_by}` {'DESC' if self.order_desc else 'ASC'}"
         if self.limit_value is not None:
             sql += " LIMIT %s"
             params.append(self.limit_value)

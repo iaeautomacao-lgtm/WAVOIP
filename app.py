@@ -639,9 +639,16 @@ def get_calls():
         page     = int(request.args.get("page", 1))
         per_page = int(request.args.get("per_page", 50))
         offset   = (page - 1) * per_page
-        result   = supabase.table("campaign_calls").select(
-            "id, cpf, status, created_at, duration, campaign_id, recording_url, transcript", count="exact"
-        ).order("created_at", desc=True).range(offset, offset + per_page - 1).execute()
+        only_answered = request.args.get("only_answered", "false").lower() == "true"
+        
+        query = supabase.table("campaign_calls").select(
+            "id, cpf, status, created_at, duration, campaign_id, recording_url, transcript, answered", count="exact"
+        )
+        
+        if only_answered:
+            query = query.eq("answered", True)
+            
+        result = query.order("answered DESC, created_at DESC").range(offset, offset + per_page - 1).execute()
         rows = []
         camp_ids = set()
         for row in (result.data or []):
@@ -654,6 +661,7 @@ def get_calls():
                 "campaign_id": row.get("campaign_id"),
                 "recording_url": row.get("recording_url"),
                 "transcript": row.get("transcript"),
+                "answered": bool(row.get("answered")),
             }
             rows.append(r)
             cid = r.get("campaign_id")
