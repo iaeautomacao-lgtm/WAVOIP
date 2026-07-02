@@ -1600,18 +1600,26 @@ def verificar_boleto_acordo(dados: dict, tentativa: int = 1):
     email_enviado = False
     email = dados.get("email", "")
     if email:
-        _enviar_email_acordo(
-            destinatario    = email,
-            nome            = dados.get("nome", "Cliente"),
-            instituicao     = dados.get("instituicao", ""),
-            valor           = dados.get("valor", ""),
-            forma_pagamento = dados.get("forma_pagamento", "A vista"),
-            link_boleto     = link_boleto,
-            link_pix        = link_pix,
-            linha_dig       = linha_dig,
-            vencimento      = vencimento,
-        )
-        email_enviado = True
+        try:
+            _enviar_email_acordo(
+                destinatario    = email,
+                nome            = dados.get("nome", "Cliente"),
+                instituicao     = dados.get("instituicao", ""),
+                valor           = dados.get("valor", ""),
+                forma_pagamento = dados.get("forma_pagamento", "A vista"),
+                link_boleto     = link_boleto,
+                link_pix        = link_pix,
+                linha_dig       = linha_dig,
+                vencimento      = vencimento,
+            )
+            email_enviado = True
+        except Exception as email_exc:
+            logger.error(
+                "[FORMALIZAR] erro ao enviar email cpf_final=%s nr_acordo=%s erro=%s",
+                _norm_cpf(dados.get("cpf", ""))[-4:],
+                dados.get("nr_acordo", ""),
+                email_exc,
+            )
 
     _atualizar_acordo_formalizado(dados, {
         "link_boleto":   link_boleto,
