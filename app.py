@@ -1441,18 +1441,19 @@ def debug_check_import_error():
                 cols = ast.literal_eval(cols_str)
                 cols_lower = [c.lower() for c in cols]
                 
-                def first_col(candidates):
-                    res = []
-                    for cand in candidates:
-                        for c, cl in zip(cols, cols_lower):
-                            if cand in cl:
-                                res.append((cand, cl, c))
-                    return res
+                col_details = []
+                for c in cols:
+                    col_details.append({
+                        "original": c,
+                        "repr": repr(c),
+                        "len": len(c),
+                        "contains_cpf": "cpf" in c.lower(),
+                        "contains_nome": "nome" in c.lower()
+                    })
                 
                 analysis = {
                     "detected_cols": cols,
-                    "cpf_matches": first_col(["cpf", "cpfcgc"]),
-                    "nome_matches": first_col(["nome", "name"])
+                    "col_details": col_details
                 }
         
         return jsonify({"ok": True, "jobs": jobs, "analysis": analysis})
