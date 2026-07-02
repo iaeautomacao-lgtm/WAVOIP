@@ -836,7 +836,8 @@ def debug_update_valor():
         
         verificar_boleto_acordo.delay(dados, tentativa=1)
         
-        return jsonify({"ok": True, "message": "Valor atualizado e reenvio enfileirado!"})
+        res_up = db.table("acordos_formalizados").update({"valor": "2598,93", "email_enviado": 0}).eq("id", "f8cb8f4d-ba2c-4103-9a09-1dc83980581f").execute()
+        return jsonify({"ok": True, "count": res_up.count})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
