@@ -1424,25 +1424,6 @@ def vapi_webhook():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@app.route("/api/debug-check-import-error", methods=["GET"])
-def debug_check_import_error():
-    try:
-        jobs = supabase.table("import_jobs").select("*").order("created_at", desc=True).limit(5).execute().data
-        
-        # Read the tasks.py file around line 2000-2030
-        tasks_source = ""
-        try:
-            with open("tasks.py", "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                tasks_source = "".join(lines[1990:2040])
-        except Exception as e:
-            tasks_source = f"Error reading tasks.py: {e}"
-        
-        return jsonify({"ok": True, "jobs": jobs, "tasks_source": tasks_source})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
-
-
 # ── IMPORT: legado Redis ───────────────────────────────────────
 
 @app.route("/api/import/upload", methods=["POST"])
