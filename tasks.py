@@ -1902,14 +1902,13 @@ def process_file(self, job_id: str, file_id: str, fname: str):
 
         import json as json_lib
         try:
-            with open("import_debug.json", "w", encoding="utf-8") as f:
-                json_lib.dump({
-                    "orig_len": orig_len,
-                    "cols": list(df.columns),
-                    "cpf_col": cpf_col,
-                    "len_after_cpf": len_after_cpf,
-                    "sample_cpfs": [str(x) for x in sample_rows]
-                }, f)
+            r.setex("import_debug_info", 3600, json_lib.dumps({
+                "orig_len": orig_len,
+                "cols": list(df.columns),
+                "cpf_col": cpf_col,
+                "len_after_cpf": len_after_cpf,
+                "sample_cpfs": [str(x) for x in sample_rows]
+            }))
         except Exception:
             pass
 

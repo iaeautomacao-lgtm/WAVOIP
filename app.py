@@ -1431,9 +1431,10 @@ def debug_check_import_error():
         
         debug_info = {}
         try:
-            if os.path.exists("import_debug.json"):
-                with open("import_debug.json", "r", encoding="utf-8") as f:
-                    debug_info = json.load(f)
+            r = redis_client()
+            raw = r.get("import_debug_info")
+            if raw:
+                debug_info = json.loads(raw)
         except Exception as e:
             debug_info = {"error": str(e)}
             
