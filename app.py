@@ -1424,6 +1424,15 @@ def vapi_webhook():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/debug-check-import-error", methods=["GET"])
+def debug_check_import_error():
+    try:
+        jobs = supabase.table("import_jobs").select("*").order("created_at", desc=True).limit(5).execute().data
+        return jsonify({"ok": True, "jobs": jobs})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 # ── IMPORT: legado Redis ───────────────────────────────────────
 
 @app.route("/api/import/upload", methods=["POST"])
