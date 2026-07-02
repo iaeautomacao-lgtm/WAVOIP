@@ -1992,11 +1992,11 @@ def _process_dataframe(job_id: str, df, fname: str):
     phone_col = first_col(
         ["fone", "fone1", "fone2", "fone3", "tel", "telefone", "celular", "phone", "contato", "whatsapp"]
     )
-    val_col = first_col(["val_atualizado", "val_nominal"])
+    val_col = first_col(["val_atualizado", "val_nominal", "val_atua", "val_nom"])
     is_ddm = val_col is not None
 
     # Detecta colunas de valor e instituição para fallback
-    valor_col = first_col(["val_atualizado", "val_nominal", "nominal", "valor", "nominal_princ"])
+    valor_col = first_col(["val_atualizado", "val_nominal", "nominal", "valor", "nominal_princ", "val_atua", "val_nom"])
     inst_col = first_col(["instituicao", "cliente", "carteira", "ies"])
 
     if not cpf_col or not nome_col:
