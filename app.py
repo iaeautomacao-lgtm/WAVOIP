@@ -842,6 +842,30 @@ def debug_update_valor():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/debug-direct-sql", methods=["POST"])
+def debug_direct_sql():
+    try:
+        body = request.json or {}
+        sql = body.get("sql")
+        params = body.get("params", [])
+        if not sql:
+            return jsonify({"ok": False, "error": "sql obrigatorio"}), 400
+            
+        from mysql_adapter import create_client
+        client = create_client()
+        with client.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                if sql.strip().upper().startswith("SELECT"):
+                    rows = cur.fetchall()
+                    return jsonify({"ok": True, "rows": rows})
+                else:
+                    conn.commit()
+                    return jsonify({"ok": True, "rowcount": cur.rowcount})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/debug-import")
 def debug_import():
     try:
