@@ -98,6 +98,10 @@ def run_migrations():
             if not cur.fetchone():
                 cur.execute("ALTER TABLE `campaign_calls` ADD COLUMN `transcript` LONGTEXT DEFAULT NULL")
                 print("Migration: Added transcript to campaign_calls")
+            cur.execute("SHOW COLUMNS FROM `acordos_formalizados` LIKE 'deletado_painel'")
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE `acordos_formalizados` ADD COLUMN `deletado_painel` BOOLEAN NOT NULL DEFAULT FALSE")
+                print("Migration: Added deletado_painel to acordos_formalizados")
     except Exception as e:
         print(f"Migration warning: {e}")
 
@@ -670,13 +674,14 @@ def get_acordos():
         offset   = (page - 1) * per_page
         conn = supabase.connect()
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) AS total FROM acordos_formalizados")
+            cur.execute("SELECT COUNT(*) AS total FROM acordos_formalizados WHERE deletado_painel = FALSE")
             total = (cur.fetchone() or {}).get("total", 0)
 
             sql = """
                 SELECT a.*, c.recording_url, c.transcript
                 FROM acordos_formalizados a
                 LEFT JOIN campaign_calls c ON a.campaign_call_id = c.id
+                WHERE a.deletado_painel = FALSE
                 ORDER BY a.created_at DESC
                 LIMIT %s OFFSET %s
             """
@@ -698,6 +703,15 @@ def get_acordos():
             "page":  page,
             "pages": -(-total // per_page) if total else 1,
         })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/acordos/<acordo_id>", methods=["DELETE"])
+def delete_acordo(acordo_id):
+    try:
+        supabase.table("acordos_formalizados").update({"deletado_painel": True}).eq("id", acordo_id).execute()
+        return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -901,7 +915,7 @@ def dashboard_summary():
 
         try:
             accords = supabase.table("acordos_formalizados")\
-                .select("*").order("created_at", desc=True).limit(5000).execute().data or []
+                .select("*").eq("deletado_painel", False).order("created_at", desc=True).limit(5000).execute().data or []
         except Exception:
             accords = []
 

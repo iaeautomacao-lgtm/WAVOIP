@@ -2589,6 +2589,8 @@
 
       const resendBtn = `<button class="call-btn" onclick="resendAcordoEmail('${a.id}', '${escapeHtml(a.nome || 'Cliente')}', this)">✉ Reenviar</button>`;
 
+      const deleteBtn = `<button class="call-btn" onclick="deleteAcordo('${a.id}', '${escapeHtml(a.nome || 'Cliente')}', this)" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5">🗑 Remover</button>`;
+
       return `<tr>
         <td><b>${escapeHtml(a.nome || '—')}</b><br><span class="td-dim" style="font-size:0.75rem">${escapeHtml(a.email || 'sem e-mail')}</span></td>
         <td class="td-mono">${escapeHtml(a.cpf || '—')}</td>
@@ -2598,9 +2600,10 @@
         <td><span class="tag ${statusEmail}">${statusText}</span></td>
         <td class="td-dim">${date}</td>
         <td>
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px;align-items:center">
             ${detailsBtn}
             ${resendBtn}
+            ${deleteBtn}
           </div>
         </td>
       </tr>`;
@@ -2629,6 +2632,24 @@
     } catch(e) {
       toast(`Erro ao reenviar: ${e.message}`, 'err');
     } finally {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+
+  async function deleteAcordo(acordoId, name, btn) {
+    if (!confirm(`Deseja realmente remover o acordo de ${name} apenas do painel? Ele continuará salvo no banco de dados.`)) return;
+    const oldText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Removendo...';
+    try {
+      const res = await fetch(`${API}/api/acordos/${acordoId}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast(`✓ Acordo de ${name} removido do painel`, 'ok');
+      loadAcordos();
+    } catch(e) {
+      toast(`Erro ao remover: ${e.message}`, 'err');
       btn.disabled = false;
       btn.textContent = oldText;
     }
