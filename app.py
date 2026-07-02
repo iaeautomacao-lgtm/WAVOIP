@@ -835,6 +835,38 @@ def check_calls_by_cpf(cpf):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/debug-sync-resend-rj")
+def debug_sync_resend_rj():
+    try:
+        from tasks import verificar_boleto_acordo
+        
+        # Reset email_enviado to 0 in the database first
+        supabase.table("acordos_formalizados").update({"email_enviado": 0}).eq("id", "f8cb8f4d-ba2c-4103-9a09-1dc83980581f").execute()
+        
+        acordo = supabase.table("acordos_formalizados").select("*").eq("id", "f8cb8f4d-ba2c-4103-9a09-1dc83980581f").execute().data[0]
+        dados = {
+            "cpf":             acordo.get("cpf"),
+            "nome":            acordo.get("nome"),
+            "email":           acordo.get("email"),
+            "instituicao":     acordo.get("instituicao"),
+            "valor":           acordo.get("valor"),
+            "forma_pagamento": acordo.get("forma_pagamento"),
+            "vencimento":      acordo.get("vencimento"),
+            "nr_acordo":       acordo.get("nr_acordo"),
+            "idcalc":          acordo.get("vapi_call_id"),
+            "vapi_call_id":    acordo.get("vapi_call_id"),
+            "campaign_call_id": acordo.get("campaign_call_id"),
+            "link_boleto":     acordo.get("link_boleto"),
+            "link_pix":        acordo.get("link_pix"),
+            "linha_dig":       acordo.get("linha_dig"),
+        }
+        
+        res = verificar_boleto_acordo(dados, tentativa=1)
+        return jsonify({"ok": True, "res": res})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/call", methods=["POST"])
 def make_call():
     try:
