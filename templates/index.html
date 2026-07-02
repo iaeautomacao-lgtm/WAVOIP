@@ -1763,6 +1763,7 @@
       const sipLabel = campaignLinesLabel(c.line_tokens);
       const canStart = c.status === 'rascunho' || c.status === 'pausada';
       const canPause = c.status === 'em_andamento';
+      const canResume = c.status === 'finalizada' || c.status === 'pausada';
       return `<tr>
         <td>${escapeHtml(c.name)}</td>
         <td><span class="cs ${s.cls}">${s.label}</span></td>
@@ -1774,6 +1775,7 @@
           <div style="display:flex;gap:6px">
             ${canStart ? `<button class="call-btn" onclick="startCampaign(${jsArg(c.id)})">▶ Iniciar</button>` : ''}
             ${canPause ? `<button class="call-btn" onclick="pauseCampaign(${jsArg(c.id)})">⏸ Pausar</button>` : ''}
+            ${canResume ? `<button class="call-btn" style="background:#53b1fd;border-color:#53b1fd;" onclick="resumeCampaign(${jsArg(c.id)})">🔄 Religar</button>` : ''}
             <button class="call-btn" onclick="openCampaignLinesModal(${jsArg(c.id)})">SIPs</button>
             <button class="del-btn" onclick="deleteCampaign(${jsArg(c.id)}, ${jsArg(c.name)})">✕</button>
           </div>
@@ -1798,6 +1800,19 @@
       } else {
         toast('Campanha em andamento, sem disparos novos agora.', 'warn');
       }
+      loadCampaigns();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  async function resumeCampaign(id) {
+    if (!confirm('Deseja religar a campanha? As chamadas não atendidas serão reiniciadas para pendentes e discadas novamente.')) return;
+    try {
+      const res  = await fetch(`${API}/api/campaigns/${id}/resume`, { method: 'POST' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast(`Campanha religada - ${json.fired} chamada(s) disparada(s) agora`, 'ok');
       loadCampaigns();
     } catch(e) {
       toast(`Erro: ${e.message}`, 'err');

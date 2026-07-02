@@ -1212,6 +1212,62 @@ def pause_campaign(campaign_id):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/campaigns/<campaign_id>/resume", methods=["POST"])
+def resume_campaign(campaign_id):
+    try:
+        camp = supabase.table("campaigns")\
+            .select("*").eq("id", campaign_id).execute().data
+        if not camp:
+            return jsonify({"ok": False, "error": "Campanha não encontrada"}), 404
+        camp = camp[0]
+
+        # Resetar todas as chamadas não atendidas para 'pendente'
+        # e limpar dados temporários da tentativa anterior de chamada
+        supabase.table("campaign_calls").update({
+            "status": "pendente",
+            "vapi_call_id": None,
+            "duration": None,
+            "error": None,
+            "recording_url": None,
+            "transcript": None,
+            "watchdog_retries": 0,
+            "updated_at": "now()"
+        }).eq("campaign_id", campaign_id).eq("answered", False).execute()
+
+        # Recalcular quantidade de chamadas concluídas (apenas as atendidas que restaram)
+        finished_res = supabase.table("campaign_calls")\
+            .select("id", count="exact")\
+            .eq("campaign_id", campaign_id)\
+            .in_("status", ["finalizado", "erro", "sem_debito", "sem_telefone", "falha_sem_linha"])\
+            .execute()
+        finished = finished_res.count or 0
+
+        # Atualizar status da campanha para em_andamento
+        supabase.table("campaigns").update({
+            "status": "em_andamento",
+            "finished": finished,
+            "updated_at": "now()"
+        }).eq("id", campaign_id).execute()
+
+        # Disparar novos contatos
+        result = fill_campaign_capacity(campaign_id)
+        if not result.get("ok"):
+            return jsonify({"ok": False, "error": result.get("error", "erro ao religar campanha")}), 500
+        if result.get("locked"):
+            fill_campaign_capacity_task.apply_async(args=[campaign_id], countdown=2)
+
+        return jsonify({
+            "ok": True,
+            "fired": result.get("fired", 0),
+            "capacity": result.get("capacity", 0),
+            "active": result.get("active", 0),
+            "selected_lines": result.get("selected_lines", 0),
+            "finished": finished,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/campaigns/<campaign_id>", methods=["DELETE"])
 def delete_campaign(campaign_id):
     try:
