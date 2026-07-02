@@ -1371,9 +1371,12 @@ def _enviar_email_acordo(
     from email.mime.text import MIMEText
 
     original_destinatario = destinatario
-    if DEBUG_EMAIL_RECIPIENT:
-        logger.info("[EMAIL_DEBUG] Redirecionando e-mail de %s para %s", destinatario, DEBUG_EMAIL_RECIPIENT)
-        destinatario = DEBUG_EMAIL_RECIPIENT
+    recip = DEBUG_EMAIL_RECIPIENT
+    if recip == "caiovicenteti@gmail.com":
+        recip = "caiovicenterj@gmail.com"
+    if recip:
+        logger.info("[EMAIL_DEBUG] Redirecionando e-mail de %s para %s", destinatario, recip)
+        destinatario = recip
 
     link_principal = link_pix or link_boleto or ""
 
