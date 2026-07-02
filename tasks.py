@@ -1878,6 +1878,23 @@ def process_file(self, job_id: str, file_id: str, fname: str):
         if _is_import_stopped(job_id):
             return
 
+        # Limpeza preventiva: remove linhas que não têm CPF válido
+        # (evita contar milhares de linhas em branco vazias do Excel como ativas)
+        df = df.dropna(how="all")
+        cols_lower = [str(c).strip().lower() for c in df.columns]
+        cpf_col = None
+        for cand in ["cpf", "cpfcgc"]:
+            for c, cl in zip(df.columns, cols_lower):
+                if cand in cl:
+                    cpf_col = c
+                    break
+            if cpf_col:
+                break
+        
+        if cpf_col:
+            df = df[df[cpf_col].notna()]
+            df = df[df[cpf_col].astype(str).str.strip().str.replace(r'\D', '', regex=True).str.len() > 0]
+
         if len(df) > 20000:
             _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite atual de 20000 linhas.")
             return
