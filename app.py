@@ -674,14 +674,14 @@ def get_acordos():
         offset   = (page - 1) * per_page
         conn = supabase.connect()
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) AS total FROM acordos_formalizados WHERE deletado_painel = FALSE")
+            cur.execute("SELECT COUNT(*) AS total FROM acordos_formalizados WHERE deletado_painel = FALSE OR deletado_painel IS NULL")
             total = (cur.fetchone() or {}).get("total", 0)
 
             sql = """
                 SELECT a.*, c.recording_url, c.transcript
                 FROM acordos_formalizados a
                 LEFT JOIN campaign_calls c ON a.campaign_call_id = c.id
-                WHERE a.deletado_painel = FALSE
+                WHERE a.deletado_painel = FALSE OR a.deletado_painel IS NULL
                 ORDER BY a.created_at DESC
                 LIMIT %s OFFSET %s
             """
@@ -915,7 +915,8 @@ def dashboard_summary():
 
         try:
             accords = supabase.table("acordos_formalizados")\
-                .select("*").eq("deletado_painel", False).order("created_at", desc=True).limit(5000).execute().data or []
+                .select("*").order("created_at", desc=True).limit(5000).execute().data or []
+            accords = [a for a in accords if not a.get("deletado_painel")]
         except Exception:
             accords = []
 
