@@ -1348,6 +1348,23 @@ def vapi_webhook():
                         "toolCallId": tc_id,
                         "result": res_val
                     })
+                elif name in ("confirmar_acordo", "formalizar_acordo"):
+                    logging.warning(f"[WEBHOOK] tool-call {name} recebido para call_id={call_id}")
+                    try:
+                        call_res = supabase.table("campaign_calls").select("debito_data").eq("vapi_call_id", call_id).execute()
+                        if call_res.data:
+                            deb_data = call_res.data[0].get("debito_data") or {}
+                            deb_data["acordo_confirmado_tool"] = True
+                            supabase.table("campaign_calls").update({
+                                "debito_data": deb_data
+                            }).eq("vapi_call_id", call_id).execute()
+                            logging.warning(f"[WEBHOOK] flag acordo_confirmado_tool salva para call_id={call_id}")
+                    except Exception as e:
+                        logging.error(f"[WEBHOOK] erro ao salvar flag de acordo: {e}")
+                    results.append({
+                        "toolCallId": tc_id,
+                        "result": {"status": "success"}
+                    })
                 else:
                     results.append({
                         "toolCallId": tc_id,
@@ -1436,9 +1453,21 @@ def vapi_webhook():
             "transcript":    transcript,
         }).eq("id", row["id"]).execute()
 
+        # Verifica se o acordo foi confirmado pela tool de forma explícita
+        debito_data_updated = row.get("debito_data") or {}
+        acordo_pela_tool = debito_data_updated.get("acordo_confirmado_tool") is True
+        
+        # Também checa nos toolCalls do payload final do webhook por redundância
+        if not acordo_pela_tool:
+            analysis_tools = msg.get("analysis", {}).get("toolCalls") or body.get("analysis", {}).get("toolCalls") or []
+            for t_call in analysis_tools:
+                if t_call.get("function", {}).get("name") in ("confirmar_acordo", "formalizar_acordo"):
+                    acordo_pela_tool = True
+                    break
+
         # ── Detecta acordo formalizado e dispara task de email ────────
-        if _detectar_acordo_formalizado(transcript):
-            logging.warning(f"[WEBHOOK] ACORDO DETECTADO para call_id={call_id}")
+        if acordo_pela_tool or _detectar_acordo_formalizado(transcript):
+            logging.warning(f"[WEBHOOK] ACORDO DETECTADO (Tool: {acordo_pela_tool}) para call_id={call_id}")
             try:
                 formalizar_acordo.delay({
                     "cpf":              row.get("cpf", ""),
