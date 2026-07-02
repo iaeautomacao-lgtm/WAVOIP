@@ -1429,34 +1429,16 @@ def debug_check_import_error():
     try:
         jobs = supabase.table("import_jobs").select("*").order("created_at", desc=True).limit(5).execute().data
         
-        # Run first_col analysis on the columns of the last job
-        analysis = {}
-        if jobs:
-            last_job = jobs[0]
-            err_msg = last_job.get("error") or ""
-            if "Colunas detectadas:" in err_msg:
-                # Extract the columns list string
-                cols_str = err_msg.split("Colunas detectadas:")[1].strip()
-                import ast
-                cols = ast.literal_eval(cols_str)
-                cols_lower = [c.lower() for c in cols]
-                
-                col_details = []
-                for c in cols:
-                    col_details.append({
-                        "original": c,
-                        "repr": repr(c),
-                        "len": len(c),
-                        "contains_cpf": "cpf" in c.lower(),
-                        "contains_nome": "nome" in c.lower()
-                    })
-                
-                analysis = {
-                    "detected_cols": cols,
-                    "col_details": col_details
-                }
+        # Read the tasks.py file around line 2000-2030
+        tasks_source = ""
+        try:
+            with open("tasks.py", "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                tasks_source = "".join(lines[1990:2040])
+        except Exception as e:
+            tasks_source = f"Error reading tasks.py: {e}"
         
-        return jsonify({"ok": True, "jobs": jobs, "analysis": analysis})
+        return jsonify({"ok": True, "jobs": jobs, "tasks_source": tasks_source})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
