@@ -388,6 +388,7 @@ def vapi_call(
     line_token: str = "",
     phone_number_id: str = "",
     line_name: str = "",
+    campaign_assistant_id: str = "",
 ) -> Dict:
     phone_e164 = _phone_e164(phone)
     digits = re.sub(r"\D", "", phone_e164)
@@ -417,8 +418,8 @@ def vapi_call(
         if not phone_id:
             continue
 
-        campaign_assistant_id = contact.get("campaign_assistant_id") or ""
-        assistant_id = campaign_assistant_id if campaign_assistant_id else _get_assistant_id(debito)
+        campaign_assistant_id_resolved = campaign_assistant_id or ""
+        assistant_id = campaign_assistant_id_resolved if campaign_assistant_id_resolved else _get_assistant_id(debito)
 
         payload: Dict[str, Any] = {
             "phoneNumberId": phone_id,
@@ -655,6 +656,7 @@ def make_call_task(self, campaign_id: str, contact: dict):
                 line_token=line_token,
                 phone_number_id=phone_number_id,
                 line_name=line_name,
+                campaign_assistant_id=contact.get("campaign_assistant_id") or "",
             )
             call_id = data.get("id")
             # Sucesso — registra o telefone que funcionou e encerra
