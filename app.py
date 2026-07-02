@@ -756,11 +756,8 @@ def resend_acordo_email(acordo_id):
             "linha_dig":       acordo.get("linha_dig"),
         }
 
-        res = verificar_boleto_acordo(dados, tentativa=1)
-        if res.get("email_enviado"):
-            return jsonify({"ok": True, "message": "Email enviado com sucesso"})
-        else:
-            return jsonify({"ok": False, "error": "Links de pagamento ainda não estão disponíveis ou e-mail inválido"})
+        verificar_boleto_acordo.delay(dados, tentativa=1)
+        return jsonify({"ok": True, "message": "Reenvio de e-mail enfileirado com sucesso"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
