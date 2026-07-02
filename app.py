@@ -809,6 +809,28 @@ def get_vapi_assistants():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/debug-update")
+def debug_update():
+    import time
+    from mysql_adapter import create_client
+    db = create_client()
+    steps = []
+    try:
+        t0 = time.time()
+        steps.append("Connecting & selecting...")
+        res = db.table("acordos_formalizados").select("*").eq("nr_acordo", "16668562").execute().data
+        steps.append(f"Select done in {time.time()-t0:.2f}s, found: {len(res)} rows")
+        
+        t0 = time.time()
+        steps.append("Updating row...")
+        db.table("acordos_formalizados").update({"deletado_painel": 0}).eq("nr_acordo", "16668562").execute()
+        steps.append(f"Update done in {time.time()-t0:.2f}s")
+        return jsonify({"ok": True, "steps": steps})
+    except Exception as e:
+        steps.append(f"Error: {e}")
+        return jsonify({"ok": False, "error": str(e), "steps": steps}), 500
+
+
 @app.route("/api/debug-import")
 def debug_import():
     try:
