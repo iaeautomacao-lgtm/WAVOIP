@@ -807,64 +807,6 @@ def get_vapi_assistants():
 
 
 
-@app.route("/api/debug-update-valor")
-def debug_update_valor():
-    try:
-        from mysql_adapter import create_client
-        db = create_client()
-        
-        db.table("acordos_formalizados").update({"valor": "2598,93", "email_enviado": 0}).eq("id", "f8cb8f4d-ba2c-4103-9a09-1dc83980581f").execute()
-        
-        from tasks import verificar_boleto_acordo
-        acordo = supabase.table("acordos_formalizados").select("*").eq("id", "f8cb8f4d-ba2c-4103-9a09-1dc83980581f").execute().data[0]
-        dados = {
-            "cpf":             acordo.get("cpf"),
-            "nome":            acordo.get("nome"),
-            "email":           acordo.get("email"),
-            "instituicao":     acordo.get("instituicao"),
-            "valor":           acordo.get("valor"),
-            "forma_pagamento": acordo.get("forma_pagamento"),
-            "vencimento":      acordo.get("vencimento"),
-            "nr_acordo":       acordo.get("nr_acordo"),
-            "idcalc":          acordo.get("vapi_call_id"),
-            "vapi_call_id":    acordo.get("vapi_call_id"),
-            "campaign_call_id": acordo.get("campaign_call_id"),
-            "link_boleto":     acordo.get("link_boleto"),
-            "link_pix":        acordo.get("link_pix"),
-            "linha_dig":       acordo.get("linha_dig"),
-        }
-        
-        verificar_boleto_acordo.delay(dados, tentativa=1)
-        
-        res_up = db.table("acordos_formalizados").update({"valor": "2598,93", "email_enviado": 0}).eq("id", "f8cb8f4d-ba2c-4103-9a09-1dc83980581f").execute()
-        return jsonify({"ok": True, "count": res_up.count})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/api/debug-direct-sql", methods=["POST"])
-def debug_direct_sql():
-    try:
-        body = request.json or {}
-        sql = body.get("sql")
-        params = body.get("params", [])
-        if not sql:
-            return jsonify({"ok": False, "error": "sql obrigatorio"}), 400
-            
-        from mysql_adapter import create_client
-        client = create_client()
-        with client.connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                if sql.strip().upper().startswith("SELECT"):
-                    rows = cur.fetchall()
-                    return jsonify({"ok": True, "rows": rows})
-                else:
-                    conn.commit()
-                    return jsonify({"ok": True, "rowcount": cur.rowcount})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
 
 @app.route("/api/debug-import")
 def debug_import():
