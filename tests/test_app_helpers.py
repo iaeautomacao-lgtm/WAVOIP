@@ -33,6 +33,9 @@ class AgreementParsingTests(unittest.TestCase):
         self.assertTrue(app._detectar_acordo_formalizado("Combinado entao, vou enviar o boleto."))
         self.assertTrue(app._detectar_acordo_formalizado("Negociacao concluida com sucesso."))
         self.assertFalse(app._detectar_acordo_formalizado("Cliente pediu para retornar depois."))
+        # Scenarios that must NOT be counted as formalized agreements (false positives)
+        self.assertFalse(app._detectar_acordo_formalizado("Voce pode quitar a vista no valor de 2000 BRL. Posso fechar?"))
+        self.assertFalse(app._detectar_acordo_formalizado("Quer regularizar sua situação hoje?"))
 
     def test_extrair_forma_pagamento_prioritizes_boleto_and_cartao(self):
         self.assertEqual(app._extrair_forma_pagamento("Pode mandar o boleto por email"), "Boleto")

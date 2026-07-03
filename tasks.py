@@ -890,6 +890,22 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
         active = sum(counts.values())
 
         if not slots:
+            # Se não temos slots porque todas as linhas estão offline ou em cooldown,
+            # e ainda temos contatos pendentes na campanha, agendamos uma nova tentativa em 30s.
+            if len(healthy) == 0:
+                try:
+                    pending_check = supabase.table("campaign_calls") \
+                        .select("id") \
+                        .eq("campaign_id", campaign_id) \
+                        .eq("status", "pendente") \
+                        .limit(1) \
+                        .execute().data or []
+                    if pending_check:
+                        logger.warning(f"[DIALER] Nenhuma linha saudavel no momento para campanha {campaign_id}. Re-agendando em 30s...")
+                        fill_campaign_capacity_task.apply_async(args=[campaign_id], countdown=30)
+                except Exception as e:
+                    logger.error(f"[DIALER] Erro ao verificar pendencias para re-agendamento: {e}")
+
             return {
                 "ok": True,
                 "fired": 0,
@@ -988,6 +1004,11 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
             "selected_lines": len(_campaign_line_tokens(camp)) or len(healthy),
         }
     except Exception as e:
+        logger.error(f"[DIALER] Erro em fill_campaign_capacity para {campaign_id}: {e}", exc_info=True)
+        try:
+            fill_campaign_capacity_task.apply_async(args=[campaign_id], countdown=30)
+        except Exception:
+            pass
         return {"ok": False, "error": str(e), "fired": 0}
     finally:
         _release_scheduler_lock(lock_token)
