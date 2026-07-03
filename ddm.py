@@ -2,13 +2,15 @@ import re
 import requests
 import os
 import logging
+import time
+import threading
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
 DDM_TOKEN    = os.getenv("DDM_TOKEN", "").strip()
 DDM_TOKEN_BUSCA = os.getenv("DDM_TOKEN_BUSCA", "2e30b68c0feda298f9d6d40ab36c1a09").strip()
-DDM_TIMEOUT_SECONDS = float(os.getenv("DDM_TIMEOUT_SECONDS", "30"))
+DDM_TIMEOUT_SECONDS = float(os.getenv("DDM_TIMEOUT_SECONDS", "7.0"))
 DDM_BASE_URL = "https://www.ddmacordos.com"
 DDM_CALCULA  = f"{DDM_BASE_URL}/ws_ddm/ws/CalculaDebitos.php"
 
@@ -20,6 +22,36 @@ class DDMSoftError(Exception):
 class DDMHardError(Exception):
     """Erro definitivo: 401/403, resposta inválida."""
     pass
+
+
+_redis_client = None
+_redis_lock = threading.Lock()
+
+def get_redis():
+    global _redis_client
+    if _redis_client is None:
+        with _redis_lock:
+            if _redis_client is None:
+                import redis as redis_lib
+                redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+                _redis_client = redis_lib.from_url(redis_url)
+    return _redis_client
+
+
+def _http_get_with_retry(url: str, params: dict = None, timeout: float = 7.0, max_retries: int = 3) -> requests.Response:
+    last_ex = None
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(url, params=params, timeout=timeout)
+            if r.status_code >= 500:
+                r.raise_for_status()
+            return r
+        except (requests.exceptions.RequestException, Exception) as e:
+            last_ex = e
+            if attempt < max_retries - 1:
+                time.sleep(0.5 * (2 ** attempt))
+            else:
+                raise last_ex
 
 
 def _safe_dict(obj) -> dict:
@@ -124,11 +156,24 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
 
     cpf_norm = re.sub(r"\D", "", str(cpf))
     cpf_tail = cpf_norm[-4:]
+    cache_key = f"ddm:cpf_cache:{cpf_norm}"
+
+    # 1. Tentar ler do cache do Redis
+    try:
+        r = get_redis()
+        cached = r.get(cache_key)
+        if cached:
+            import json
+            logger.info("[DDM_CACHE] CPF_FINAL=%s recuperado do Redis", cpf_tail)
+            return json.loads(cached)
+    except Exception as e:
+        logger.warning("[DDM_CACHE] Erro ao ler cache: %s", e)
+
     logger.warning("[DDM_DEBUG] CPF_FINAL=%s consultando localiza_dev.php", cpf_tail)
 
     try:
         # 1. Localiza iddev pelo CPF
-        r1 = requests.get(
+        r1 = _http_get_with_retry(
             "https://ddmacordos.com/calc/localiza_dev.php",
             params={"tk": token_busca, "cpf": cpf_norm},
             timeout=DDM_TIMEOUT_SECONDS,
@@ -137,12 +182,24 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
         data1 = r1.json()
         if not isinstance(data1, list) or len(data1) == 0:
             logger.warning("[DDM_DEBUG] CPF_FINAL=%s devedor nao localizado", cpf_tail)
+            try:
+                r = get_redis()
+                import json
+                r.setex(cache_key, 1800, json.dumps({}))
+            except Exception:
+                pass
             return {}
 
         dev = data1[0]
         iddev = dev.get("iddev")
         if not iddev:
             logger.warning("[DDM_DEBUG] CPF_FINAL=%s sem iddev", cpf_tail)
+            try:
+                r = get_redis()
+                import json
+                r.setex(cache_key, 1800, json.dumps({}))
+            except Exception:
+                pass
             return {}
 
         # Mapeia dinamicamente o cli com base no sistema retornado pela DDM
@@ -153,7 +210,7 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
 
         # 2. Consulta débitos no calc/ com o cli dinâmico correspondente
         logger.warning("[DDM_DEBUG] CPF_FINAL=%s consultando calc/ iddev=%s cli=%s", cpf_tail, iddev, cli)
-        r2 = requests.get(
+        r2 = _http_get_with_retry(
             "https://ddmacordos.com/calc/",
             params={"tk": token_busca, "idDev": iddev, "cli": cli},
             timeout=DDM_TIMEOUT_SECONDS,
@@ -173,6 +230,18 @@ def consultar_debitos_cpf(cpf: str) -> Dict:
     # Consolida os itens da lista em um único dicionário para compatibilidade com _montar_debito
     data_list = raw if isinstance(raw, list) else [raw]
     consolidated = _consolidate_calc_response(data_list)
+
+    # 3. Gravar no cache do Redis
+    try:
+        r = get_redis()
+        import json
+        is_empty = not consolidated or not consolidated.get("idcalc")
+        ttl = 1800 if is_empty else 10800
+        r.setex(cache_key, ttl, json.dumps(consolidated))
+        logger.info("[DDM_CACHE] CPF_FINAL=%s gravado no Redis (TTL=%ds)", cpf_tail, ttl)
+    except Exception as e:
+        logger.warning("[DDM_CACHE] Erro ao gravar cache: %s", e)
+
     return consolidated
 
 

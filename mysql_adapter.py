@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+import threading
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -42,11 +43,64 @@ class QueryResponse:
     count: int = 0
 
 
+class PooledConnection:
+    def __init__(self, conn, pool):
+        self._conn = conn
+        self._pool = pool
+        self._closed = False
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def cursor(self, *args, **kwargs):
+        return self._conn.cursor(*args, **kwargs)
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    def ping(self, reconnect=True):
+        return self._conn.ping(reconnect=reconnect)
+
+    def close(self):
+        if not self._closed:
+            self._closed = True
+            try:
+                self._pool.put_nowait(self._conn)
+            except Exception:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+        else:
+            try:
+                self._conn.commit()
+            except Exception:
+                pass
+        self.close()
+
+
 def create_client(*_args, **_kwargs):
     return MySQLClient()
 
 
 class MySQLClient:
+    _pool = None
+    _pool_pid = None
+    _pool_lock = threading.Lock()
+
     def __init__(self):
         url_config = self._config_from_url(env("MYSQL_URL") or env("DATABASE_URL"))
         host = env("MYSQL_HOST") or env("MYSQLHOST") or url_config.get("host")
@@ -84,7 +138,30 @@ class MySQLClient:
         return QueryBuilder(self, name)
 
     def connect(self):
-        return pymysql.connect(**self.config)
+        current_pid = os.getpid()
+        with MySQLClient._pool_lock:
+            if MySQLClient._pool is None or MySQLClient._pool_pid != current_pid:
+                from queue import Queue
+                MySQLClient._pool = Queue(maxsize=30)
+                MySQLClient._pool_pid = current_pid
+                # Pre-populate 3 connections
+                for _ in range(3):
+                    try:
+                        conn = pymysql.connect(**self.config)
+                        MySQLClient._pool.put_nowait(conn)
+                    except Exception:
+                        pass
+
+        try:
+            conn = MySQLClient._pool.get_nowait()
+            try:
+                conn.ping(reconnect=True)
+            except Exception:
+                conn = pymysql.connect(**self.config)
+        except Exception:
+            conn = pymysql.connect(**self.config)
+
+        return PooledConnection(conn, MySQLClient._pool)
 
 
 class QueryBuilder:

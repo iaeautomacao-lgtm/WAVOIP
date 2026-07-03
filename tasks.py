@@ -3,6 +3,7 @@ import re
 import io
 import time
 import uuid
+import random
 import json
 import requests
 import threading
@@ -81,6 +82,8 @@ WATCHDOG_TIMEOUT_MIN = int(os.getenv("WATCHDOG_TIMEOUT_MIN", "8"))   # minutos s
 WATCHDOG_MAX_RETRIES = int(os.getenv("WATCHDOG_MAX_RETRIES", "3"))    # tentativas antes de marcar erro
 LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "2")))
 LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
+CALL_DELAY_MIN = float(env("CALL_DELAY_MIN", "10.0"))
+CALL_DELAY_MAX = float(env("CALL_DELAY_MAX", "30.0"))
 ACTIVE_CALL_STATUSES = ["enfileirado", "em_andamento", "atendido"]
 
 celery = Celery("tasks", broker=REDIS_URL, backend=REDIS_URL)
@@ -814,6 +817,53 @@ def _validate_debt_before_call(row: dict) -> dict:
     return {"ok": True, "debito": _merge_debito_with_import_meta(row, debito)}
 
 
+def _get_call_delay_wait(delay_seconds: float = 7.0) -> float:
+    """
+    Calculates the wait time for the next call to enforce a global delay.
+    Uses Redis to store the next allowed timestamp and coordinates via a lock.
+    """
+    try:
+        r = redis_client()
+        lock_key = "dialer:rate_limit_lock"
+        acquired = False
+        token = str(uuid.uuid4())
+        
+        # Try to acquire lock for up to 2 seconds
+        for _ in range(20):
+            if r.set(lock_key, token, nx=True, px=1000):
+                acquired = True
+                break
+            time.sleep(0.1)
+            
+        if not acquired:
+            logger.warning("Could not acquire dialer rate limit lock, returning 0 delay")
+            return 0.0
+            
+        try:
+            now = time.time()
+            redis_key = "dialer:next_call_allowed_at"
+            next_allowed_raw = r.get(redis_key)
+            next_allowed = float(next_allowed_raw) if next_allowed_raw else 0.0
+            
+            if next_allowed < now:
+                next_allowed = now
+                wait_time = 0.0
+            else:
+                wait_time = next_allowed - now
+                
+            r.set(redis_key, str(next_allowed + delay_seconds))
+            return wait_time
+        finally:
+            try:
+                if r.get(lock_key) == token.encode():
+                    r.delete(lock_key)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error(f"Error calculating call delay wait: {e}")
+        return 0.0
+
+
 def fill_campaign_capacity(campaign_id: str) -> dict:
     locked, lock_token = _acquire_scheduler_lock()
     if not locked:
@@ -891,17 +941,23 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
                 update.pop("phone_number_id", None)
                 supabase.table("campaign_calls").update(update).eq("id", row["id"]).execute()
 
-            make_call_task.delay(campaign_id, {
-                "row_id":          row["id"],
-                "cpf":             row.get("cpf", ""),
-                "phone":           row.get("phone", ""),
-                "name":            row.get("name", ""),
-                "debito_data":     debito,
-                "line_token":      meta["line_token"],
-                "line_name":       meta["line_name"],
-                "phone_number_id": meta["phone_number_id"],
-                "campaign_assistant_id": campaign_assistant_id,
-            })
+            # Randomize call delay to avoid carrier detection
+            delay = random.uniform(CALL_DELAY_MIN, CALL_DELAY_MAX)
+            wait_time = _get_call_delay_wait(delay)
+            make_call_task.apply_async(
+                args=[campaign_id, {
+                    "row_id":          row["id"],
+                    "cpf":             row.get("cpf", ""),
+                    "phone":           row.get("phone", ""),
+                    "name":            row.get("name", ""),
+                    "debito_data":     debito,
+                    "line_token":      meta["line_token"],
+                    "line_name":       meta["line_name"],
+                    "phone_number_id": meta["phone_number_id"],
+                    "campaign_assistant_id": campaign_assistant_id,
+                }],
+                countdown=int(round(wait_time))
+            )
             fired += 1
 
         if fired:
