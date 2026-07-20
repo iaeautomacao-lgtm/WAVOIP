@@ -911,6 +911,33 @@ def wacalls_sessions():
         return jsonify({"ok": False, "error": f"Servidor WaCalls indisponível ({base_url}). {e}"}), 502
 
 
+@app.route("/api/wacalls/sessions/<session_id>/pair", methods=["POST"])
+def pair_wacalls_session(session_id):
+    base_url = _get_wacalls_url()
+    try:
+        import requests
+        resp = requests.post(f"{base_url}/api/sessions/{session_id}/pair", timeout=8)
+        return jsonify({"ok": True}), resp.status_code
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/wacalls/events", methods=["GET"])
+def wacalls_events_stream():
+    base_url = _get_wacalls_url()
+    try:
+        import requests
+        from flask import Response
+        r = requests.get(f"{base_url}/api/events", stream=True, timeout=30)
+        def generate():
+            for line in r.iter_lines():
+                if line:
+                    yield f"{line.decode('utf-8', errors='ignore')}\n\n"
+        return Response(generate(), mimetype="text/event-stream")
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/wacalls/sessions/<session_id>", methods=["DELETE"])
 def delete_wacalls_session(session_id):
     try:

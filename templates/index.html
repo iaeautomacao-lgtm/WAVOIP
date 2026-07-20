@@ -2765,7 +2765,7 @@
     const name = document.getElementById('wacalls-session-name').value.trim();
     if (!name) { toast('Digite um nome para o chip.', 'err'); return; }
     const qrContainer = document.getElementById('wacalls-qr-container');
-    qrContainer.innerHTML = '<div class="loader"><div class="spin"></div>Gerando QR Code...</div>';
+    qrContainer.innerHTML = '<div class="loader"><div class="spin"></div>Gerando sessão e solicitando QR Code...</div>';
     try {
       const res = await fetch(`${API}/api/wacalls/sessions`, {
         method: 'POST',
@@ -2775,40 +2775,76 @@
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      // Inicia polling de QR Code e Status
       const sessionId = data.id || name;
+
+      // Dispara emissao de novo QR Code no WaCalls
+      try {
+        await fetch(`${API}/api/wacalls/sessions/${sessionId}/pair`, { method: 'POST' });
+      } catch (_) {}
+
+      // Inicia polling de QR Code e Status
       pollWaCallsQR(sessionId);
     } catch(e) {
-      qrContainer.innerHTML = `<div style="color:var(--red);font-weight:600">Erro: ${escapeHtml(e.message)}</div><div class="td-dim" style="margin-top:6px">Certifique-se de que o servidor WaCalls está rodando na porta 8080.</div>`;
+      qrContainer.innerHTML = `<div style="color:var(--red);font-weight:600">Erro: ${escapeHtml(e.message)}</div><div class="td-dim" style="margin-top:6px">Certifique-se de que o servidor WaCalls está rodando.</div>`;
     }
   }
 
   function pollWaCallsQR(sessionId) {
     if (wacallsPollTimer) clearInterval(wacallsPollTimer);
     const qrContainer = document.getElementById('wacalls-qr-container');
-    
+    let qrEventSource = null;
+
+    try {
+      qrEventSource = new EventSource(`${API}/api/wacalls/events`);
+      qrEventSource.onmessage = (event) => {
+        try {
+          const ev = JSON.parse(event.data);
+          if (ev.sessionId === sessionId || (ev.sessions && ev.sessions.find(s => s.id === sessionId))) {
+            const sess = ev.sessions ? ev.sessions.find(s => s.id === sessionId) : null;
+            if (ev.paired || (sess && (sess.paired || sess.state === 'open'))) {
+              qrContainer.innerHTML = `<div style="color:#10b981;font-weight:700;font-size:16px;">✅ CHIP CONECTADO COM SUCESSO!</div><div class="td-dim" style="margin-top:4px">O chip já está ativo e disponível para discagem no CallOps.</div>`;
+              if (qrEventSource) qrEventSource.close();
+              if (wacallsPollTimer) clearInterval(wacallsPollTimer);
+              loadWaCallsSessions();
+              return;
+            }
+            const qrVal = ev.qr || (sess ? sess.qr : null);
+            if (qrVal) {
+              const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrVal)}`;
+              qrContainer.innerHTML = `
+                <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--brand)">ABRA O WHATSAPP DA SUA EMPRESA E ESCANEIE:</div>
+                <img src="${qrImgUrl}" style="width:240px;height:240px;border-radius:12px;border:3px solid var(--brand);background:#fff;padding:8px;" />
+                <div class="td-dim" style="margin-top:8px">Aguardando leitura no celular... (Aparelhos Conectados)</div>
+              `;
+            }
+          }
+        } catch (_) {}
+      };
+    } catch (_) {}
+
     async function checkState() {
       try {
         const res = await fetch(`${API}/api/wacalls/sessions`);
-        const sessions = await res.json();
-        const sess = Array.isArray(sessions) ? sessions.find(s => s.id === sessionId || s.name === sessionId) : null;
+        const data = await res.json();
+        const sessions = Array.isArray(data) ? data : (data.sessions || data.data || []);
+        const sess = sessions.find(s => s.id === sessionId || s.name === sessionId);
         if (sess) {
-          if (sess.status === 'connected' || sess.status === 'online' || sess.paired) {
+          if (sess.status === 'connected' || sess.status === 'online' || sess.paired || sess.state === 'open') {
             qrContainer.innerHTML = `<div style="color:#10b981;font-weight:700;font-size:16px;">✅ CHIP CONECTADO COM SUCESSO!</div><div class="td-dim" style="margin-top:4px">O chip já está ativo e disponível para discagem no CallOps.</div>`;
+            if (qrEventSource) qrEventSource.close();
             clearInterval(wacallsPollTimer);
             loadWaCallsSessions();
             return;
           }
           if (sess.qr) {
+            const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(sess.qr)}`;
             qrContainer.innerHTML = `
               <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--brand)">ABRA O WHATSAPP DA SUA EMPRESA E ESCANEIE:</div>
-              <img src="${sess.qr}" style="width:240px;height:240px;border-radius:12px;border:3px solid var(--brand);background:#fff;padding:8px;" />
+              <img src="${qrImgUrl}" style="width:240px;height:240px;border-radius:12px;border:3px solid var(--brand);background:#fff;padding:8px;" />
               <div class="td-dim" style="margin-top:8px">Aguardando leitura no celular... (Aparelhos Conectados)</div>
             `;
-            return;
           }
         }
-        qrContainer.innerHTML = `<div class="loader"><div class="spin"></div>Aguardando emissão do QR Code pelo servidor WaCalls...</div>`;
       } catch(_) {}
     }
 
