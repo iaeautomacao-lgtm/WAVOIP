@@ -2856,7 +2856,12 @@
     if (!confirm('Deseja desconectar e remover esta linha do WaCalls?')) return;
     try {
       const res = await fetch(`${API}/api/wacalls/sessions/${id}`, { method: 'DELETE' });
-      const json = await res.json();
+      if (res.status === 204 || res.ok) {
+        toast('✓ Linha desconectada', 'ok');
+        loadWaCallsSessions();
+        return;
+      }
+      const json = await res.json().catch(() => ({ ok: true }));
       toast('✓ Linha desconectada', 'ok');
       loadWaCallsSessions();
     } catch(e) {
