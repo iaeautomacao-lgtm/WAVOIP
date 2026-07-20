@@ -47,7 +47,14 @@ def _get_assistant_id(debito: dict) -> str:
 REDIS_URL         = env("REDIS_URL", "redis://localhost:6379/0")
 LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "1")))
 LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
-WACALLS_BASE_URL  = env("WACALLS_BASE_URL", "https://wacalls-c-production-4559.up.railway.app")
+
+def _get_wacalls_url() -> str:
+    url = env("WACALLS_BASE_URL", "https://wacalls-c-production-4559.up.railway.app").strip()
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = f"https://{url}"
+    return url.rstrip("/")
+
+WACALLS_BASE_URL  = _get_wacalls_url()
 API_AUTH_TOKEN    = env("API_AUTH_TOKEN")
 VAPI_WEBHOOK_SECRET = env("VAPI_WEBHOOK_SECRET")
 CORS_ORIGINS      = [x.strip() for x in env("CORS_ORIGINS").split(",") if x.strip()]
@@ -881,11 +888,12 @@ def make_call():
 
 @app.route("/api/wacalls/sessions", methods=["GET", "POST"])
 def wacalls_sessions():
+    base_url = _get_wacalls_url()
     try:
         import requests
         if request.method == "GET":
             try:
-                resp = requests.get(f"{WACALLS_BASE_URL}/api/sessions", timeout=4)
+                resp = requests.get(f"{base_url}/api/sessions", timeout=5)
                 data = resp.json() if (resp.text and resp.text.strip()) else []
                 if isinstance(data, dict) and "sessions" in data:
                     data = data["sessions"]
@@ -893,14 +901,14 @@ def wacalls_sessions():
             except Exception:
                 return jsonify([]), 200
         else:
-            resp = requests.post(f"{WACALLS_BASE_URL}/api/sessions", json=request.json or {}, timeout=5)
+            resp = requests.post(f"{base_url}/api/sessions", json=request.json or {}, timeout=8)
             try:
                 data = resp.json() if (resp.text and resp.text.strip()) else {"id": (request.json or {}).get("name", "session")}
             except Exception:
                 data = {"id": (request.json or {}).get("name", "session")}
             return jsonify(data), resp.status_code
     except Exception as e:
-        return jsonify({"ok": False, "error": f"Servidor WaCalls indisponível ({WACALLS_BASE_URL}). Certifique-se de que o Go WaCalls foi iniciado."}), 502
+        return jsonify({"ok": False, "error": f"Servidor WaCalls indisponível ({base_url}). {e}"}), 502
 
 
 @app.route("/api/wacalls/sessions/<session_id>", methods=["DELETE"])
