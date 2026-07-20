@@ -933,8 +933,8 @@ def list_campaigns():
                 try:
                     calls = supabase.table("campaign_calls").select("id, status, answered, error").eq("campaign_id", cid).execute().data or []
                     c["answered"] = sum(1 for r in calls if r.get("answered") or r.get("status") == "atendido")
-                    c["errors"] = sum(1 for r in calls if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone"))
-                    c["last_error"] = next((r.get("error") for r in calls if r.get("error")), "")
+                    c["errors"] = sum(1 for r in calls if not r.get("answered") and r.get("status") not in ("pendente", "enfileirado"))
+                    c["last_error"] = next((r.get("error") for r in calls if r.get("error")), "Falha de linha ou chamada não atendida")
                 except Exception:
                     pass
         return jsonify({"ok": True, "data": camps})
