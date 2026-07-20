@@ -477,6 +477,43 @@ def vapi_call(
     raise Exception(f"Todas as linhas falharam: {last_err}")
 
 
+WACALLS_BASE_URL = env("WACALLS_BASE_URL", "http://localhost:8080")
+
+def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None) -> Dict:
+    import requests
+    phone_e164 = _phone_e164(phone)
+    digits = re.sub(r"\D", "", phone_e164)
+    if len(digits) < 12:
+        raise Exception(f"telefone invalido para WaCalls: {phone}")
+
+    payload = {
+        "phone": phone_e164,
+        "name": name or cpf or "Devedor",
+        "cpf": cpf,
+    }
+    session_id = "default"
+    try:
+        sess_resp = requests.get(f"{WACALLS_BASE_URL}/api/sessions", timeout=4)
+        if sess_resp.status_code == 200:
+            sessions = sess_resp.json()
+            if isinstance(sessions, list):
+                for s in sessions:
+                    if s.get("status") in ("connected", "paired", "active", "online") or s.get("paired"):
+                        session_id = s.get("id")
+                        break
+                if session_id == "default" and sessions:
+                    session_id = sessions[0].get("id", "default")
+    except Exception:
+        pass
+
+    url = f"{WACALLS_BASE_URL}/api/sessions/{session_id}/calls"
+    resp = requests.post(url, json=payload, timeout=8)
+    if resp.status_code not in (200, 201):
+        raise Exception(f"WaCalls API erro [{resp.status_code}]: {resp.text}")
+    res_json = resp.json()
+    return {"id": res_json.get("id") or res_json.get("call_id") or f"wacalls-{int(time.time())}", "provider": "wacalls"}
+
+
 # ── HELPERS ───────────────────────────────────────────────────
 
 def _norm_cpf(cpf) -> str:
@@ -636,8 +673,17 @@ def make_call_task(self, campaign_id: str, contact: dict):
         _update_result(row_id, "sem_telefone", None, None)
         return
 
-    # Sem linha reservada, mantem compatibilidade com chamadas antigas/manuais.
-    if not line_token:
+    # Consulta o provedor configurado na campanha (wavoip, wacalls ou hybrid)
+    dialer_provider = "wavoip"
+    try:
+        camp_res = supabase.table("campaigns").select("dialer_provider").eq("id", campaign_id).execute().data
+        if camp_res and camp_res[0].get("dialer_provider"):
+            dialer_provider = camp_res[0].get("dialer_provider")
+    except Exception:
+        pass
+
+    # Sem linha reservada (e provedor wavoip), aguarda linha disponivel
+    if dialer_provider in ("wavoip", "hybrid") and not line_token:
         MAX_WAIT  = 30 * 60
         CHECK_INT = 30
         waited    = 0
@@ -650,8 +696,9 @@ def make_call_task(self, campaign_id: str, contact: dict):
             time.sleep(CHECK_INT)
             waited += CHECK_INT
         else:
-            _update_result(row_id, "falha_sem_linha", None, None)
-            return
+            if dialer_provider != "hybrid":
+                _update_result(row_id, "falha_sem_linha", None, None)
+                return
 
     # Tenta cada telefone em sequencia ate um funcionar
     last_error = None
@@ -660,16 +707,34 @@ def make_call_task(self, campaign_id: str, contact: dict):
         if not phone:
             continue
         try:
-            data    = vapi_call(
-                phone,
-                cpf=cpf,
-                name=name,
-                debito=debito,
-                line_token=line_token,
-                phone_number_id=phone_number_id,
-                line_name=line_name,
-                campaign_assistant_id=contact.get("campaign_assistant_id") or "",
-            )
+            if dialer_provider == "wacalls":
+                data = wacalls_call(phone, name=name, cpf=cpf, debito=debito)
+            elif dialer_provider == "hybrid":
+                try:
+                    data = vapi_call(
+                        phone,
+                        cpf=cpf,
+                        name=name,
+                        debito=debito,
+                        line_token=line_token,
+                        phone_number_id=phone_number_id,
+                        line_name=line_name,
+                        campaign_assistant_id=contact.get("campaign_assistant_id") or "",
+                    )
+                except Exception as ex_wavoip:
+                    # Failover automatico para WaCalls caso a Wavoip falhe
+                    data = wacalls_call(phone, name=name, cpf=cpf, debito=debito)
+            else:
+                data = vapi_call(
+                    phone,
+                    cpf=cpf,
+                    name=name,
+                    debito=debito,
+                    line_token=line_token,
+                    phone_number_id=phone_number_id,
+                    line_name=line_name,
+                    campaign_assistant_id=contact.get("campaign_assistant_id") or "",
+                )
             call_id = data.get("id")
             # Sucesso — registra o telefone que funcionou e encerra
             _update_result(row_id, "em_andamento", call_id, phone)

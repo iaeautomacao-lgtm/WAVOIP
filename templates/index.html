@@ -954,6 +954,11 @@
           <select class="mini-select" id="campaign-group-select" onchange="applyCampaignGroupSelection()">
             <option value="">Grupo de SIPs...</option>
           </select>
+          <select class="mini-select" id="campaign-provider-select" style="max-width: 220px;">
+            <option value="hybrid" selected>⚡ Provedor: Híbrido (Auto-Failover)</option>
+            <option value="wavoip">📞 Provedor: Wavoip (SIP Trunk)</option>
+            <option value="wacalls">🌐 Provedor: WaCalls (Gateway Go)</option>
+          </select>
           <button class="btn btn-success" id="btn-save-campaign" onclick="saveCampaign()">💾 &nbsp;Salvar campanha</button>
           <button class="btn btn-danger" onclick="resetImport()">✕ &nbsp;Limpar</button>
           <div class="campaign-line-panel">
@@ -1782,9 +1787,11 @@
       const errors = c.errors ?? 0;
       const errorBadge = errors > 0 ? `<span class="tag tag-red" style="margin-left:4px" title="${escapeHtml(c.last_error || 'Erro no disparo')}">⚠️ ${errors} erro${errors > 1 ? 's' : ''}</span>` : '';
       const answeredBadge = answered > 0 ? `<span class="tag tag-green" style="margin-left:4px">✅ ${answered} ok</span>` : '';
+      const provider = c.dialer_provider || 'wavoip';
+      const providerLabel = provider === 'wacalls' ? '<span class="tag tag-purple" style="margin-left:6px">🌐 WaCalls</span>' : (provider === 'hybrid' ? '<span class="tag tag-green" style="margin-left:6px">⚡ Híbrido</span>' : '<span class="tag tag-ghost" style="margin-left:6px">📞 Wavoip</span>');
 
       return `<tr>
-        <td>${escapeHtml(c.name)}</td>
+        <td>${escapeHtml(c.name)} ${providerLabel}</td>
         <td><span class="cs ${s.cls}">${s.label}</span></td>
         <td class="td-mono">${sipLabel}</td>
         <td class="td-mono">${c.total ?? 0}</td>
@@ -2084,10 +2091,11 @@
     }
     const btn = document.getElementById('btn-save-campaign');
     btn.disabled = true; btn.textContent = 'Salvando…';
+    const dialer_provider = document.getElementById('campaign-provider-select')?.value || 'hybrid';
     try {
       const body = importSessionId
-        ? { name, session_id: importSessionId, line_tokens, sip_group_id, assistant_id }
-        : { name, contacts: importRows.filter(r => r.phone), line_tokens, sip_group_id, assistant_id };
+        ? { name, session_id: importSessionId, line_tokens, sip_group_id, assistant_id, dialer_provider }
+        : { name, contacts: importRows.filter(r => r.phone), line_tokens, sip_group_id, assistant_id, dialer_provider };
       const res  = await fetch(`${API}/api/campaigns`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

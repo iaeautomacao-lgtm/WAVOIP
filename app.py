@@ -47,6 +47,7 @@ def _get_assistant_id(debito: dict) -> str:
 REDIS_URL         = env("REDIS_URL", "redis://localhost:6379/0")
 LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "1")))
 LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
+WACALLS_BASE_URL  = env("WACALLS_BASE_URL", "http://localhost:8080")
 API_AUTH_TOKEN    = env("API_AUTH_TOKEN")
 VAPI_WEBHOOK_SECRET = env("VAPI_WEBHOOK_SECRET")
 CORS_ORIGINS      = [x.strip() for x in env("CORS_ORIGINS").split(",") if x.strip()]
@@ -878,6 +879,20 @@ def make_call():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/wacalls/sessions", methods=["GET", "POST"])
+def wacalls_sessions():
+    try:
+        import requests
+        if request.method == "GET":
+            resp = requests.get(f"{WACALLS_BASE_URL}/api/sessions", timeout=5)
+            return jsonify(resp.json()), resp.status_code
+        else:
+            resp = requests.post(f"{WACALLS_BASE_URL}/api/sessions", json=request.json or {}, timeout=5)
+            return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Erro de comunicacao com servidor WaCalls: {e}"}), 502
+
+
 @app.route("/api/monitor", methods=["GET"])
 def monitor():
     try:
@@ -1097,11 +1112,14 @@ def create_campaign():
         if not contacts:
             return jsonify({"ok": False, "error": "Nenhum contato com telefone"}), 400
 
+        dialer_provider = body.get("dialer_provider", "wavoip")
+
         camp_payload = {
             "name":   name,
             "status": "rascunho",
             "total":  len(contacts),
             "line_tokens": line_tokens,
+            "dialer_provider": dialer_provider,
         }
         if sip_group_id:
             camp_payload["sip_group_id"] = sip_group_id
