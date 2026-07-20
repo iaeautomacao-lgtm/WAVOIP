@@ -477,7 +477,7 @@ def vapi_call(
     raise Exception(f"Todas as linhas falharam: {last_err}")
 
 
-WACALLS_BASE_URL = env("WACALLS_BASE_URL", "https://wacalls-c-production-4559.up.railway.app")
+WACALLS_VAPI_PHONE_NUMBER_ID = env("WACALLS_VAPI_PHONE_NUMBER_ID", "75f8ecfc-ce17-416b-8bb4-397c7cdb1c36")
 
 def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None, campaign_assistant_id: str = "") -> Dict:
     import requests
@@ -486,41 +486,22 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None,
     if len(digits) < 12:
         raise Exception(f"telefone invalido para WaCalls: {phone}")
 
-    # 1. Inicia/Reserva Sessão da Julia na Vapi API para esta negociação
-    vapi_session_data = {}
+    # 1. Dispara a chamada da Vapi (Julia) através do Tronco SIP do WaCalls
     try:
-        assistant_id = campaign_assistant_id if campaign_assistant_id else _get_assistant_id(debito)
-        vapi_payload = {
-            "type": "web",
-            "assistantId": assistant_id,
-            "customer": {"number": phone_e164, "name": name or "Devedor"},
-        }
-        if debito:
-            vapi_payload["assistantOverrides"] = {
-                "variableValues": {
-                    "instituicao": debito.get("instituicao", ""),
-                    "Valorcpf": cpf,
-                    "NominalPrinc": debito.get("PgtoAvista", {}).get("ValorTotal", "0,00"),
-                    "PgtoAvista": debito.get("PgtoAvista", {}),
-                    "CalculoBoleto": debito.get("CalculoBoleto", {}),
-                    "ParcelasBoleto": debito.get("ParcelasBoleto", "0"),
-                    "PgtoParceladoCartao": debito.get("PgtoParceladoCartao", {}),
-                    "PrimeiroVencto": debito.get("PrimeiroVencto", "em dois dias"),
-                    "QuantidadeMensalidades": debito.get("numero_debitos", "1"),
-                    "ValorFinalAVista": debito.get("PgtoAvista", {}).get("ValorFinal", "0,00"),
-                }
-            }
-        vr = requests.post(f"{VAPI_BASE}/call", json=vapi_payload,
-            headers={
-                "Authorization": f"Bearer {VAPI_API_KEY}",
-                "Content-Type": "application/json"
-            }, timeout=8)
-        if vr.ok:
-            vapi_session_data = vr.json()
-    except Exception as e:
-        logging.warning(f"Aviso Vapi API WebCall WaCalls: {e}")
+        vapi_data = vapi_call(
+            phone,
+            cpf=cpf,
+            name=name,
+            debito=debito,
+            phone_number_id=WACALLS_VAPI_PHONE_NUMBER_ID,
+            campaign_assistant_id=campaign_assistant_id,
+        )
+        call_id = vapi_data.get("id") or f"wacalls-{int(time.time())}"
+        return {"id": call_id, "vapi_call_id": call_id, "provider": "wacalls"}
+    except Exception as ex:
+        logging.warning(f"Aviso disparo Vapi SIP WaCalls: {ex}")
 
-    # 2. Dispara chamada no WaCalls no WhatsApp do devedor
+    # 2. Fallback direto via API REST do WaCalls
     payload = {
         "phone": phone_e164,
         "name": name or cpf or "Devedor",
@@ -549,12 +530,7 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None,
         raise Exception(f"WaCalls API erro [{resp.status_code}]: {resp.text}")
     res_json = resp.json()
     call_id = res_json.get("id") or res_json.get("call_id") or f"wacalls-{int(time.time())}"
-    
-    return {
-        "id": call_id,
-        "vapi_call_id": vapi_session_data.get("id"),
-        "provider": "wacalls"
-    }
+    return {"id": call_id, "provider": "wacalls"}
 
 
 # ── HELPERS ───────────────────────────────────────────────────
