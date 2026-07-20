@@ -49,7 +49,8 @@ LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "
 LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
 
 def _get_wacalls_url() -> str:
-    url = env("WACALLS_BASE_URL", "https://wacalls-c-production-4559.up.railway.app").strip()
+    url = env("WACALLS_BASE_URL", "https://wacalls-c-production-cb9b.up.railway.app").strip().strip('"').strip("'")
+    url = url.rstrip('\\').rstrip('"').rstrip("'")
     if not url.startswith("http://") and not url.startswith("https://"):
         url = f"https://{url}"
     return url.rstrip("/")

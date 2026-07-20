@@ -477,6 +477,13 @@ def vapi_call(
     raise Exception(f"Todas as linhas falharam: {last_err}")
 
 
+def _get_wacalls_url() -> str:
+    url = env("WACALLS_BASE_URL", "https://wacalls-c-production-cb9b.up.railway.app").strip().strip('"').strip("'")
+    url = url.rstrip('\\').rstrip('"').rstrip("'")
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = f"https://{url}"
+    return url.rstrip("/")
+
 WACALLS_VAPI_PHONE_NUMBER_ID = env("WACALLS_VAPI_PHONE_NUMBER_ID", "75f8ecfc-ce17-416b-8bb4-397c7cdb1c36")
 
 def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None, campaign_assistant_id: str = "") -> Dict:
@@ -502,6 +509,7 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None,
         logging.warning(f"Aviso disparo Vapi SIP WaCalls: {ex}")
 
     # 2. Fallback direto via API REST do WaCalls
+    wacalls_url = _get_wacalls_url()
     payload = {
         "phone": phone_e164,
         "name": name or cpf or "Devedor",
@@ -509,7 +517,7 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None,
     }
     session_id = "default"
     try:
-        sess_resp = requests.get(f"{WACALLS_BASE_URL}/api/sessions", timeout=4)
+        sess_resp = requests.get(f"{wacalls_url}/api/sessions", timeout=4)
         if sess_resp.status_code == 200:
             sessions = sess_resp.json()
             if isinstance(sessions, dict) and "sessions" in sessions:
@@ -524,7 +532,7 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None,
     except Exception:
         pass
 
-    url = f"{WACALLS_BASE_URL}/api/sessions/{session_id}/calls"
+    url = f"{wacalls_url}/api/sessions/{session_id}/calls"
     resp = requests.post(url, json=payload, timeout=8)
     if resp.status_code not in (200, 201):
         raise Exception(f"WaCalls API erro [{resp.status_code}]: {resp.text}")
