@@ -479,13 +479,47 @@ def vapi_call(
 
 WACALLS_BASE_URL = env("WACALLS_BASE_URL", "https://wacalls-c-production-4559.up.railway.app")
 
-def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None) -> Dict:
+def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None, campaign_assistant_id: str = "") -> Dict:
     import requests
     phone_e164 = _phone_e164(phone)
     digits = re.sub(r"\D", "", phone_e164)
     if len(digits) < 12:
         raise Exception(f"telefone invalido para WaCalls: {phone}")
 
+    # 1. Inicia/Reserva Sessão da Julia na Vapi API para esta negociação
+    vapi_session_data = {}
+    try:
+        assistant_id = campaign_assistant_id if campaign_assistant_id else _get_assistant_id(debito)
+        vapi_payload = {
+            "assistantId": assistant_id,
+            "customer": {"number": phone_e164, "name": name or "Devedor"},
+        }
+        if debito:
+            vapi_payload["assistantOverrides"] = {
+                "variableValues": {
+                    "instituicao": debito.get("instituicao", ""),
+                    "Valorcpf": cpf,
+                    "NominalPrinc": debito.get("PgtoAvista", {}).get("ValorTotal", "0,00"),
+                    "PgtoAvista": debito.get("PgtoAvista", {}),
+                    "CalculoBoleto": debito.get("CalculoBoleto", {}),
+                    "ParcelasBoleto": debito.get("ParcelasBoleto", "0"),
+                    "PgtoParceladoCartao": debito.get("PgtoParceladoCartao", {}),
+                    "PrimeiroVencto": debito.get("PrimeiroVencto", "em dois dias"),
+                    "QuantidadeMensalidades": debito.get("numero_debitos", "1"),
+                    "ValorFinalAVista": debito.get("PgtoAvista", {}).get("ValorFinal", "0,00"),
+                }
+            }
+        vr = requests.post(f"{VAPI_BASE}/call", json=vapi_payload,
+            headers={
+                "Authorization": f"Bearer {VAPI_API_KEY}",
+                "Content-Type": "application/json"
+            }, timeout=8)
+        if vr.ok:
+            vapi_session_data = vr.json()
+    except Exception as e:
+        logging.warning(f"Aviso Vapi API WebCall WaCalls: {e}")
+
+    # 2. Dispara chamada no WaCalls no WhatsApp do devedor
     payload = {
         "phone": phone_e164,
         "name": name or cpf or "Devedor",
@@ -496,6 +530,8 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None)
         sess_resp = requests.get(f"{WACALLS_BASE_URL}/api/sessions", timeout=4)
         if sess_resp.status_code == 200:
             sessions = sess_resp.json()
+            if isinstance(sessions, dict) and "sessions" in sessions:
+                sessions = sessions["sessions"]
             if isinstance(sessions, list):
                 for s in sessions:
                     if s.get("status") in ("connected", "paired", "active", "online") or s.get("paired"):
@@ -511,7 +547,13 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None)
     if resp.status_code not in (200, 201):
         raise Exception(f"WaCalls API erro [{resp.status_code}]: {resp.text}")
     res_json = resp.json()
-    return {"id": res_json.get("id") or res_json.get("call_id") or f"wacalls-{int(time.time())}", "provider": "wacalls"}
+    call_id = res_json.get("id") or res_json.get("call_id") or f"wacalls-{int(time.time())}"
+    
+    return {
+        "id": call_id,
+        "vapi_call_id": vapi_session_data.get("id"),
+        "provider": "wacalls"
+    }
 
 
 # ── HELPERS ───────────────────────────────────────────────────
@@ -708,7 +750,7 @@ def make_call_task(self, campaign_id: str, contact: dict):
             continue
         try:
             if dialer_provider == "wacalls":
-                data = wacalls_call(phone, name=name, cpf=cpf, debito=debito)
+                data = wacalls_call(phone, name=name, cpf=cpf, debito=debito, campaign_assistant_id=contact.get("campaign_assistant_id") or "")
             elif dialer_provider == "hybrid":
                 try:
                     data = vapi_call(
@@ -723,7 +765,7 @@ def make_call_task(self, campaign_id: str, contact: dict):
                     )
                 except Exception as ex_wavoip:
                     # Failover automatico para WaCalls caso a Wavoip falhe
-                    data = wacalls_call(phone, name=name, cpf=cpf, debito=debito)
+                    data = wacalls_call(phone, name=name, cpf=cpf, debito=debito, campaign_assistant_id=contact.get("campaign_assistant_id") or "")
             else:
                 data = vapi_call(
                     phone,
