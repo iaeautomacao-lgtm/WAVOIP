@@ -477,7 +477,7 @@ def vapi_call(
     raise Exception(f"Todas as linhas falharam: {last_err}")
 
 
-WACALLS_BASE_URL = env("WACALLS_BASE_URL", "http://localhost:8080")
+WACALLS_BASE_URL = env("WACALLS_BASE_URL", "https://wacalls-c-production-4559.up.railway.app")
 
 def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None) -> Dict:
     import requests

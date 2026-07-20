@@ -47,7 +47,7 @@ def _get_assistant_id(debito: dict) -> str:
 REDIS_URL         = env("REDIS_URL", "redis://localhost:6379/0")
 LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "1")))
 LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
-WACALLS_BASE_URL  = env("WACALLS_BASE_URL", "http://localhost:8080")
+WACALLS_BASE_URL  = env("WACALLS_BASE_URL", "https://wacalls-c-production-4559.up.railway.app")
 API_AUTH_TOKEN    = env("API_AUTH_TOKEN")
 VAPI_WEBHOOK_SECRET = env("VAPI_WEBHOOK_SECRET")
 CORS_ORIGINS      = [x.strip() for x in env("CORS_ORIGINS").split(",") if x.strip()]
@@ -887,6 +887,8 @@ def wacalls_sessions():
             try:
                 resp = requests.get(f"{WACALLS_BASE_URL}/api/sessions", timeout=4)
                 data = resp.json() if (resp.text and resp.text.strip()) else []
+                if isinstance(data, dict) and "sessions" in data:
+                    data = data["sessions"]
                 return jsonify(data), resp.status_code
             except Exception:
                 return jsonify([]), 200
