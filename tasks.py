@@ -779,8 +779,14 @@ def make_call_task(self, campaign_id: str, contact: dict):
                     campaign_assistant_id=contact.get("campaign_assistant_id") or "",
                 )
             call_id = data.get("id")
-            # Sucesso — registra o telefone que funcionou e encerra
-            _update_result(row_id, "em_andamento", call_id, phone)
+            if dialer_provider == "wacalls":
+                _update_result(row_id, "atendida", call_id, phone)
+                try:
+                    check_campaign_done(campaign_id)
+                except Exception:
+                    pass
+            else:
+                _update_result(row_id, "em_andamento", call_id, phone)
             return
         except Exception as ex:
             last_error = f"{phone}: {str(ex)}"
