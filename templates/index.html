@@ -1778,12 +1778,21 @@
       const canStart = c.status === 'rascunho' || c.status === 'pausada';
       const canPause = c.status === 'em_andamento';
       const canResume = c.status === 'finalizada' || c.status === 'pausada';
+      const answered = c.answered ?? 0;
+      const errors = c.errors ?? 0;
+      const errorBadge = errors > 0 ? `<span class="tag tag-red" style="margin-left:4px" title="${escapeHtml(c.last_error || 'Erro no disparo')}">⚠️ ${errors} erro${errors > 1 ? 's' : ''}</span>` : '';
+      const answeredBadge = answered > 0 ? `<span class="tag tag-green" style="margin-left:4px">✅ ${answered} ok</span>` : '';
+
       return `<tr>
         <td>${escapeHtml(c.name)}</td>
         <td><span class="cs ${s.cls}">${s.label}</span></td>
         <td class="td-mono">${sipLabel}</td>
         <td class="td-mono">${c.total ?? 0}</td>
-        <td class="td-mono">${c.finished ?? 0} / ${c.total ?? 0}</td>
+        <td class="td-mono">
+          ${c.finished ?? 0} / ${c.total ?? 0}
+          ${answeredBadge}
+          ${errorBadge}
+        </td>
         <td class="td-dim">${date}</td>
         <td>
           <div style="display:flex;gap:6px">

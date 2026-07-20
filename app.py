@@ -45,7 +45,7 @@ def _get_assistant_id(debito: dict) -> str:
     # Se não for Cruzeiro, usa o do Veiga / DDM
     return VAPI_ASSISTANT_ID_DDM
 REDIS_URL         = env("REDIS_URL", "redis://localhost:6379/0")
-LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "2")))
+LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "1")))
 LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
 API_AUTH_TOKEN    = env("API_AUTH_TOKEN")
 VAPI_WEBHOOK_SECRET = env("VAPI_WEBHOOK_SECRET")
@@ -110,16 +110,25 @@ run_migrations()
 WAVOIP_VAPI_MAP = {
     "ed49616d-fb19-46df-96b8-decab4cde3cf": env("VAPI_PHONE_NUMBER_ID_1"),
     "c8af8686-ca83-4eef-b757-f53940426011": env("VAPI_PHONE_NUMBER_ID_2"),
+    "88b232ad-5c1d-404f-8652-f53940426011": env("VAPI_PHONE_NUMBER_ID_3"),
+    "49d7328f-13ab-469f-b8a9-b7eb2b713f43": env("VAPI_PHONE_NUMBER_ID_4"),
+    "8d739b23-77ed-4eb7-b807-e81270eb4ddb": env("VAPI_PHONE_NUMBER_ID_5"),
 }
 
 WAVOIP_ENV_MAP = {
     "ed49616d-fb19-46df-96b8-decab4cde3cf": "VAPI_PHONE_NUMBER_ID_1",
     "c8af8686-ca83-4eef-b757-f53940426011": "VAPI_PHONE_NUMBER_ID_2",
+    "88b232ad-5c1d-404f-8652-f53940426011": "VAPI_PHONE_NUMBER_ID_3",
+    "49d7328f-13ab-469f-b8a9-b7eb2b713f43": "VAPI_PHONE_NUMBER_ID_4",
+    "8d739b23-77ed-4eb7-b807-e81270eb4ddb": "VAPI_PHONE_NUMBER_ID_5",
 }
 
 DEVICE_PRIORITY = [
     "ed49616d-fb19-46df-96b8-decab4cde3cf",
     "c8af8686-ca83-4eef-b757-f53940426011",
+    "88b232ad-5c1d-404f-8652-f53940426011",
+    "49d7328f-13ab-469f-b8a9-b7eb2b713f43",
+    "8d739b23-77ed-4eb7-b807-e81270eb4ddb",
 ]
 
 _round_robin_idx = 0
@@ -635,7 +644,7 @@ def get_calls():
         only_answered = request.args.get("only_answered", "false").lower() == "true"
         
         query = supabase.table("campaign_calls").select(
-            "id, cpf, status, created_at, duration, campaign_id, recording_url, transcript, answered", count="exact"
+            "id, cpf, status, created_at, duration, campaign_id, recording_url, transcript, answered, error", count="exact"
         )
         
         if only_answered:
@@ -655,6 +664,7 @@ def get_calls():
                 "recording_url": row.get("recording_url"),
                 "transcript": row.get("transcript"),
                 "answered": bool(row.get("answered")),
+                "error": row.get("error") or "",
             }
             rows.append(r)
             cid = r.get("campaign_id")
@@ -916,7 +926,18 @@ def list_campaigns():
     try:
         result = supabase.table("campaigns")\
             .select("*").order("created_at", desc=True).execute()
-        return jsonify({"ok": True, "data": result.data})
+        camps = result.data or []
+        for c in camps:
+            cid = c.get("id")
+            if cid:
+                try:
+                    calls = supabase.table("campaign_calls").select("id, status, answered, error").eq("campaign_id", cid).execute().data or []
+                    c["answered"] = sum(1 for r in calls if r.get("answered") or r.get("status") == "atendido")
+                    c["errors"] = sum(1 for r in calls if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone"))
+                    c["last_error"] = next((r.get("error") for r in calls if r.get("error")), "")
+                except Exception:
+                    pass
+        return jsonify({"ok": True, "data": camps})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
