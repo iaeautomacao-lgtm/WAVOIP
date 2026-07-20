@@ -491,6 +491,7 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None,
     try:
         assistant_id = campaign_assistant_id if campaign_assistant_id else _get_assistant_id(debito)
         vapi_payload = {
+            "type": "web",
             "assistantId": assistant_id,
             "customer": {"number": phone_e164, "name": name or "Devedor"},
         }
