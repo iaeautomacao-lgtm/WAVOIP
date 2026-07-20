@@ -226,14 +226,25 @@ def wavoip_login() -> str:
     return _wavoip_token
 
 
+_wavoip_devices = []
+_wavoip_devices_ts = 0
+
 def wavoip_get_devices(token: str) -> list:
-    res = requests.get(f"{WAVOIP_BASE}/v2/devices/me",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }, timeout=10)
-    res.raise_for_status()
-    return res.json().get("data", [])
+    global _wavoip_devices, _wavoip_devices_ts
+    if _wavoip_devices and (time.time() - _wavoip_devices_ts) < 5:
+        return _wavoip_devices
+    try:
+        res = requests.get(f"{WAVOIP_BASE}/v2/devices/me",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }, timeout=4)
+        res.raise_for_status()
+        _wavoip_devices = res.json().get("data", [])
+        _wavoip_devices_ts = time.time()
+    except Exception as e:
+        logging.warning(f"Erro ao obter dispositivos Wavoip: {e}")
+    return _wavoip_devices
 
 
 def normalize_cpf(cpf: str) -> str:
@@ -1802,6 +1813,9 @@ def import_status(job_id):
 
 from flask import Response, stream_with_context
 
+_cached_payload = {}
+_cached_payload_ts = 0
+
 @app.route("/api/stream")
 def stream():
     token = _bearer_token()
@@ -1809,6 +1823,9 @@ def stream():
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     def _build_payload():
+        global _cached_payload, _cached_payload_ts
+        if _cached_payload and (time.time() - _cached_payload_ts) < 3:
+            return _cached_payload
         payload = {}
         try:
             wavoip_token = wavoip_login()
@@ -1892,6 +1909,8 @@ def stream():
         except Exception as e:
             payload["monitor_error"] = str(e)
 
+        _cached_payload = payload
+        _cached_payload_ts = time.time()
         return payload
 
     def generate():
