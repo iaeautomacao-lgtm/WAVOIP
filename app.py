@@ -893,6 +893,16 @@ def wacalls_sessions():
         return jsonify({"ok": False, "error": f"Erro de comunicacao com servidor WaCalls: {e}"}), 502
 
 
+@app.route("/api/wacalls/sessions/<session_id>", methods=["DELETE"])
+def delete_wacalls_session(session_id):
+    try:
+        import requests
+        resp = requests.delete(f"{WACALLS_BASE_URL}/api/sessions/{session_id}", timeout=5)
+        return jsonify(resp.json() if resp.text else {"ok": True}), resp.status_code
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/monitor", methods=["GET"])
 def monitor():
     try:

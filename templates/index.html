@@ -781,7 +781,7 @@
       <!-- LINHAS -->
       <div class="section active" id="tab-lines">
         <div class="sec-head">
-          <span class="sec-title">Linhas Wavoip</span>
+          <span class="sec-title">Linhas Wavoip (SIP Trunk)</span>
           <button class="btn btn-ghost" onclick="loadLines()">↻ &nbsp;Atualizar</button>
         </div>
         <div class="kpi-strip" id="lines-stats" style="display:none">
@@ -791,7 +791,19 @@
           <div class="kpi amber"><div class="kpi-label">Chamadas</div><div class="kpi-val" id="stat-calls">0</div></div>
         </div>
         <div class="lines-grid" id="lines-grid">
-          <div class="loader"><div class="spin"></div>Carregando linhas...</div>
+          <div class="loader"><div class="spin"></div>Carregando linhas Wavoip...</div>
+        </div>
+
+        <!-- LINHAS WACALLS (NATIVO GOLANG) -->
+        <div class="sec-head" style="margin-top:32px">
+          <span class="sec-title">Linhas WaCalls (Gateway NATIVO Go)</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-success" onclick="openWaCallsModal()">+ Conectar Nova Linha WaCalls</button>
+            <button class="btn btn-ghost" onclick="loadWaCallsSessions()">↻ &nbsp;Atualizar</button>
+          </div>
+        </div>
+        <div class="lines-grid" id="wacalls-grid">
+          <div class="td-dim">Clique em "+ Conectar Nova Linha WaCalls" para parear um chip via QR Code.</div>
         </div>
       </div>
 
@@ -2701,12 +2713,147 @@
     }
   }
 
+  /* ── WACALLS SESSIONS & QR CODE MANAGER ── */
+  let wacallsPollTimer = null;
+
+  async function loadWaCallsSessions() {
+    const grid = document.getElementById('wacalls-grid');
+    if (!grid) return;
+    try {
+      const res = await fetch(`${API}/api/wacalls/sessions`);
+      const data = await res.json();
+      const sessions = Array.isArray(data) ? data : (data.data || []);
+      if (!sessions.length) {
+        grid.innerHTML = '<div class="td-dim" style="padding:12px">Nenhuma linha WaCalls pareada no momento. Clique em "+ Conectar Nova Linha WaCalls" para parear um chip.</div>';
+        return;
+      }
+      grid.innerHTML = sessions.map(s => {
+        const isOnline = s.status === 'connected' || s.status === 'online' || s.paired;
+        const badgeClass = isOnline ? 'cs-ended' : 'cs-failed';
+        const badgeLabel = isOnline ? 'ONLINE / PAREADO' : (s.status || 'DESCONECTADO');
+        return `<div class="line-card ${isOnline ? 'healthy' : 'down'}">
+          <div class="line-card-header">
+            <span class="line-name">${escapeHtml(s.name || s.id || 'Linha WaCalls')}</span>
+            <span class="cs ${badgeClass}">${badgeLabel}</span>
+          </div>
+          <div class="line-details" style="font-size:12px;margin:8px 0;color:var(--muted)">
+            ID: <code style="color:var(--text)">${escapeHtml(s.id)}</code><br>
+            JID: ${escapeHtml(s.jid || '—')}
+          </div>
+          <div class="line-actions" style="margin-top:10px">
+            <button class="del-btn" style="width:100%" onclick="deleteWaCallsSession('${escapeHtml(s.id)}')">🗑 Desconectar</button>
+          </div>
+        </div>`;
+      }).join('');
+    } catch(e) {
+      grid.innerHTML = `<div class="td-dim" style="padding:12px;color:var(--red)">Servidor WaCalls offline ou não iniciado (:8080). Para ativar, inicie o WaCalls.</div>`;
+    }
+  }
+
+  function openWaCallsModal() {
+    document.getElementById('wacalls-session-name').value = `Chip WaCalls ${Math.floor(Math.random()*100)}`;
+    document.getElementById('wacalls-qr-container').innerHTML = '<div class="td-dim">Clique em "⚡ Gerar QR Code" para solicitar a chave de pareamento ao WaCalls.</div>';
+    document.getElementById('wacalls-modal').classList.add('open');
+  }
+
+  function closeWaCallsModal() {
+    document.getElementById('wacalls-modal').classList.remove('open');
+    if (wacallsPollTimer) clearInterval(wacallsPollTimer);
+  }
+
+  async function generateWaCallsQR() {
+    const name = document.getElementById('wacalls-session-name').value.trim();
+    if (!name) { toast('Digite um nome para o chip.', 'err'); return; }
+    const qrContainer = document.getElementById('wacalls-qr-container');
+    qrContainer.innerHTML = '<div class="loader"><div class="spin"></div>Gerando QR Code...</div>';
+    try {
+      const res = await fetch(`${API}/api/wacalls/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      // Inicia polling de QR Code e Status
+      const sessionId = data.id || name;
+      pollWaCallsQR(sessionId);
+    } catch(e) {
+      qrContainer.innerHTML = `<div style="color:var(--red);font-weight:600">Erro: ${escapeHtml(e.message)}</div><div class="td-dim" style="margin-top:6px">Certifique-se de que o servidor WaCalls está rodando na porta 8080.</div>`;
+    }
+  }
+
+  function pollWaCallsQR(sessionId) {
+    if (wacallsPollTimer) clearInterval(wacallsPollTimer);
+    const qrContainer = document.getElementById('wacalls-qr-container');
+    
+    async function checkState() {
+      try {
+        const res = await fetch(`${API}/api/wacalls/sessions`);
+        const sessions = await res.json();
+        const sess = Array.isArray(sessions) ? sessions.find(s => s.id === sessionId || s.name === sessionId) : null;
+        if (sess) {
+          if (sess.status === 'connected' || sess.status === 'online' || sess.paired) {
+            qrContainer.innerHTML = `<div style="color:#10b981;font-weight:700;font-size:16px;">✅ CHIP CONECTADO COM SUCESSO!</div><div class="td-dim" style="margin-top:4px">O chip já está ativo e disponível para discagem no CallOps.</div>`;
+            clearInterval(wacallsPollTimer);
+            loadWaCallsSessions();
+            return;
+          }
+          if (sess.qr) {
+            qrContainer.innerHTML = `
+              <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--brand)">ABRA O WHATSAPP DA SUA EMPRESA E ESCANEIE:</div>
+              <img src="${sess.qr}" style="width:240px;height:240px;border-radius:12px;border:3px solid var(--brand);background:#fff;padding:8px;" />
+              <div class="td-dim" style="margin-top:8px">Aguardando leitura no celular... (Aparelhos Conectados)</div>
+            `;
+            return;
+          }
+        }
+        qrContainer.innerHTML = `<div class="loader"><div class="spin"></div>Aguardando emissão do QR Code pelo servidor WaCalls...</div>`;
+      } catch(_) {}
+    }
+
+    checkState();
+    wacallsPollTimer = setInterval(checkState, 3000);
+  }
+
+  async function deleteWaCallsSession(id) {
+    if (!confirm('Deseja desconectar e remover esta linha do WaCalls?')) return;
+    try {
+      const res = await fetch(`${API}/api/wacalls/sessions/${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      toast('✓ Linha desconectada', 'ok');
+      loadWaCallsSessions();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
   loadLines();
   loadSipGroups();
+  loadWaCallsSessions();
   startRealtime();
   setInterval(() => {
-    if (!realtimeConnected) loadLines();
+    if (!realtimeConnected) { loadLines(); loadWaCallsSessions(); }
   }, 120_000);
   </script>
+
+  <!-- MODAL WACALLS QR CODE -->
+  <div class="overlay" id="wacalls-modal">
+    <div class="modal" style="width:440px">
+      <div class="modal-title">📱 Conectar Nova Linha WaCalls</div>
+      <div class="modal-field">
+        <label class="modal-label">Nome do Chip / Linha:</label>
+        <input type="text" id="wacalls-session-name" class="campaign-name-input" placeholder="Ex: Chip 3 (WaCalls)" style="width:100%" />
+      </div>
+      <div style="text-align:center;margin:16px 0;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;" id="wacalls-qr-container">
+        <div class="td-dim">Clique em "⚡ Gerar QR Code" para solicitar o pareamento.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="generateWaCallsQR()">⚡ Gerar QR Code</button>
+        <button class="btn btn-ghost" onclick="closeWaCallsModal()">Concluir / Fechar</button>
+      </div>
+    </div>
+  </div>
+
   </body>
   </html>
