@@ -884,13 +884,21 @@ def wacalls_sessions():
     try:
         import requests
         if request.method == "GET":
-            resp = requests.get(f"{WACALLS_BASE_URL}/api/sessions", timeout=5)
-            return jsonify(resp.json()), resp.status_code
+            try:
+                resp = requests.get(f"{WACALLS_BASE_URL}/api/sessions", timeout=4)
+                data = resp.json() if (resp.text and resp.text.strip()) else []
+                return jsonify(data), resp.status_code
+            except Exception:
+                return jsonify([]), 200
         else:
             resp = requests.post(f"{WACALLS_BASE_URL}/api/sessions", json=request.json or {}, timeout=5)
-            return jsonify(resp.json()), resp.status_code
+            try:
+                data = resp.json() if (resp.text and resp.text.strip()) else {"id": (request.json or {}).get("name", "session")}
+            except Exception:
+                data = {"id": (request.json or {}).get("name", "session")}
+            return jsonify(data), resp.status_code
     except Exception as e:
-        return jsonify({"ok": False, "error": f"Erro de comunicacao com servidor WaCalls: {e}"}), 502
+        return jsonify({"ok": False, "error": f"Servidor WaCalls indisponível ({WACALLS_BASE_URL}). Certifique-se de que o Go WaCalls foi iniciado."}), 502
 
 
 @app.route("/api/wacalls/sessions/<session_id>", methods=["DELETE"])
