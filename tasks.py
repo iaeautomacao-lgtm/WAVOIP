@@ -766,7 +766,7 @@ def make_call_task(self, campaign_id: str, contact: dict):
             if dialer_provider == "wacalls":
                 _update_result(row_id, "atendida", call_id, phone)
                 try:
-                    check_campaign_done(campaign_id)
+                    _check_campaign_completion(campaign_id)
                 except Exception:
                     pass
             else:
