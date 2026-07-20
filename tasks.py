@@ -493,7 +493,8 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None,
     if len(digits) < 12:
         raise Exception(f"telefone invalido para WaCalls: {phone}")
 
-    # 1. Dispara a chamada da Vapi (Julia) através do Tronco SIP do WaCalls
+    # 1. Inicia sessão da Julia na Vapi API
+    vapi_call_id = None
     try:
         vapi_data = vapi_call(
             phone,
@@ -503,12 +504,11 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None,
             phone_number_id=WACALLS_VAPI_PHONE_NUMBER_ID,
             campaign_assistant_id=campaign_assistant_id,
         )
-        call_id = vapi_data.get("id") or f"wacalls-{int(time.time())}"
-        return {"id": call_id, "vapi_call_id": call_id, "provider": "wacalls"}
+        vapi_call_id = vapi_data.get("id")
     except Exception as ex:
-        logging.warning(f"Aviso disparo Vapi SIP WaCalls: {ex}")
+        logging.warning(f"Aviso reserva Vapi SIP WaCalls: {ex}")
 
-    # 2. Fallback direto via API REST do WaCalls
+    # 2. Dispara a chamada telefônica via WhatsApp no WaCalls
     wacalls_url = _get_wacalls_url()
     payload = {
         "phone": phone_e164,
@@ -524,7 +524,7 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None,
                 sessions = sessions["sessions"]
             if isinstance(sessions, list):
                 for s in sessions:
-                    if s.get("status") in ("connected", "paired", "active", "online") or s.get("paired"):
+                    if s.get("status") in ("connected", "paired", "active", "online") or s.get("paired") or s.get("state") == "open":
                         session_id = s.get("id")
                         break
                 if session_id == "default" and sessions:
@@ -538,7 +538,7 @@ def wacalls_call(phone: str, name: str = "", cpf: str = "", debito: dict = None,
         raise Exception(f"WaCalls API erro [{resp.status_code}]: {resp.text}")
     res_json = resp.json()
     call_id = res_json.get("id") or res_json.get("call_id") or f"wacalls-{int(time.time())}"
-    return {"id": call_id, "provider": "wacalls"}
+    return {"id": call_id, "vapi_call_id": vapi_call_id or call_id, "provider": "wacalls"}
 
 
 # ── HELPERS ───────────────────────────────────────────────────
