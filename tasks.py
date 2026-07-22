@@ -436,10 +436,14 @@ def _acquire_scheduler_lock() -> tuple:
 def _release_scheduler_lock(token: str):
     try:
         r = redis_client()
-        if r.get("dialer:scheduler_lock") == token.encode():
+        val = r.get("dialer:scheduler_lock")
+        if isinstance(val, bytes):
+            val = val.decode("utf-8", errors="ignore")
+        if str(val or "").strip() == str(token).strip():
             r.delete("dialer:scheduler_lock")
     except Exception:
         pass
+
 
 
 def vapi_call(
@@ -1012,10 +1016,14 @@ def _get_call_delay_wait(delay_seconds: float = 7.0) -> float:
             return wait_time
         finally:
             try:
-                if r.get(lock_key) == token.encode():
+                val = r.get(lock_key)
+                if isinstance(val, bytes):
+                    val = val.decode("utf-8", errors="ignore")
+                if str(val or "").strip() == str(token).strip():
                     r.delete(lock_key)
             except Exception:
                 pass
+
     except Exception as e:
         logger.error(f"Error calculating call delay wait: {e}")
         return 0.0
