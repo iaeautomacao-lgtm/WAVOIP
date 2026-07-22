@@ -25,6 +25,44 @@ def env(name: str, default: str = "") -> str:
     value = os.getenv(name, default)
     return value.strip().strip('"').strip("'") if isinstance(value, str) else value
 
+
+def _dispatch_task(task_obj, args=None, kwargs=None, countdown=0):
+    """
+    Executa tarefas de forma resiliente: tenta via Celery (se disponível)
+    ou chaveia para threading.Thread / threading.Timer local se o Celery/Redis TCP não responder.
+    """
+    args = args or []
+    kwargs = kwargs or {}
+    countdown = max(0, int(countdown))
+    try:
+        if hasattr(task_obj, "apply_async"):
+            if countdown > 0:
+                return task_obj.apply_async(args=args, kwargs=kwargs, countdown=countdown)
+            else:
+                return task_obj.apply_async(args=args, kwargs=kwargs)
+    except Exception as e:
+        logger.debug(f"[dispatch_task] Celery/Redis não disponível, executando via Thread local: {e}")
+
+    def runner():
+        try:
+            if hasattr(task_obj, "run"):
+                task_obj.run(*args, **kwargs)
+            elif callable(task_obj):
+                task_obj(*args, **kwargs)
+        except Exception as ex:
+            task_name = getattr(task_obj, "__name__", str(task_obj))
+            logger.error(f"[dispatch_task] Erro ao executar {task_name} via Thread local: {ex}", exc_info=True)
+
+    if countdown > 0:
+        t = threading.Timer(float(countdown), runner)
+        t.daemon = True
+        t.start()
+    else:
+        t = threading.Thread(target=runner)
+        t.daemon = True
+        t.start()
+
+
 #credenciais
 REDIS_URL            = env("REDIS_URL", "redis://localhost:6379/0")
 VAPI_API_KEY         = env("VAPI_API_KEY")
@@ -160,9 +198,23 @@ _redis_client = None
 def redis_client():
     global _redis_client
     if _redis_client is None:
-        import redis as redis_lib
-        _redis_client = redis_lib.from_url(REDIS_URL)
+        rest_url = env("UPSTASH_REDIS_REST_URL", "")
+        rest_token = env("UPSTASH_REDIS_REST_TOKEN", "")
+        if rest_url or rest_token or env("REDIS_URL", "").startswith("https://") or "upstash.io" in env("REDIS_URL", ""):
+            try:
+                from redis_rest import UpstashRedisREST
+                _redis_client = UpstashRedisREST(rest_url, rest_token)
+                return _redis_client
+            except Exception as e:
+                logger.warning(f"[redis_client] Erro ao usar UpstashRedisREST: {e}")
+        try:
+            import redis as redis_lib
+            _redis_client = redis_lib.from_url(REDIS_URL)
+        except Exception:
+            from redis_rest import UpstashRedisREST
+            _redis_client = UpstashRedisREST()
     return _redis_client
+
 
 
 def _import_state_key(job_id: str) -> str:
@@ -784,7 +836,8 @@ def make_call_task(self, campaign_id: str, contact: dict):
         _cooldown_line(line_token, error)
         status = _retry_or_fail_call(row_id, phones[0], error)
         if status == "pendente":
-            fill_campaign_capacity_task.delay(campaign_id)
+            _dispatch_task(fill_campaign_capacity_task, args=[campaign_id])
+
     else:
         _update_result(row_id, "erro", None, phones[0], error)
 
@@ -1006,7 +1059,7 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
                         .execute().data or []
                     if pending_check:
                         logger.warning(f"[DIALER] Nenhuma linha saudavel no momento para campanha {campaign_id}. Re-agendando em 30s...")
-                        fill_campaign_capacity_task.apply_async(args=[campaign_id], countdown=30)
+                        _dispatch_task(fill_campaign_capacity_task, args=[campaign_id], countdown=30)
                 except Exception as e:
                     logger.error(f"[DIALER] Erro ao verificar pendencias para re-agendamento: {e}")
 
@@ -1064,7 +1117,8 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
             # Randomize call delay to avoid carrier detection
             delay = random.uniform(CALL_DELAY_MIN, CALL_DELAY_MAX)
             wait_time = _get_call_delay_wait(delay)
-            make_call_task.apply_async(
+            _dispatch_task(
+                make_call_task,
                 args=[campaign_id, {
                     "row_id":          row["id"],
                     "cpf":             row.get("cpf", ""),
@@ -1091,7 +1145,7 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
                     "updated_at": "now()",
                 }).eq("id", campaign_id).execute()
         elif skipped and len(pending) >= pending_limit:
-            fill_campaign_capacity_task.apply_async(args=[campaign_id], countdown=2)
+            _dispatch_task(fill_campaign_capacity_task, args=[campaign_id], countdown=2)
         elif skipped:
             _check_campaign_completion(campaign_id)
         elif not pending:
@@ -1110,10 +1164,11 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
     except Exception as e:
         logger.error(f"[DIALER] Erro em fill_campaign_capacity para {campaign_id}: {e}", exc_info=True)
         try:
-            fill_campaign_capacity_task.apply_async(args=[campaign_id], countdown=30)
+            _dispatch_task(fill_campaign_capacity_task, args=[campaign_id], countdown=30)
         except Exception:
             pass
         return {"ok": False, "error": str(e), "fired": 0}
+
     finally:
         _release_scheduler_lock(lock_token)
 
@@ -1211,7 +1266,8 @@ def _watchdog_dispatch(campaign_id: str, row: dict, current_retries: int, reason
             "error":            f"watchdog/{reason} retry #{current_retries + 1}",
         }).eq("id", row["id"]).execute()
 
-        fill_campaign_capacity_task.delay(campaign_id)
+        _dispatch_task(fill_campaign_capacity_task, args=[campaign_id])
+
     except Exception:
         pass
 
@@ -1746,10 +1802,12 @@ def _atualizar_acordo_formalizado(dados: dict, update: dict):
 
 
 def _agendar_verificacao_boleto(dados: dict, tentativa: int = 1):
-    verificar_boleto_acordo.apply_async(
+    _dispatch_task(
+        verificar_boleto_acordo,
         args=[dados, tentativa],
         countdown=BOLETO_RETRY_DELAY_SECONDS,
     )
+
 
 
 @celery.task(name="tasks.verificar_boleto_acordo")
@@ -2047,15 +2105,28 @@ def process_import(self, job_id: str, rows: list):
 def process_file(self, job_id: str, file_id: str, fname: str):
     """Task legada — lê do Redis, usada para arquivos pequenos."""
     import pandas as pd
-    import redis as redis_lib
 
     try:
         if _is_import_stopped(job_id):
             return
-        r    = redis_lib.from_url(os.getenv("REDIS_URL"))
-        data = r.get(f"import:{file_id}")
+        r = redis_client()
+        val = r.get(f"import:{file_id}")
+        data = None
+
+        if isinstance(val, (bytes, bytearray)):
+            data = bytes(val)
+        elif isinstance(val, str):
+            if os.path.exists(val):
+                with open(val, "rb") as f:
+                    data = f.read()
+            else:
+                data = val.encode("utf-8")
+        elif os.path.exists(file_id):
+            with open(file_id, "rb") as f:
+                data = f.read()
+
         if not data:
-            _set_job_error(job_id, "Arquivo não encontrado no Redis (expirou?)")
+            _set_job_error(job_id, "Arquivo não encontrado ou expirado.")
             return
 
         buf = io.BytesIO(data)
@@ -2064,7 +2135,11 @@ def process_file(self, job_id: str, file_id: str, fname: str):
         else:
             df = pd.read_excel(buf, dtype=str)
 
-        r.delete(f"import:{file_id}")
+        try:
+            r.delete(f"import:{file_id}")
+        except Exception:
+            pass
+
 
         if _is_import_stopped(job_id):
             return
@@ -2487,10 +2562,10 @@ def _validate_import_rows(job_id: str):
     _delete_import_state(job_id)
 
     if DDM_ERROR_RECHECK_ROUNDS and any(row.get("ddm_error") for row in rows):
-        recheck_import_errors_task.apply_async(
+        _dispatch_task(
+            recheck_import_errors_task,
             args=[job_id, DDM_ERROR_RECHECK_ROUNDS],
             countdown=DDM_ERROR_RECHECK_DELAY_SECONDS,
-            queue="imports",
         )
 
 
@@ -2570,10 +2645,11 @@ def recheck_import_errors_task(job_id: str, rounds_left: int = 1):
     }).eq("id", job_id).execute()
 
     if remaining_errors and rounds_left > 1:
-        recheck_import_errors_task.apply_async(
+        _dispatch_task(
+            recheck_import_errors_task,
             args=[job_id, rounds_left - 1],
             countdown=DDM_ERROR_RECHECK_DELAY_SECONDS,
-            queue="imports",
         )
 
     return {"ok": True, "rechecked": len(error_rows), "errors": remaining_errors}
+

@@ -13,7 +13,7 @@ from datetime import datetime, timezone, date
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from mysql_adapter import create_client, MySQLClient as Client
-from tasks import process_file, process_import_from_storage, formalizar_acordo, fill_campaign_capacity, fill_campaign_capacity_task, _get_import_rows
+from tasks import process_file, process_import_from_storage, formalizar_acordo, fill_campaign_capacity, fill_campaign_capacity_task, _get_import_rows, _dispatch_task
 
 app = Flask(__name__)
 
@@ -791,7 +791,7 @@ def resend_acordo_email(acordo_id):
             "linha_dig":       acordo.get("linha_dig"),
         }
 
-        verificar_boleto_acordo.delay(dados, tentativa=1)
+        _dispatch_task(verificar_boleto_acordo, kwargs={"dados": dados, "tentativa": 1})
         return jsonify({"ok": True, "message": "Reenvio de e-mail enfileirado com sucesso"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -816,9 +816,10 @@ def manual_formalizar_acordo():
             "vapi_call_id": body.get("vapi_call_id") or "manual",
         }
         
-        # Enfileira no Celery para processamento síncrono/assíncrono
-        formalizar_acordo.delay(dados)
+        # Dispara formalização assíncrona
+        _dispatch_task(formalizar_acordo, args=[dados])
         return jsonify({"ok": True, "message": "Formalização de acordo enfileirada com sucesso"})
+
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -1256,7 +1257,7 @@ def update_campaign_lines(campaign_id):
 
         camp = supabase.table("campaigns").select("status").eq("id", campaign_id).execute().data
         if camp and camp[0].get("status") == "em_andamento":
-            fill_campaign_capacity_task.delay(campaign_id)
+            _dispatch_task(fill_campaign_capacity_task, args=[campaign_id])
 
         return jsonify({"ok": True, "line_tokens": line_tokens, "sip_group_id": sip_group_id})
     except Exception as e:
@@ -1292,7 +1293,7 @@ def start_campaign(campaign_id):
         if not result.get("ok"):
             return jsonify({"ok": False, "error": result.get("error", "erro ao iniciar campanha")}), 500
         if result.get("locked"):
-            fill_campaign_capacity_task.apply_async(args=[campaign_id], countdown=2)
+            _dispatch_task(fill_campaign_capacity_task, args=[campaign_id], countdown=2)
 
         return jsonify({
             "ok": True,
@@ -1366,7 +1367,8 @@ def resume_campaign(campaign_id):
         if not result.get("ok"):
             return jsonify({"ok": False, "error": result.get("error", "erro ao religar campanha")}), 500
         if result.get("locked"):
-            fill_campaign_capacity_task.apply_async(args=[campaign_id], countdown=2)
+            _dispatch_task(fill_campaign_capacity_task, args=[campaign_id], countdown=2)
+
 
         return jsonify({
             "ok": True,
@@ -1573,7 +1575,7 @@ def vapi_webhook():
         if acordo_pela_tool or _detectar_acordo_formalizado(transcript):
             logging.warning(f"[WEBHOOK] ACORDO DETECTADO (Tool: {acordo_pela_tool}) para call_id={call_id}")
             try:
-                formalizar_acordo.delay({
+                _dispatch_task(formalizar_acordo, args=[{
                     "cpf":              row.get("cpf", ""),
                     "nome":             row.get("name", ""),
                     "email":            debito.get("email", ""),
@@ -1584,7 +1586,7 @@ def vapi_webhook():
                     "forma_pagamento":  _extrair_forma_pagamento(transcript),
                     "vapi_call_id":     call_id,
                     "campaign_call_id": row["id"],
-                })
+                }])
             except Exception as e:
                 logging.warning(f"[WEBHOOK] erro ao enfileirar formalizar_acordo: {e}")
 
@@ -1613,7 +1615,7 @@ def vapi_webhook():
                         "status": "finalizada", "updated_at": "now()"
                     }).eq("id", campaign_id).execute()
                 else:
-                    fill_campaign_capacity_task.delay(campaign_id)
+                    _dispatch_task(fill_campaign_capacity_task, args=[campaign_id])
 
         return jsonify({"ok": True}), 200
     except Exception as e:
@@ -1621,7 +1623,7 @@ def vapi_webhook():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-# ── IMPORT: legado Redis ───────────────────────────────────────
+# ── IMPORT: Upload Local / Async ───────────────────────────────
 
 @app.route("/api/import/upload", methods=["POST"])
 def import_upload():
@@ -1638,23 +1640,25 @@ def import_upload():
         file_bytes = file.read()
         file_id    = str(uuid.uuid4())
 
-        r = redis_client()
-        r.setex(f"import:{file_id}", 3600, file_bytes)
+        upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, f"{file_id}_{fname}")
+        with open(file_path, "wb") as f:
+            f.write(file_bytes)
 
         job = supabase.table("import_jobs").insert({
-            "status":    "processing",
-            "total":     0,
-            "with_debt": 0,
-            "processed": 0,
+            "status":       "processing",
+            "total":        0,
+            "with_debt":    0,
+            "processed":    0,
+            "storage_path": file_path,
+            "filename":     fname,
         }).execute().data[0]
 
-        task = process_file.apply_async(args=[job["id"], file_id, fname], queue="imports")
-        try:
-            supabase.table("import_jobs").update({"celery_task_id": task.id}).eq("id", job["id"]).execute()
-        except Exception:
-            pass
+        _dispatch_task(process_file, args=[job["id"], file_path, fname])
 
-        return jsonify({"ok": True, "mode": "async", "job_id": job["id"], "task_id": task.id})
+        return jsonify({"ok": True, "mode": "async", "job_id": job["id"]})
+
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -1733,13 +1737,9 @@ def import_from_storage():
             "result":    {"filename": filename, "storage_path": storage_path, "size_bytes": size_bytes},
         }).execute().data[0]
 
-        task = process_import_from_storage.apply_async(args=[job["id"], storage_path, fname], queue="imports")
-        try:
-            supabase.table("import_jobs").update({"celery_task_id": task.id}).eq("id", job["id"]).execute()
-        except Exception:
-            pass
+        _dispatch_task(process_import_from_storage, args=[job["id"], storage_path, fname])
+        return jsonify({"ok": True, "job_id": job["id"], "status": "queued"})
 
-        return jsonify({"ok": True, "job_id": job["id"], "task_id": task.id, "status": "queued"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 

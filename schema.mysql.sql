@@ -1,9 +1,3 @@
-CREATE DATABASE IF NOT EXISTS wavoip
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-USE wavoip;
-
 CREATE TABLE IF NOT EXISTS contacts (
   id char(36) PRIMARY KEY,
   name varchar(255) NOT NULL,
