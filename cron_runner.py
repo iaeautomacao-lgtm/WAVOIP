@@ -61,12 +61,12 @@ def run_campaign_jobs():
     if not acquire_cron_lock("campaign"):
         return
     try:
-        from tasks import fill_campaign_capacity, campaign_watchdog
+        from tasks import fill_campaign_capacity, campaign_watchdog, _check_campaign_completion
         logger.info("Iniciando verificação de campanhas ativas e watchdog...")
         supabase = create_client()
-        res = supabase.table("campaigns").select("id, name, status").eq("status", "ativa").execute()
+        res = supabase.table("campaigns").select("id, name, status").in_("status", ["ativa", "em_andamento"]).execute()
         campaigns = res.data or []
-        logger.info(f"Encontradas {len(campaigns)} campanhas ativas.")
+        logger.info(f"Encontradas {len(campaigns)} campanhas ativas/em_andamento.")
         for camp in campaigns:
             camp_id = camp["id"]
             camp_name = camp.get("name", camp_id)
@@ -77,12 +77,18 @@ def run_campaign_jobs():
             except Exception as e:
                 logger.error(f"Erro em fill_campaign_capacity para {camp_id}: {e}", exc_info=True)
 
+            try:
+                _check_campaign_completion(camp_id)
+            except Exception:
+                pass
+
         logger.info("Executando campaign_watchdog...")
         try:
             campaign_watchdog()
         except Exception as e:
             logger.error(f"Erro em campaign_watchdog: {e}", exc_info=True)
     finally:
+
         release_cron_lock("campaign")
 
 def run_import_jobs():

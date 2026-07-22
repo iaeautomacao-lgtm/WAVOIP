@@ -1296,21 +1296,33 @@ def _advance_campaign(campaign_id: str, current_order_idx: int):
 
 
 def _check_campaign_completion(campaign_id: str):
-    """Verifica se todos os contatos foram processados e finaliza a campanha."""
+    """Verifica o progresso das chamadas, atualiza o contador 'finished' e finaliza a campanha se concluida."""
     try:
-        remaining = supabase.table("campaign_calls") \
+        remaining_res = supabase.table("campaign_calls") \
             .select("id", count="exact") \
             .eq("campaign_id", campaign_id) \
             .in_("status", ["pendente", "enfileirado", "em_andamento", "atendido"]) \
             .execute()
+        remaining = remaining_res.count or 0
 
-        if (remaining.count or 0) == 0:
-            supabase.table("campaigns").update({
-                "status":     "finalizada",
-                "updated_at": "now()",
-            }).eq("id", campaign_id).execute()
-    except Exception:
-        pass
+        finished_res = supabase.table("campaign_calls") \
+            .select("id", count="exact") \
+            .eq("campaign_id", campaign_id) \
+            .in_("status", ["finalizado", "erro", "sem_debito", "sem_telefone", "falha_sem_linha", "atendida"]) \
+            .execute()
+        finished = finished_res.count or 0
+
+        camp_res = supabase.table("campaigns").select("total").eq("id", campaign_id).execute()
+        total = (camp_res.data[0].get("total") or 0) if camp_res.data else 0
+
+        update_payload = {"finished": finished, "updated_at": "now()"}
+        if remaining == 0 or (total > 0 and finished >= total):
+            update_payload["status"] = "finalizada"
+
+        supabase.table("campaigns").update(update_payload).eq("id", campaign_id).execute()
+    except Exception as e:
+        logger.error(f"[CAMPAIGN] Erro em _check_campaign_completion para {campaign_id}: {e}")
+
 
 
 
