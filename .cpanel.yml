@@ -1,0 +1,5 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/grpia/wavoip.grupoddm.ia.br/
+    - /bin/cp -R * $DEPLOYPATH
