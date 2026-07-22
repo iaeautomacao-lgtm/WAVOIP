@@ -424,25 +424,28 @@ def _available_line_slots(healthy: list, counts: dict) -> list:
     return slots
 
 
-def _acquire_scheduler_lock() -> tuple:
+def _acquire_scheduler_lock(campaign_id: str = "") -> tuple:
     token = str(uuid.uuid4())
+    lock_key = f"dialer:scheduler_lock:{campaign_id}" if campaign_id else "dialer:scheduler_lock"
     try:
-        ok = redis_client().set("dialer:scheduler_lock", token, nx=True, ex=30)
+        ok = redis_client().set(lock_key, token, nx=True, ex=5)
         return bool(ok), token
     except Exception:
         return True, token
 
 
-def _release_scheduler_lock(token: str):
+def _release_scheduler_lock(token: str, campaign_id: str = ""):
+    lock_key = f"dialer:scheduler_lock:{campaign_id}" if campaign_id else "dialer:scheduler_lock"
     try:
         r = redis_client()
-        val = r.get("dialer:scheduler_lock")
+        val = r.get(lock_key)
         if isinstance(val, bytes):
             val = val.decode("utf-8", errors="ignore")
         if str(val or "").strip() == str(token).strip():
-            r.delete("dialer:scheduler_lock")
+            r.delete(lock_key)
     except Exception:
         pass
+
 
 
 
@@ -1030,9 +1033,10 @@ def _get_call_delay_wait(delay_seconds: float = 7.0) -> float:
 
 
 def fill_campaign_capacity(campaign_id: str) -> dict:
-    locked, lock_token = _acquire_scheduler_lock()
+    locked, lock_token = _acquire_scheduler_lock(campaign_id)
     if not locked:
         return {"ok": True, "locked": True, "fired": 0}
+
 
     try:
         camp_rows = supabase.table("campaigns") \
@@ -1178,7 +1182,8 @@ def fill_campaign_capacity(campaign_id: str) -> dict:
         return {"ok": False, "error": str(e), "fired": 0}
 
     finally:
-        _release_scheduler_lock(lock_token)
+        _release_scheduler_lock(lock_token, campaign_id)
+
 
 
 @celery.task(name="tasks.fill_campaign_capacity")
