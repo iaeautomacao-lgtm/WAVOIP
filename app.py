@@ -115,8 +115,13 @@ def run_migrations():
             if not cur.fetchone():
                 cur.execute("ALTER TABLE `campaigns` ADD COLUMN `dialer_provider` VARCHAR(32) DEFAULT 'wavoip'")
                 print("Migration: Added dialer_provider to campaigns")
+            cur.execute("SHOW COLUMNS FROM `campaigns` LIKE 'assistant_id'")
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE `campaigns` ADD COLUMN `assistant_id` VARCHAR(128) DEFAULT NULL")
+                print("Migration: Added assistant_id to campaigns")
     except Exception as e:
         print(f"Migration warning: {e}")
+
 
 run_migrations()
 
@@ -1203,7 +1208,9 @@ def create_campaign():
             camp_payload.pop("line_tokens", None)
             camp_payload.pop("sip_group_id", None)
             camp_payload.pop("dialer_provider", None)
+            camp_payload.pop("assistant_id", None)
             camp = supabase.table("campaigns").insert(camp_payload).execute().data[0]
+
 
         campaign_id = camp["id"]
 
