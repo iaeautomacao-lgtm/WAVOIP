@@ -1647,13 +1647,13 @@ def import_upload():
             f.write(file_bytes)
 
         job = supabase.table("import_jobs").insert({
-            "status":       "processing",
-            "total":        0,
-            "with_debt":    0,
-            "processed":    0,
-            "storage_path": file_path,
-            "filename":     fname,
+            "status":    "processing",
+            "total":     0,
+            "with_debt": 0,
+            "processed": 0,
+            "result":    {"filename": fname, "storage_path": file_path},
         }).execute().data[0]
+
 
         _dispatch_task(process_file, args=[job["id"], file_path, fname])
 
