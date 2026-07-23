@@ -1,3 +1,4 @@
+# WAVOIP Async Tasks Module (Updated 23/07/2026 16:08)
 import os
 import re
 import io
@@ -12,7 +13,17 @@ from decimal import Decimal, InvalidOperation
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from celery import Celery
+try:
+    from celery import Celery
+except ImportError:
+    class Celery:
+        def __init__(self, *args, **kwargs):
+            self.conf = type("Conf", (), {"update": lambda self, **kw: None})()
+        def task(self, *args, **kwargs):
+            def decorator(f):
+                return f
+            return decorator
+
 from mysql_adapter import create_client
 from typing import Optional, Dict, Any
 from ddm import processar_debito as _processar_debito, processar_debito_result as _processar_debito_result
@@ -34,14 +45,18 @@ def _dispatch_task(task_obj, args=None, kwargs=None, countdown=0):
     args = args or []
     kwargs = kwargs or {}
     countdown = max(0, int(countdown))
-    try:
-        if hasattr(task_obj, "apply_async"):
-            if countdown > 0:
-                return task_obj.apply_async(args=args, kwargs=kwargs, countdown=countdown)
-            else:
-                return task_obj.apply_async(args=args, kwargs=kwargs)
-    except Exception as e:
-        logger.debug(f"[dispatch_task] Celery/Redis não disponível, executando via Thread local: {e}")
+
+    # Tenta Celery apenas se ativado explicitamente
+    use_celery = env("USE_CELERY", "false").lower() in ("true", "1", "sim")
+    if use_celery:
+        try:
+            if hasattr(task_obj, "apply_async"):
+                if countdown > 0:
+                    return task_obj.apply_async(args=args, kwargs=kwargs, countdown=countdown)
+                else:
+                    return task_obj.apply_async(args=args, kwargs=kwargs)
+        except Exception as e:
+            logger.warning(f"[dispatch_task] Celery/Redis indisponível ({e}), chaveando para Thread local.")
 
     def runner():
         try:
@@ -94,6 +109,10 @@ SMTP_TIMEOUT  = max(30, int(env("SMTP_TIMEOUT", "30")))
 SMTP_SECURITY = env("SMTP_SECURITY", "starttls").lower()
 SMTP_FORCE_IPV4 = env("SMTP_FORCE_IPV4", "true").lower() in ("1", "true", "yes", "sim")
 DEBUG_EMAIL_RECIPIENT = env("DEBUG_EMAIL_RECIPIENT", "")
+DEBUG_PHONE_RECIPIENT = env("DEBUG_PHONE_RECIPIENT", "")
+ADMIN_NOTIFY_EMAIL    = env("ADMIN_NOTIFY_EMAIL", DEBUG_EMAIL_RECIPIENT)
+ADMIN_NOTIFY_PHONE    = env("ADMIN_NOTIFY_PHONE", DEBUG_PHONE_RECIPIENT)
+N8N_WEBHOOK_URL       = env("N8N_WEBHOOK_URL", "")
 
 # ── DDM Acordos ───────────────────────────────────────────────
 DDM_TOKEN    = env("DDM_TOKEN")
@@ -1775,6 +1794,111 @@ def _enviar_email_acordo(
         srv.sendmail(SMTP_FROM, [destinatario], msg.as_string())
 
 
+def _enviar_whatsapp_acordo(
+    destinatario: str,
+    nome: str,
+    instituicao: str,
+    valor: str,
+    forma_pagamento: str,
+    link_boleto: str,
+    link_pix: str,
+    linha_dig: str,
+    vencimento: str,
+) -> bool:
+    """Envia mensagem de formalização de acordo para o WhatsApp do devedor via Wavoip API."""
+    if not destinatario:
+        logger.info("[WAVOIP_WPP] Telefone do destinatário não informado.")
+        return False
+
+    original_destinatario = destinatario
+    if DEBUG_PHONE_RECIPIENT:
+        recip_digits = re.sub(r"\D", "", DEBUG_PHONE_RECIPIENT)
+        if recip_digits:
+            logger.info("[WPP_DEBUG] Redirecionando WhatsApp de %s para %s (Modo Teste)", destinatario, recip_digits)
+            destinatario = recip_digits
+
+    try:
+        phone_norm = _phone_e164(destinatario)
+        digits = re.sub(r"\D", "", phone_norm)
+        if len(digits) < 10:
+            logger.warning(f"[WAVOIP_WPP] Telefone inválido para envio via WhatsApp: {destinatario}")
+            return False
+
+        header_title = "*[TESTE DE ACORDO] DDM Assessoria — Acordo Formalizado*" if DEBUG_PHONE_RECIPIENT else "*DDM Assessoria — Acordo Formalizado*"
+        msg_lines = [
+            header_title,
+        ]
+        if DEBUG_PHONE_RECIPIENT:
+            msg_lines.append(f"_(Destinado originalmente a: {original_destinatario})_")
+
+        msg_lines.extend([
+            "",
+            f"Prezado(a) *{nome}*,",
+            "",
+            f"Confirmamos a formalização do acordo referente à pendência vinculada à *{instituicao}*.",
+            "",
+            f"📌 *Forma de pagamento:* {forma_pagamento}",
+            f"💰 *Valor acordado:* R$ {valor}",
+        ])
+        if vencimento:
+            msg_lines.append(f"📅 *Vencimento:* {vencimento}")
+
+        msg_lines.append("")
+        if link_pix or link_boleto or linha_dig:
+            msg_lines.append("*Dados para Pagamento:*")
+            if link_pix:
+                msg_lines.append(f"⚡ *PIX:* {link_pix}")
+            if link_boleto:
+                msg_lines.append(f"📄 *Boleto:* {link_boleto}")
+            if linha_dig:
+                msg_lines.append(f"🔢 *Linha Digitável:* {linha_dig}")
+            msg_lines.append("")
+
+        msg_lines.append("Qualquer dúvida, estamos à disposição.")
+        msg_lines.append("*Equipe de Atendimento – DDM*")
+
+        mensagem_texto = "\n".join(msg_lines)
+
+        token = wavoip_login()
+        healthy = get_healthy_lines()
+        if not healthy:
+            logger.warning("[WAVOIP_WPP] Nenhuma linha saudável disponível para envio de WhatsApp")
+            return False
+
+        line_token = healthy[0].get("token")
+        payload = {
+            "number": digits,
+            "message": mensagem_texto,
+            "token": line_token
+        }
+
+        url = f"{WAVOIP_BASE}/v2/messages/send"
+        res = requests.post(
+            url,
+            json=payload,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=15
+        )
+        if not res.ok:
+            url_alt = f"{WAVOIP_BASE}/v2/send-text"
+            res = requests.post(
+                url_alt,
+                json=payload,
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                timeout=15
+            )
+
+        if res.ok:
+            logger.info(f"[WAVOIP_WPP] Mensagem de acordo enviada com sucesso via WhatsApp para {digits}")
+            return True
+        else:
+            logger.warning(f"[WAVOIP_WPP] Falha ao enviar WhatsApp para {digits}: HTTP {res.status_code} - {res.text}")
+            return False
+    except Exception as e:
+        logger.error(f"[WAVOIP_WPP] Erro ao enviar mensagem via WhatsApp: {e}")
+        return False
+
+
 def _buscar_pagamento_acordo(dados: dict) -> dict:
     debito = dados.get("debito") if isinstance(dados.get("debito"), dict) else {}
     cli = "ddm"
@@ -1835,6 +1959,171 @@ def _agendar_verificacao_boleto(dados: dict, tentativa: int = 1):
 
 
 
+def _obter_tokens_wavoip() -> tuple:
+    """Retorna (wavoip_bearer_token, line_device_token) para inclusão no payload do n8n."""
+    w_token = ""
+    l_token = ""
+    try:
+        w_token = wavoip_login()
+    except Exception as e:
+        logger.warning(f"[WAVOIP_TOKEN] Falha ao obter token Wavoip: {e}")
+
+    try:
+        healthy = get_healthy_lines()
+        if healthy:
+            l_token = healthy[0].get("token", "")
+    except Exception as e:
+        logger.warning(f"[WAVOIP_TOKEN] Falha ao obter linha saudável Wavoip: {e}")
+
+    return w_token, l_token
+
+
+def _disparar_notificacoes_acordo(dados: dict) -> dict:
+    """
+    Centraliza o envio do acordo para o n8n Webhook.
+    Se N8N_WEBHOOK_URL estiver configurado e o n8n responder com sucesso (HTTP 2xx),
+    evita envios nativos duplicados. Caso contrário, aciona o fallback nativo (SMTP / Wavoip Direct).
+    """
+    cpf             = dados.get("cpf", "")
+    nome            = dados.get("nome", "Cliente")
+    email           = dados.get("email", "")
+    phone           = dados.get("phone") or dados.get("celular") or dados.get("telefone") or ""
+    instituicao     = dados.get("instituicao", "")
+    valor           = dados.get("valor", "")
+    forma_pagamento = dados.get("forma_pagamento", "À vista")
+    link_boleto     = dados.get("link_boleto", "")
+    link_pix        = dados.get("link_pix", "")
+    linha_dig       = dados.get("linha_dig", "")
+    vencimento      = dados.get("vencimento", "")
+    nr_acordo       = dados.get("nr_acordo", "")
+    vapi_call_id    = dados.get("vapi_call_id", "")
+
+    pagamento_pronto = _has_payment_info(link_boleto, link_pix, linha_dig)
+
+    n8n_sucesso = False
+    email_enviado = False
+    wpp_enviado = False
+
+    # 1. Envia para o Webhook do n8n se configurado
+    if N8N_WEBHOOK_URL:
+        wavoip_token, line_token = _obter_tokens_wavoip()
+        n8n_payload = {
+            "cpf":              cpf,
+            "nome":             nome,
+            "email":            DEBUG_EMAIL_RECIPIENT or email,
+            "phone":            DEBUG_PHONE_RECIPIENT or phone,
+            "original_email":   email,
+            "original_phone":   phone,
+            "instituicao":      instituicao,
+            "valor":            valor,
+            "forma_pagamento":  forma_pagamento,
+            "link_boleto":     link_boleto,
+            "link_pix":        link_pix,
+            "linha_dig":       linha_dig,
+            "vencimento":      vencimento,
+            "nr_acordo":       nr_acordo,
+            "vapi_call_id":     vapi_call_id,
+            "pagamento_pronto": pagamento_pronto,
+            "wavoip_token":     wavoip_token,
+            "line_token":       line_token,
+        }
+        try:
+            logger.info(f"[FORMALIZAR] Enviando dados do acordo para o n8n: {N8N_WEBHOOK_URL}")
+            resp = requests.post(N8N_WEBHOOK_URL, json=n8n_payload, timeout=10)
+            if resp.ok:
+                n8n_sucesso = True
+                email_enviado = True
+                wpp_enviado = True
+                logger.info(f"[FORMALIZAR] Sucesso no envio para o n8n (HTTP {resp.status_code})")
+            else:
+                logger.warning(f"[FORMALIZAR] n8n respondeu com HTTP {resp.status_code}: {resp.text}")
+        except Exception as e:
+            logger.error(f"[FORMALIZAR] Erro ao enviar Webhook para n8n: {e}")
+
+    # 2. Fallback direto pelo Python se n8n não estiver ativo ou se o envio para o n8n falhar
+    if not n8n_sucesso:
+        if N8N_WEBHOOK_URL:
+            logger.warning("[FORMALIZAR] Webhook n8n falhou. Executando fallback nativo (SMTP / Wavoip Direct).")
+
+        if email and pagamento_pronto:
+            try:
+                _enviar_email_acordo(
+                    destinatario    = email,
+                    nome            = nome,
+                    instituicao     = instituicao,
+                    valor           = valor,
+                    forma_pagamento = forma_pagamento,
+                    link_boleto     = link_boleto,
+                    link_pix        = link_pix,
+                    linha_dig       = linha_dig,
+                    vencimento      = vencimento,
+                )
+                email_enviado = True
+            except Exception as e:
+                logger.error(f"[FORMALIZAR] erro SMTP no fallback: {e}")
+        elif email and not pagamento_pronto:
+            logger.warning(
+                "[FORMALIZAR] acordo pendente de boleto cpf_final=%s nr_acordo=%s",
+                _norm_cpf(cpf)[-4:],
+                nr_acordo,
+            )
+
+        if phone and pagamento_pronto:
+            try:
+                wpp_enviado = _enviar_whatsapp_acordo(
+                    destinatario    = phone,
+                    nome            = nome,
+                    instituicao     = instituicao,
+                    valor           = valor,
+                    forma_pagamento = forma_pagamento,
+                    link_boleto     = link_boleto,
+                    link_pix        = link_pix,
+                    linha_dig       = linha_dig,
+                    vencimento      = vencimento,
+                )
+            except Exception as e:
+                logger.error(f"[FORMALIZAR] erro WhatsApp no fallback: {e}")
+
+    # 3. Notificações Admin (opcional)
+    if ADMIN_NOTIFY_EMAIL and ADMIN_NOTIFY_EMAIL != email and pagamento_pronto:
+        try:
+            _enviar_email_acordo(
+                destinatario    = ADMIN_NOTIFY_EMAIL,
+                nome            = f"[NOTIFICAÇÃO ADMIN] {nome}",
+                instituicao     = instituicao,
+                valor           = valor,
+                forma_pagamento = forma_pagamento,
+                link_boleto     = link_boleto,
+                link_pix        = link_pix,
+                linha_dig       = linha_dig,
+                vencimento      = vencimento,
+            )
+        except Exception as e:
+            logger.error(f"[FORMALIZAR] erro ao enviar copia email admin: {e}")
+
+    if ADMIN_NOTIFY_PHONE and ADMIN_NOTIFY_PHONE != phone and pagamento_pronto:
+        try:
+            _enviar_whatsapp_acordo(
+                destinatario    = ADMIN_NOTIFY_PHONE,
+                nome            = f"[NOTIFICAÇÃO ADMIN] {nome}",
+                instituicao     = instituicao,
+                valor           = valor,
+                forma_pagamento = forma_pagamento,
+                link_boleto     = link_boleto,
+                link_pix        = link_pix,
+                linha_dig       = linha_dig,
+                vencimento      = vencimento,
+            )
+        except Exception as e:
+            logger.error(f"[FORMALIZAR] erro ao enviar copia whatsapp admin: {e}")
+
+    return {
+        "n8n_sucesso": n8n_sucesso,
+        "email_enviado": email_enviado,
+        "wpp_enviado": wpp_enviado,
+    }
+
+
 @celery.task(name="tasks.verificar_boleto_acordo")
 def verificar_boleto_acordo(dados: dict, tentativa: int = 1):
     link_boleto = dados.get("link_boleto", "")
@@ -1861,42 +2150,32 @@ def verificar_boleto_acordo(dados: dict, tentativa: int = 1):
         )
         return {"ok": False, "pending": True, "tentativa": tentativa}
 
-    email_enviado = False
-    email = dados.get("email", "")
-    if email:
-        try:
-            _enviar_email_acordo(
-                destinatario    = email,
-                nome            = dados.get("nome", "Cliente"),
-                instituicao     = dados.get("instituicao", ""),
-                valor           = dados.get("valor", ""),
-                forma_pagamento = dados.get("forma_pagamento", "A vista"),
-                link_boleto     = link_boleto,
-                link_pix        = link_pix,
-                linha_dig       = linha_dig,
-                vencimento      = vencimento,
-            )
-            email_enviado = True
-        except Exception as email_exc:
-            logger.error(
-                "[FORMALIZAR] erro ao enviar email cpf_final=%s nr_acordo=%s erro=%s",
-                _norm_cpf(dados.get("cpf", ""))[-4:],
-                dados.get("nr_acordo", ""),
-                email_exc,
-            )
+    dados_atualizados = dict(dados)
+    dados_atualizados.update({
+        "link_boleto": link_boleto,
+        "link_pix": link_pix,
+        "linha_dig": linha_dig,
+        "vencimento": vencimento,
+    })
 
-    _atualizar_acordo_formalizado(dados, {
+    notif = _disparar_notificacoes_acordo(dados_atualizados)
+    email_enviado = notif["email_enviado"]
+    wpp_enviado   = notif["wpp_enviado"]
+
+    _atualizar_acordo_formalizado(dados_atualizados, {
         "link_boleto":   link_boleto,
         "link_pix":      link_pix,
         "linha_dig":     linha_dig,
         "vencimento":    vencimento,
         "email_enviado": email_enviado,
+        "wpp_enviado":   wpp_enviado,
     })
 
     return {
         "ok": True,
         "pending": False,
         "email_enviado": email_enviado,
+        "wpp_enviado": wpp_enviado,
         "link_boleto": link_boleto,
         "link_pix": link_pix,
         "linha_boleto": linha_dig,
@@ -1909,7 +2188,7 @@ def formalizar_acordo(self, dados: dict):
     Disparada quando a Júlia formaliza um acordo.
     1. Busca iddev pelo CPF na API DDM
     2. Busca links de boleto/pix
-    3. Envia email para o devedor
+    3. Envia para o n8n (com fallback direto via SMTP/Wavoip)
     4. Registra no Supabase
     """
     try:
@@ -1919,6 +2198,7 @@ def formalizar_acordo(self, dados: dict):
         instituicao     = dados.get("instituicao", "")
         valor           = dados.get("valor", "")
         forma_pagamento = dados.get("forma_pagamento", "À vista")
+        phone           = dados.get("phone") or dados.get("celular") or dados.get("telefone") or ""
         vapi_call_id    = dados.get("vapi_call_id", "")
         campaign_call_id = dados.get("campaign_call_id", "")
         debito          = dados.get("debito") or {}
@@ -1928,6 +2208,13 @@ def formalizar_acordo(self, dados: dict):
         linha_dig   = ""
         vencimento  = ""
         nr_acordo   = ""
+
+        # Prevenção de duplicidade: se este call_id já gravou um acordo, encerra imediatamente
+        if vapi_call_id:
+            existing = supabase.table("acordos_formalizados").select("id").eq("vapi_call_id", vapi_call_id).execute()
+            if existing and existing.data:
+                logger.warning(f"[FORMALIZAR] Acordo já formalizado anteriormente para vapi_call_id={vapi_call_id}. Abortando execução duplicada.")
+                return {"ok": True, "duplicate": True}
         idcalc       = str(
             dados.get("idcalc") or
             dados.get("iddev") or
@@ -1971,7 +2258,6 @@ def formalizar_acordo(self, dados: dict):
                     linha_dig   = pagamentos["linha_dig"]
                     vencimento  = pagamentos["vencimento"]
             except Exception as e:
-                # Não bloqueia o envio do email se a API DDM falhar
                 pass
 
         if cpf and not _has_payment_info(link_boleto, link_pix, linha_dig):
@@ -2000,37 +2286,31 @@ def formalizar_acordo(self, dados: dict):
 
         pagamento_pronto = _has_payment_info(link_boleto, link_pix, linha_dig)
 
-        # 2. Envia email para o devedor apenas quando existir pagamento real
-        email_enviado = False
-        if email and pagamento_pronto:
-            try:
-                _enviar_email_acordo(
-                    destinatario    = email,
-                    nome            = nome,
-                    instituicao     = instituicao,
-                    valor           = valor,
-                    forma_pagamento = forma_pagamento,
-                    link_boleto     = link_boleto,
-                    link_pix        = link_pix,
-                    linha_dig       = linha_dig,
-                    vencimento      = vencimento,
-                )
-                email_enviado = True
-            except Exception as e:
-                import logging
-                logging.error(f"[FORMALIZAR] erro SMTP: {e}")  # ADD ISSO
-        elif email and not pagamento_pronto:
-            logger.warning(
-                "[FORMALIZAR] acordo pendente de boleto cpf_final=%s nr_acordo=%s",
-                _norm_cpf(cpf)[-4:],
-                nr_acordo,
-            )
+        # 2. Dispara notificações (n8n Webhook com fallback para envio nativo)
+        notif = _disparar_notificacoes_acordo({
+            "cpf":             cpf,
+            "nome":            nome,
+            "email":           email,
+            "phone":           phone,
+            "instituicao":     instituicao,
+            "valor":           valor,
+            "forma_pagamento": forma_pagamento,
+            "link_boleto":     link_boleto,
+            "link_pix":        link_pix,
+            "linha_dig":       linha_dig,
+            "vencimento":      vencimento,
+            "nr_acordo":       nr_acordo,
+            "vapi_call_id":    vapi_call_id,
+        })
+        email_enviado = notif["email_enviado"]
+        wpp_enviado   = notif["wpp_enviado"]
 
         # 3. Registra acordo no Supabase
         acordo_payload = {
             "cpf":             cpf,
             "nome":            nome,
             "email":           email,
+            "phone":           phone,
             "instituicao":     instituicao,
             "valor":           valor,
             "forma_pagamento": forma_pagamento,
@@ -2040,6 +2320,7 @@ def formalizar_acordo(self, dados: dict):
             "vencimento":      vencimento,
             "nr_acordo":       nr_acordo,
             "email_enviado":   email_enviado,
+            "wpp_enviado":     wpp_enviado,
             "vapi_call_id":    vapi_call_id,
             "campaign_call_id": campaign_call_id,
         }
@@ -2048,11 +2329,12 @@ def formalizar_acordo(self, dados: dict):
         except Exception as e:
             logger.error(f"[FORMALIZAR] erro ao salvar no Supabase: {e}")
 
-        if email and not pagamento_pronto:
+        if (email or phone) and not pagamento_pronto:
             _agendar_verificacao_boleto({
                 "cpf":             cpf,
                 "nome":            nome,
                 "email":           email,
+                "phone":           phone,
                 "instituicao":     instituicao,
                 "valor":           valor,
                 "forma_pagamento": forma_pagamento,
@@ -2068,11 +2350,12 @@ def formalizar_acordo(self, dados: dict):
         return {
             "ok":            True,
             "email_enviado": email_enviado,
+            "wpp_enviado":   wpp_enviado,
             "link_pix":      link_pix,
             "link_boleto":   link_boleto,
             "linha_boleto":  linha_dig,
             "nr_acordo":     nr_acordo,
-            "boleto_pendente": bool(email and not pagamento_pronto),
+            "boleto_pendente": bool((email or phone) and not pagamento_pronto),
         }
 
     except Exception as exc:
@@ -2177,11 +2460,19 @@ def process_file(self, job_id: str, file_id: str, fname: str):
         cpf_col = None
         for cand in ["cpf", "cpfcgc"]:
             for c, cl in zip(df.columns, cols_lower):
-                if cand in cl:
+                if cand == cl:
                     cpf_col = c
                     break
             if cpf_col:
                 break
+        if not cpf_col:
+            for cand in ["cpf", "cpfcgc"]:
+                for c, cl in zip(df.columns, cols_lower):
+                    if cand in cl:
+                        cpf_col = c
+                        break
+                if cpf_col:
+                    break
         
         len_after_cpf = -1
         sample_rows = []
@@ -2330,6 +2621,10 @@ def _process_dataframe(job_id: str, df, fname: str):
     cols_lower = [c.lower() for c in df.columns]
 
     def first_col(candidates):
+        for cand in candidates:
+            for c, cl in zip(df.columns, cols_lower):
+                if cand == cl:
+                    return c
         for cand in candidates:
             for c, cl in zip(df.columns, cols_lower):
                 if cand in cl:

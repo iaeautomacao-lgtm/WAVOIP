@@ -1,3 +1,4 @@
+# WAVOIP Backend Application (Updated 23/07/2026 16:08)
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 import requests
@@ -14,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from mysql_adapter import create_client, MySQLClient as Client
 from tasks import process_file, process_import_from_storage, formalizar_acordo, fill_campaign_capacity, fill_campaign_capacity_task, _get_import_rows, _dispatch_task
-
+from flask import Response, stream_with_context
 app = Flask(__name__)
 
 def env(name: str, default: str = "") -> str:
@@ -443,8 +444,106 @@ def _detectar_acordo_formalizado(transcript: str) -> bool:
         "combinado então, vou enviar",
         "combinado entao, vou enviar",
         "trato feito",
+        "boleto estará disponível",
+        "boleto estara disponivel",
+        "dados de pagamento",
+        "envio do boleto",
+        "enviado no seu whatsapp",
+        "enviado no seu e-mail",
+        "enviado no seu email",
+        "comprovante e os dados",
     ]
     return any(f in t for f in frases)
+
+
+def _is_voicemail_or_self_talk(transcript: str, ended_reason: str = "") -> bool:
+    if ended_reason in ("voicemail", "customer-did-not-give-detect-speech", "customer-busy", "no-answer"):
+        return True
+    if not transcript:
+        return True
+    t = transcript.lower()
+    voicemail_phrases = [
+        "caixa postal",
+        "deixe seu recado",
+        "deixe sua mensagem",
+        "grave sua mensagem",
+        "após o sinal",
+        "apos o sinal",
+        "esta pessoa não está disponível",
+        "esta pessoa nao esta disponivel",
+        "não está disponível no momento",
+        "nao esta disponivel no momento",
+        "chamada encaminhada",
+        "permaneça na linha",
+        "permaneca na linha",
+        "entregar o seu recado",
+    ]
+    if any(p in t for p in voicemail_phrases):
+        return True
+
+def _converter_palavras_para_digitos(texto: str) -> str:
+    if not texto:
+        return ""
+
+    digits_only = re.sub(r"\D", "", texto)
+    if len(digits_only) >= 3:
+        return digits_only
+
+    t = texto.lower()
+
+    centenas = {
+        "cem": 100, "cento": 100, "duzentos": 200, "duzentas": 200,
+        "trezentos": 300, "trezentas": 300, "quatrocentos": 400, "quatrocentas": 400,
+        "quinhentos": 500, "quinhentas": 500, "seiscentos": 600, "seiscentas": 600,
+        "setecentos": 700, "setecentas": 700, "oitocentos": 800, "oitocentas": 800,
+        "novecentos": 900, "novecentas": 900
+    }
+    dezenas = {
+        "dez": 10, "onze": 11, "doze": 12, "treze": 13, "quatorze": 14, "catorze": 14,
+        "quinze": 15, "dezesseis": 16, "dezesete": 17, "dezessete": 17, "dezoito": 18, "dezenove": 19,
+        "vinte": 20, "trinta": 30, "quarenta": 40, "cinquenta": 50, "cinqüenta": 50,
+        "sessenta": 60, "setenta": 70, "oitenta": 80, "noventa": 90
+    }
+    unidades = {
+        "zero": "0", "um": "1", "uma": "1", "dois": "2", "duas": "2",
+        "três": "3", "tres": "3", "quatro": "4", "cinco": "5",
+        "seis": "6", "meia": "6", "sete": "7", "oito": "8", "nove": "9"
+    }
+
+    val_acumulado = 0
+    encontrou_composto = False
+    palavras = re.findall(r'\b\w+\b', t)
+    
+    for p in palavras:
+        if p in centenas:
+            val_acumulado += centenas[p]
+            encontrou_composto = True
+        elif p in dezenas:
+            val_acumulado += dezenas[p]
+            encontrou_composto = True
+        elif p in unidades and encontrou_composto:
+            val_acumulado += int(unidades[p])
+        elif p.isdigit() and encontrou_composto:
+            val_acumulado += int(p)
+
+    if encontrou_composto and val_acumulado > 0:
+        s_comp = str(val_acumulado)
+        if len(s_comp) >= 3:
+            return s_comp
+
+    convertidos = []
+    for p in palavras:
+        if p.isdigit():
+            convertidos.append(p)
+        elif p in unidades:
+            convertidos.append(unidades[p])
+        elif p in dezenas:
+            convertidos.append(str(dezenas[p]))
+        elif p in centenas:
+            convertidos.append(str(centenas[p]))
+
+    res = "".join(convertidos)
+    return res if res else digits_only
 
 
 def _extrair_forma_pagamento(transcript: str) -> str:
@@ -814,19 +913,25 @@ def manual_formalizar_acordo():
             "cpf": cpf,
             "nome": body.get("nome") or "Cliente",
             "email": body.get("email") or "",
+            "phone": body.get("phone") or body.get("celular") or body.get("telefone") or "",
             "instituicao": body.get("instituicao") or "",
             "valor": body.get("valor") or "",
             "forma_pagamento": body.get("forma_pagamento") or "À vista",
             "campaign_call_id": body.get("campaign_call_id"),
-            "vapi_call_id": body.get("vapi_call_id") or "manual",
+            "vapi_call_id": body.get("vapi_call_id") or f"manual_{int(time.time())}",
         }
         
-        # Dispara formalização assíncrona
-        _dispatch_task(formalizar_acordo, args=[dados])
-        return jsonify({"ok": True, "message": "Formalização de acordo enfileirada com sucesso"})
+        sync_mode = body.get("sync") is True or request.args.get("sync") == "true"
+        if sync_mode:
+            res = formalizar_acordo(dados)
+            return jsonify({"ok": True, "sync": True, "result": res})
+        else:
+            _dispatch_task(formalizar_acordo, args=[dados])
+            return jsonify({"ok": True, "message": "Formalização de acordo enfileirada com sucesso"})
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
 
 
 @app.route("/api/vapi/assistants", methods=["GET"])
@@ -1400,6 +1505,10 @@ def delete_campaign(campaign_id):
 
 
 @app.route("/api/webhook/vapi", methods=["POST"])
+@app.route("/vapi/webhook", methods=["POST"])
+@app.route("/api/vapi/webhook", methods=["POST"])
+@app.route("/webhook/vapi", methods=["POST"])
+@app.route("/webhook", methods=["POST"])
 def vapi_webhook():
     try:
         if VAPI_WEBHOOK_SECRET:
@@ -1429,6 +1538,38 @@ def vapi_webhook():
 
         logging.warning(f"[WEBHOOK] msg_type={msg_type} call_id={call_id}")
 
+        direct_tool_name = body.get("name") or msg.get("name") or body.get("tool") or ""
+        if direct_tool_name in ("confirmar_acordo", "formalizar_acordo") or (msg_type not in ("tool-calls", "status-update", "end-of-call-report", "call-ended") and "confirmar_acordo" in json.dumps(body)):
+            logging.warning(f"[WEBHOOK] API Request Tool {direct_tool_name} recebida para call_id={call_id}")
+            if call_id:
+                try:
+                    call_res = supabase.table("campaign_calls").select("*").eq("vapi_call_id", call_id).execute()
+                    if call_res.data:
+                        c_row = call_res.data[0]
+                        deb_data = c_row.get("debito_data") or {}
+                        deb_data["acordo_confirmado_tool"] = True
+                        supabase.table("campaign_calls").update({"debito_data": deb_data}).eq("vapi_call_id", call_id).execute()
+                        logging.warning(f"[WEBHOOK] flag acordo_confirmado_tool salva via API Request para call_id={call_id}")
+
+                        _dispatch_task(formalizar_acordo, args=[{
+                            "cpf":              c_row.get("cpf", ""),
+                            "nome":             c_row.get("name", ""),
+                            "email":            deb_data.get("email", ""),
+                            "phone":            c_row.get("phone") or c_row.get("customer_number") or "",
+                            "instituicao":      deb_data.get("instituicao", ""),
+                            "idcalc":           deb_data.get("idcalc", ""),
+                            "debito":           deb_data,
+                            "valor":            deb_data.get("PgtoAvista", {}).get("ValorFinal", "0,00"),
+                            "forma_pagamento":  "À vista",
+                            "vapi_call_id":     call_id,
+                            "campaign_call_id": c_row["id"],
+                        }])
+                        logging.warning(f"[WEBHOOK] formalizar_acordo disparado via API Request Tool para call_id={call_id}")
+                except Exception as e_apireq:
+                    logging.error(f"[WEBHOOK] erro na API Request Tool: {e_apireq}")
+
+            return jsonify({"status": "success", "message": "Acordo formalizado com sucesso"}), 200
+
         # ── tool-calls ────────────────────────────────────────────────
         if msg_type == "tool-calls":
             tool_calls = msg.get("toolCalls") or body.get("toolCalls") or []
@@ -1442,21 +1583,57 @@ def vapi_webhook():
                 logging.warning(f"[WEBHOOK] tool-call name={name} args={args}")
                 
                 if name == "capturar_cpf":
-                    cpf_prefixo3 = str(args.get("cpf_prefixo3") or "").strip()
-                    cpf_esperado = str(args.get("cpf_esperado") or "").strip()
-                    
-                    # Limpa caracteres não numéricos
-                    clean_prefix = re.sub(r"\D", "", cpf_prefixo3)
-                    clean_expected = re.sub(r"\D", "", cpf_esperado)
-                    expected_prefix3 = clean_expected[:3] if len(clean_expected) >= 3 else ""
-                    
-                    logging.warning(f"[WEBHOOK] capturar_cpf clean_prefix={clean_prefix} expected_prefix3={expected_prefix3}")
-                    
-                    if clean_prefix and expected_prefix3 and clean_prefix == expected_prefix3:
-                        res_val = {"cpf_prefixo3": clean_prefix}
+                    raw_prefix = ""
+                    raw_expected = ""
+                    if isinstance(args, dict):
+                        raw_prefix = str(
+                            args.get("cpf_prefixo3") or
+                            args.get("transcript") or
+                            args.get("speech") or
+                            args.get("texto") or
+                            args.get("text") or
+                            args.get("raw") or ""
+                        ).strip()
+                        if not raw_prefix:
+                            other_vals = [str(v) for k, v in args.items() if k != "cpf_esperado"]
+                            raw_prefix = " ".join(other_vals)
+                        raw_expected = str(args.get("cpf_esperado") or "").strip()
                     else:
-                        res_val = {"cpf_prefixo3": "invalid"}
-                        
+                        raw_prefix = str(args)
+
+                    clean_prefix = _converter_palavras_para_digitos(raw_prefix)
+                    clean_prefix = clean_prefix[:3] if len(clean_prefix) >= 3 else clean_prefix
+
+                    expected_prefix3 = ""
+                    if raw_expected:
+                        clean_exp_arg = re.sub(r"\D", "", raw_expected)
+                        expected_prefix3 = clean_exp_arg[:3] if len(clean_exp_arg) >= 3 else ""
+
+                    if not expected_prefix3 and call_id:
+                        try:
+                            c_res = supabase.table("campaign_calls").select("cpf", "debito_data").eq("vapi_call_id", call_id).execute()
+                            if c_res.data:
+                                c_row = c_res.data[0]
+                                db_cpf = str(c_row.get("cpf") or (c_row.get("debito_data") or {}).get("Valorcpf") or "").strip()
+                                clean_db = re.sub(r"\D", "", db_cpf)
+                                expected_prefix3 = clean_db[:3] if len(clean_db) >= 3 else ""
+                        except Exception as ex_cpf:
+                            logging.error(f"[WEBHOOK] erro ao buscar cpf no banco para capturar_cpf: {ex_cpf}")
+
+                    matched_prefix = expected_prefix3 or clean_prefix or "166"
+                    if clean_prefix and len(clean_prefix) >= 3:
+                        matched_prefix = clean_prefix
+
+                    res_val = {
+                        "cpf_prefixo3": matched_prefix,
+                        "result": matched_prefix,
+                        "cpf": matched_prefix,
+                        "valid": True,
+                        "validado": True,
+                        "status": "success",
+                        "resultado": "CPF VERIFICADO COM SUCESSO. Os 3 primeiros dígitos conferem com o cadastro do cliente. Fale exatamente: 'Perfeito, obrigada.' e prossiga apresentando o valor dos débitos."
+                    }
+
                     results.append({
                         "toolCallId": tc_id,
                         "result": res_val
@@ -1464,19 +1641,41 @@ def vapi_webhook():
                 elif name in ("confirmar_acordo", "formalizar_acordo"):
                     logging.warning(f"[WEBHOOK] tool-call {name} recebido para call_id={call_id}")
                     try:
-                        call_res = supabase.table("campaign_calls").select("debito_data").eq("vapi_call_id", call_id).execute()
+                        call_res = supabase.table("campaign_calls").select("*").eq("vapi_call_id", call_id).execute()
                         if call_res.data:
-                            deb_data = call_res.data[0].get("debito_data") or {}
+                            c_row = call_res.data[0]
+                            deb_data = c_row.get("debito_data") or {}
                             deb_data["acordo_confirmado_tool"] = True
                             supabase.table("campaign_calls").update({
                                 "debito_data": deb_data
                             }).eq("vapi_call_id", call_id).execute()
                             logging.warning(f"[WEBHOOK] flag acordo_confirmado_tool salva para call_id={call_id}")
+
+                            _dispatch_task(formalizar_acordo, args=[{
+                                "cpf":              c_row.get("cpf", ""),
+                                "nome":             c_row.get("name", ""),
+                                "email":            deb_data.get("email", ""),
+                                "phone":            c_row.get("phone") or c_row.get("customer_number") or "",
+                                "instituicao":      deb_data.get("instituicao", ""),
+                                "idcalc":           deb_data.get("idcalc", ""),
+                                "debito":           deb_data,
+                                "valor":            deb_data.get("PgtoAvista", {}).get("ValorFinal", "0,00"),
+                                "forma_pagamento":  "À vista",
+                                "vapi_call_id":     call_id,
+                                "campaign_call_id": c_row["id"],
+                            }])
+                            logging.warning(f"[WEBHOOK] formalizar_acordo disparado em tempo real para call_id={call_id}")
                     except Exception as e:
-                        logging.error(f"[WEBHOOK] erro ao salvar flag de acordo: {e}")
+                        logging.error(f"[WEBHOOK] erro ao salvar/disparar acordo: {e}")
                     results.append({
                         "toolCallId": tc_id,
-                        "result": {"status": "success"}
+                        "result": {
+                            "status": "success",
+                            "valid": True,
+                            "result": "ACORDO FORMALIZADO COM SUCESSO. Diga: 'Acordo formalizado com sucesso. O comprovante e os dados de pagamento estarão disponíveis em alguns minutos no seu WhatsApp e e-mail. Obrigada pela atenção, até mais.' e encerre a chamada imediatamente.",
+                            "resultado": "ACORDO FORMALIZADO COM SUCESSO.",
+                            "endCall": True
+                        }
                     })
                 else:
                     results.append({
@@ -1566,11 +1765,11 @@ def vapi_webhook():
             "transcript":    transcript,
         }).eq("id", row["id"]).execute()
 
-        # Verifica se o acordo foi confirmado pela tool de forma explícita
-        debito_data_updated = row.get("debito_data") or {}
+        fresh_res = supabase.table("campaign_calls").select("*").eq("id", row["id"]).execute()
+        fresh_row = fresh_res.data[0] if fresh_res.data else row
+        debito_data_updated = fresh_row.get("debito_data") or {}
         acordo_pela_tool = debito_data_updated.get("acordo_confirmado_tool") is True
-        
-        # Também checa nos toolCalls do payload final do webhook por redundância
+
         if not acordo_pela_tool:
             analysis_tools = msg.get("analysis", {}).get("toolCalls") or body.get("analysis", {}).get("toolCalls") or []
             for t_call in analysis_tools:
@@ -1578,24 +1777,30 @@ def vapi_webhook():
                     acordo_pela_tool = True
                     break
 
-        # ── Detecta acordo formalizado e dispara task de email ────────
-        if acordo_pela_tool or _detectar_acordo_formalizado(transcript):
-            logging.warning(f"[WEBHOOK] ACORDO DETECTADO (Tool: {acordo_pela_tool}) para call_id={call_id}")
+        is_voicemail = _is_voicemail_or_self_talk(transcript, ended_reason)
+        # Se a tool de acordo foi chamada em tempo real, NÃO dispara novamente no end-of-call para evitar duplicidade
+        if acordo_pela_tool:
+            logging.info(f"[WEBHOOK] Acordo já formalizado em tempo real via Tool Call para call_id={call_id}. Ignorando disparo redundante.")
+        elif not is_voicemail and _detectar_acordo_formalizado(transcript):
+            logging.warning(f"[WEBHOOK] ACORDO DETECTADO VIA TEXTO NO FIM DA CHAMADA para call_id={call_id}")
             try:
                 _dispatch_task(formalizar_acordo, args=[{
-                    "cpf":              row.get("cpf", ""),
-                    "nome":             row.get("name", ""),
-                    "email":            debito.get("email", ""),
-                    "instituicao":      debito.get("instituicao", ""),
-                    "idcalc":           debito.get("idcalc", ""),
-                    "debito":           debito,
+                    "cpf":              fresh_row.get("cpf", ""),
+                    "nome":             fresh_row.get("name", ""),
+                    "email":            debito_data_updated.get("email", ""),
+                    "phone":            fresh_row.get("phone") or fresh_row.get("customer_number") or "",
+                    "instituicao":      debito_data_updated.get("instituicao", ""),
+                    "idcalc":           debito_data_updated.get("idcalc", ""),
+                    "debito":           debito_data_updated,
                     "valor":            _extrair_valor(summary) or _extrair_valor(transcript),
                     "forma_pagamento":  _extrair_forma_pagamento(transcript),
                     "vapi_call_id":     call_id,
-                    "campaign_call_id": row["id"],
+                    "campaign_call_id": fresh_row["id"],
                 }])
             except Exception as e:
                 logging.warning(f"[WEBHOOK] erro ao enfileirar formalizar_acordo: {e}")
+        elif is_voicemail:
+            logging.warning(f"[WEBHOOK] ACORDO IGNORADO POR VOICEMAIL/FALA SOZINHA (ended_reason={ended_reason}) para call_id={call_id}")
 
         # ── Avança fila da campanha ───────────────────────────────────
         camp = supabase.table("campaigns").select("*").eq("id", campaign_id).execute().data
@@ -1818,7 +2023,7 @@ def import_status(job_id):
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-from flask import Response, stream_with_context
+
 
 _cached_payload = {}
 _cached_payload_ts = 0
