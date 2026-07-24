@@ -2182,6 +2182,9 @@ def verificar_boleto_acordo(dados: dict, tentativa: int = 1):
     }
 
 
+_FORMALIZANDO_CALLS_SET = set()
+_FORMALIZANDO_LOCK = threading.Lock()
+
 @celery.task(bind=True, max_retries=2, soft_time_limit=45, time_limit=60, name="tasks.formalizar_acordo")
 def formalizar_acordo(self, dados: dict):
     """
@@ -2202,6 +2205,15 @@ def formalizar_acordo(self, dados: dict):
         vapi_call_id    = dados.get("vapi_call_id", "")
         campaign_call_id = dados.get("campaign_call_id", "")
         debito          = dados.get("debito") or {}
+
+        # Trava instantânea em memória para prevenir execuções concorrentes idênticas
+        lock_key = vapi_call_id or f"{cpf}_{valor}_{forma_pagamento}"
+        if lock_key:
+            with _FORMALIZANDO_LOCK:
+                if lock_key in _FORMALIZANDO_CALLS_SET:
+                    logger.warning(f"[FORMALIZAR] Trava em memória acionada para key={lock_key}. Abortando execução duplicada.")
+                    return {"ok": True, "duplicate": True}
+                _FORMALIZANDO_CALLS_SET.add(lock_key)
 
         link_boleto = ""
         link_pix    = ""

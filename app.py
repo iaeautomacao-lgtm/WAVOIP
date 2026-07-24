@@ -1539,7 +1539,7 @@ def vapi_webhook():
         logging.warning(f"[WEBHOOK] msg_type={msg_type} call_id={call_id}")
 
         direct_tool_name = body.get("name") or msg.get("name") or body.get("tool") or ""
-        if direct_tool_name in ("confirmar_acordo", "formalizar_acordo") or (msg_type not in ("tool-calls", "status-update", "end-of-call-report", "call-ended") and "confirmar_acordo" in json.dumps(body)):
+        if direct_tool_name in ("confirmar_acordo", "formalizar_acordo"):
             logging.warning(f"[WEBHOOK] API Request Tool {direct_tool_name} recebida para call_id={call_id}")
             if call_id:
                 try:
