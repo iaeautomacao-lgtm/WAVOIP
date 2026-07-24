@@ -1679,6 +1679,29 @@ def vapi_webhook():
                             }])
                             logging.warning(f"[WEBHOOK] formalizar_acordo disparado em tempo real para call_id={call_id}")
                             _end_vapi_call(call_id)
+                        else:
+                            # Fallback para chamadas diretas / testes sem registro prévio em campaign_calls
+                            call_obj = body.get("call") or msg.get("call") or {}
+                            cust_obj = call_obj.get("customer") or {}
+                            var_vals = call_obj.get("assistantOverrides", {}).get("variableValues") or call_obj.get("variableValues") or {}
+                            cpf_val  = var_vals.get("Valorcpf") or var_vals.get("cpf") or ""
+                            name_val = cust_obj.get("name") or var_vals.get("customer.name") or "Cliente"
+                            phone_val = cust_obj.get("number") or ""
+                            inst_val = var_vals.get("instituicao") or "Universidade Veiga de Almeida"
+                            val_val  = var_vals.get("ValorFinalAVista") or "0,00"
+
+                            _dispatch_task(formalizar_acordo, args=[{
+                                "cpf":              cpf_val,
+                                "nome":             name_val,
+                                "email":            var_vals.get("email", ""),
+                                "phone":            phone_val,
+                                "instituicao":      inst_val,
+                                "valor":            val_val,
+                                "forma_pagamento":  "À vista",
+                                "vapi_call_id":     call_id,
+                            }])
+                            logging.warning(f"[WEBHOOK] formalizar_acordo disparado via FALLBACK Vapi para call_id={call_id}")
+                            _end_vapi_call(call_id)
                     except Exception as e:
                         logging.error(f"[WEBHOOK] erro ao salvar/disparar acordo: {e}")
                     results.append({
