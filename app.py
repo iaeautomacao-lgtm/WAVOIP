@@ -934,6 +934,78 @@ def manual_formalizar_acordo():
 
 
 
+@app.route("/api/monitor", methods=["GET"])
+def get_monitor():
+    try:
+        calls = supabase.table("campaign_calls").select("*").order("created_at", desc=True).limit(100).execute().data or []
+        
+        camp_ids = {str(c.get("campaign_id")) for c in calls if c.get("campaign_id")}
+        name_map = {}
+        if camp_ids:
+            try:
+                camps = supabase.table("campaigns").select("id, name").in_("id", list(camp_ids)).execute().data or []
+                for camp in camps:
+                    name_map[str(camp.get("id"))] = camp.get("name")
+            except Exception:
+                pass
+
+        stats = {
+            "em_andamento": 0,
+            "atendido": 0,
+            "erro": 0
+        }
+
+        data = []
+        for c in calls:
+            raw_status = str(c.get("status", "")).lower()
+            err = c.get("error") or ""
+            dur = c.get("duration") or 0
+            ans = c.get("answered") == 1 or dur > 0 or (raw_status == "finalizado" and not err)
+
+            if raw_status in ("disparado", "em_andamento", "in_progress", "ringing"):
+                st = "em_andamento"
+                stats["em_andamento"] += 1
+            elif raw_status == "pendente":
+                st = "enfileirado"
+            elif ans:
+                st = "atendido"
+                stats["atendido"] += 1
+            else:
+                st = "erro"
+                stats["erro"] += 1
+
+            cid = str(c.get("campaign_id") or "")
+            cname = name_map.get(cid) or "Campanha"
+
+            data.append({
+                "id": c.get("id"),
+                "cpf": c.get("cpf") or "",
+                "phone": c.get("phone") or "",
+                "status": st,
+                "line_name": c.get("line_name") or "DISPOSITIVO 1 - VEIGA",
+                "campaign": cname,
+                "created_at": c.get("created_at") or c.get("updated_at")
+            })
+
+        return jsonify({
+            "ok": True,
+            "stats": stats,
+            "data": data
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/cron", methods=["GET", "POST"])
+def run_cron_endpoint():
+    try:
+        from cron_runner import run_campaign_jobs
+        run_campaign_jobs()
+        return jsonify({"ok": True, "message": "Cron executado com sucesso"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/vapi/assistants", methods=["GET"])
 def get_vapi_assistants():
     try:
@@ -1678,29 +1750,6 @@ def vapi_webhook():
                                 "campaign_call_id": c_row["id"],
                             }])
                             logging.warning(f"[WEBHOOK] formalizar_acordo disparado em tempo real para call_id={call_id}")
-                            _end_vapi_call(call_id)
-                        else:
-                            # Fallback para chamadas diretas / testes sem registro prévio em campaign_calls
-                            call_obj = body.get("call") or msg.get("call") or {}
-                            cust_obj = call_obj.get("customer") or {}
-                            var_vals = call_obj.get("assistantOverrides", {}).get("variableValues") or call_obj.get("variableValues") or {}
-                            cpf_val  = var_vals.get("Valorcpf") or var_vals.get("cpf") or ""
-                            name_val = cust_obj.get("name") or var_vals.get("customer.name") or "Cliente"
-                            phone_val = cust_obj.get("number") or ""
-                            inst_val = var_vals.get("instituicao") or "Universidade Veiga de Almeida"
-                            val_val  = var_vals.get("ValorFinalAVista") or "0,00"
-
-                            _dispatch_task(formalizar_acordo, args=[{
-                                "cpf":              cpf_val,
-                                "nome":             name_val,
-                                "email":            var_vals.get("email", ""),
-                                "phone":            phone_val,
-                                "instituicao":      inst_val,
-                                "valor":            val_val,
-                                "forma_pagamento":  "À vista",
-                                "vapi_call_id":     call_id,
-                            }])
-                            logging.warning(f"[WEBHOOK] formalizar_acordo disparado via FALLBACK Vapi para call_id={call_id}")
                             _end_vapi_call(call_id)
                     except Exception as e:
                         logging.error(f"[WEBHOOK] erro ao salvar/disparar acordo: {e}")
