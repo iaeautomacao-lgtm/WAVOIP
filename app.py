@@ -1503,6 +1503,18 @@ def delete_campaign(campaign_id):
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+def _end_vapi_call(call_id):
+    if not call_id:
+        return
+    try:
+        url = f"https://api.vapi.ai/call/{call_id}/end"
+        v_key = os.getenv("VAPI_API_KEY", "332987f4-f832-4542-9fd0-76de02bde971")
+        headers = {"Authorization": f"Bearer {v_key}"}
+        r = requests.post(url, headers=headers, timeout=5)
+        logging.warning(f"[VAPI_END] Encerrando chamada vapi_call_id={call_id} status={r.status_code}")
+    except Exception as e:
+        logging.error(f"[VAPI_END] Erro ao encerrar chamada {call_id}: {e}")
+
 
 @app.route("/api/webhook/vapi", methods=["POST"])
 @app.route("/vapi/webhook", methods=["POST"])
@@ -1565,6 +1577,7 @@ def vapi_webhook():
                             "campaign_call_id": c_row["id"],
                         }])
                         logging.warning(f"[WEBHOOK] formalizar_acordo disparado via API Request Tool para call_id={call_id}")
+                        _end_vapi_call(call_id)
                 except Exception as e_apireq:
                     logging.error(f"[WEBHOOK] erro na API Request Tool: {e_apireq}")
 
@@ -1665,6 +1678,7 @@ def vapi_webhook():
                                 "campaign_call_id": c_row["id"],
                             }])
                             logging.warning(f"[WEBHOOK] formalizar_acordo disparado em tempo real para call_id={call_id}")
+                            _end_vapi_call(call_id)
                     except Exception as e:
                         logging.error(f"[WEBHOOK] erro ao salvar/disparar acordo: {e}")
                     results.append({
