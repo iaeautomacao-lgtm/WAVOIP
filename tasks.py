@@ -2333,8 +2333,8 @@ def formalizar_acordo(self, dados: dict):
             "nr_acordo":       nr_acordo,
             "email_enviado":   email_enviado,
             "wpp_enviado":     wpp_enviado,
-            "vapi_call_id":    vapi_call_id,
-            "campaign_call_id": campaign_call_id,
+            "vapi_call_id":    vapi_call_id or None,
+            "campaign_call_id": campaign_call_id or None,
         }
         try:
             _salvar_acordo_formalizado(acordo_payload)
