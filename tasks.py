@@ -515,21 +515,27 @@ def vapi_call(
             "customer":      {"number": phone_e164, "name": name},
         }
 
+        first_name = (name or "").strip().split()[0].title() if name else ""
+        first_msg = f"Alô? Oi, {first_name}?" if first_name else "Alô? Oi, tudo bem?"
+
+        overrides: Dict[str, Any] = {
+            "firstMessage": first_msg,
+        }
         if debito:
-            payload["assistantOverrides"] = {
-                "variableValues": {
-                    "instituicao":         debito.get("instituicao", ""),
-                    "Valorcpf":            cpf,
-                    "NominalPrinc":        debito.get("PgtoAvista", {}).get("ValorTotal", "0,00"),
-                    "PgtoAvista":          debito.get("PgtoAvista", {}),
-                    "CalculoBoleto":       debito.get("CalculoBoleto", {}),
-                    "ParcelasBoleto":      debito.get("ParcelasBoleto", "0"),
-                    "PgtoParceladoCartao": debito.get("PgtoParceladoCartao", {}),
-                    "PrimeiroVencto":      debito.get("PrimeiroVencto", "em dois dias"),
-                    "QuantidadeMensalidades": debito.get("numero_debitos", "1"),
-                    "ValorFinalAVista":    debito.get("PgtoAvista", {}).get("ValorFinal", "0,00"),
-                }
+            overrides["variableValues"] = {
+                "instituicao":         debito.get("instituicao", ""),
+                "Valorcpf":            cpf,
+                "NominalPrinc":        debito.get("PgtoAvista", {}).get("ValorTotal", "0,00"),
+                "PgtoAvista":          debito.get("PgtoAvista", {}),
+                "CalculoBoleto":       debito.get("CalculoBoleto", {}),
+                "ParcelasBoleto":      debito.get("ParcelasBoleto", "0"),
+                "PgtoParceladoCartao": debito.get("PgtoParceladoCartao", {}),
+                "PrimeiroVencto":      debito.get("PrimeiroVencto", "em dois dias"),
+                "QuantidadeMensalidades": debito.get("numero_debitos", "1"),
+                "ValorFinalAVista":    debito.get("PgtoAvista", {}).get("ValorFinal", "0,00"),
             }
+        payload["assistantOverrides"] = overrides
+
 
         try:
             r = requests.post(f"{VAPI_BASE}/call/phone", json=payload,
