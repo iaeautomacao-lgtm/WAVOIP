@@ -1094,16 +1094,16 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> tuple:
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
 
-        smtp_host = env("SMTP_HOST", "mail.grupoddm.ia.br")
+        smtp_host = env("SMTP_HOST", "mail.ddm.adv.br")
         smtp_port = int(env("SMTP_PORT", "465"))
-        smtp_user = env("SMTP_USER", "")
-        smtp_pass = env("SMTP_PASSWORD", "")
-        smtp_from = env("SMTP_FROM", smtp_user or "nao-responda@grupoddm.ia.br")
+        smtp_user = env("SMTP_USER", "atendimento@ddm.adv.br")
+        smtp_pass = env("SMTP_PASSWORD", "#ddm&2023@")
+        smtp_from = env("SMTP_FROM", smtp_user or "atendimento@ddm.adv.br")
         smtp_sec  = env("SMTP_SECURITY", "ssl").lower()
 
         if not smtp_host or not smtp_user or not smtp_pass:
             logging.warning("[OTP] SMTP não configurado no .env. Código gerado para %s: %s", destinatario, code)
-            return True, "SMTP não configurado"
+            return False, "SMTP_USER/SMTP_PASSWORD não configurados no servidor"
 
         html = f"""
         <!DOCTYPE html>
@@ -1141,31 +1141,47 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> tuple:
         msg["To"]      = destinatario
         msg.attach(MIMEText(html, "html"))
 
-        host_ipv4 = smtp_host
+        last_err = None
         try:
-            host_ipv4 = socket.gethostbyname(smtp_host)
-        except Exception:
-            pass
-
-        if smtp_sec == "ssl":
-            srv = smtplib.SMTP_SSL(host_ipv4, smtp_port, timeout=15)
-        else:
-            srv = smtplib.SMTP(host_ipv4, smtp_port, timeout=15)
-
-        with srv:
-            srv.ehlo()
-            if smtp_sec == "starttls":
-                srv.starttls()
+            if smtp_sec == "ssl":
+                srv = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=12)
+            else:
+                srv = smtplib.SMTP(smtp_host, smtp_port, timeout=12)
+            with srv:
                 srv.ehlo()
-            srv.login(smtp_user, smtp_pass)
-            srv.sendmail(smtp_from, [destinatario], msg.as_string())
-        
-        logging.info("[OTP] Código de verificação (%s) enviado com sucesso para %s", code, destinatario)
-        return True, "Enviado"
+                if smtp_sec == "starttls":
+                    srv.starttls()
+                    srv.ehlo()
+                srv.login(smtp_user, smtp_pass)
+                srv.sendmail(smtp_from, [destinatario], msg.as_string())
+            logging.info("[OTP] Código (%s) enviado com sucesso para %s (via %s:%s)", code, destinatario, smtp_host, smtp_port)
+            return True, "Enviado"
+        except Exception as e1:
+            last_err = e1
+            logging.warning("[OTP] Tentativa 1 (host=%s, port=%s, sec=%s) falhou: %s. Tentando fallback...", smtp_host, smtp_port, smtp_sec, e1)
+
+        try:
+            fallback_port = 587 if smtp_port == 465 else 465
+            if fallback_port == 465:
+                srv = smtplib.SMTP_SSL(smtp_host, fallback_port, timeout=12)
+            else:
+                srv = smtplib.SMTP(smtp_host, fallback_port, timeout=12)
+            with srv:
+                srv.ehlo()
+                if fallback_port == 587:
+                    srv.starttls()
+                    srv.ehlo()
+                srv.login(smtp_user, smtp_pass)
+                srv.sendmail(smtp_from, [destinatario], msg.as_string())
+            logging.info("[OTP] Código (%s) enviado com sucesso via fallback para %s (porta %s)", code, destinatario, fallback_port)
+            return True, "Enviado via fallback"
+        except Exception as e2:
+            logging.error("[OTP] Fallback também falhou para %s: %s", destinatario, e2)
+            return False, f"SMTP Principal: {last_err} | Fallback: {e2}"
+
     except Exception as e:
         logging.error("[OTP] Erro ao enviar e-mail para %s: %s", destinatario, e)
         return False, str(e)
-
 
 
 def validate_password_strength(password: str) -> tuple:
@@ -1220,36 +1236,17 @@ def auth_send_otp():
         if not valid_pass:
             return jsonify({"ok": False, "error": pass_err}), 400
 
-
-        supabase = create_client()
-        # Garante tabela email_verifications no MySQL
-        try:
-            with supabase.connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                    CREATE TABLE IF NOT EXISTS email_verifications (
-                      email varchar(255) PRIMARY KEY,
-                      code varchar(6) NOT NULL,
-                      name varchar(255) NOT NULL,
-                      password_hash varchar(255) NOT NULL,
-                      expires_at datetime NOT NULL,
-                      created_at timestamp DEFAULT CURRENT_TIMESTAMP
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-                    """)
-        except Exception:
-            pass
-
-        existing = supabase.table("users").select("id").eq("email", email).execute()
+        db = create_client()
+        existing = db.table("users").select("id").eq("email", email).execute()
         if existing.data:
             return jsonify({"ok": False, "error": "Este e-mail já está cadastrado no sistema. Efetue login."}), 400
 
-        # Gera código aleatório de 6 dígitos
         import random
         otp_code = f"{random.randint(100000, 999999)}"
         expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
         pass_hash = generate_password_hash(password)
 
-        supabase.table("email_verifications").upsert({
+        db.table("email_verifications").upsert({
             "email": email,
             "code": otp_code,
             "name": name,
@@ -1257,12 +1254,18 @@ def auth_send_otp():
             "expires_at": expires_at
         }, on_conflict="email").execute()
 
-        send_otp_email(email, otp_code, name)
+        ok_mail, mail_err = send_otp_email(email, otp_code, name)
+        if not ok_mail:
+            logging.error("[OTP] Falha no disparo do e-mail SMTP para %s: %s", email, mail_err)
+            return jsonify({
+                "ok": False,
+                "error": f"Erro no envio de e-mail SMTP pelo servidor: {mail_err}"
+            }), 500
 
         return jsonify({
             "ok": True,
             "otp_required": True,
-            "message": f"Código de verificação de 6 dígitos enviado para seu e-mail DDM ({email}). Verifique sua caixa de entrada."
+            "message": f"Código de verificação enviado para seu e-mail DDM ({email})."
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
