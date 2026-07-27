@@ -2270,11 +2270,12 @@ def resume_campaign(campaign_id):
 @app.route("/api/campaigns/<campaign_id>", methods=["DELETE"])
 def delete_campaign(campaign_id):
     try:
-        supabase.table("campaign_calls").delete().eq("campaign_id", campaign_id).execute()
+        # Preserva o histórico de chamadas (campaign_calls) no MySQL para manter as métricas históricas no Dashboard!
         supabase.table("campaigns").delete().eq("id", campaign_id).execute()
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
 
 def _end_vapi_call(call_id):
     if not call_id:
