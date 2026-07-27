@@ -1171,8 +1171,8 @@
         </div>
 
         <div style="margin-bottom:16px;">
-          <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:6px;">E-mail DDM (@ddm.adv.br ou @grupoddm.ia.br)</label>
-          <input type="email" id="login-email" required placeholder="seu.nome@ddm.adv.br" style="width:100%; padding:12px 14px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:white; font-size:14px; outline:none;">
+          <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:6px;">E-mail DDM (@grupoddm.com.br, @ddm.adv.br ou @grupoddm.ia.br)</label>
+          <input type="email" id="login-email" required placeholder="seu.nome@grupoddm.com.br" style="width:100%; padding:12px 14px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:white; font-size:14px; outline:none;">
         </div>
         
         <div style="margin-bottom:24px;">
@@ -1183,11 +1183,31 @@
         <button type="submit" id="btn-login-submit" style="width:100%; padding:12px; background:linear-gradient(135deg, #ff5706, #ea580c); border:none; border-radius:8px; color:white; font-weight:700; font-size:14px; cursor:pointer; box-shadow:0 4px 12px rgba(255,87,6,0.3);">Entrar no Sistema</button>
       </form>
       
+      <!-- FORMULÁRIO DE CÓDIGO DE VERIFICAÇÃO OTP (6 DÍGITOS) -->
+      <div id="otp-step-container" style="display:none; text-align:center;">
+        <div style="background:rgba(255,87,6,0.1); border:1px solid rgba(255,87,6,0.3); border-radius:10px; padding:12px; margin-bottom:18px; font-size:13px; color:#f8fafc; line-height:1.4;">
+          🔒 Enviamos um código de 6 dígitos para o seu e-mail DDM:<br>
+          <strong id="otp-email-display" style="color:#ff5706; font-family:monospace;">—</strong>
+        </div>
+        
+        <form onsubmit="handleOtpVerifySubmit(event)">
+          <div style="margin-bottom:20px;">
+            <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:8px;">Digite o Código de 6 Dígitos do E-mail</label>
+            <input type="text" id="otp-code-input" maxlength="6" pattern="[0-9]{6}" required placeholder="000000" style="width:180px; padding:12px; font-size:24px; font-weight:800; letter-spacing:6px; text-align:center; background:#0f172a; border:2px dashed #ff5706; border-radius:10px; color:#ffffff; outline:none;">
+          </div>
+          
+          <button type="submit" id="btn-otp-submit" style="width:100%; padding:12px; background:linear-gradient(135deg, #ff5706, #ea580c); border:none; border-radius:8px; color:white; font-weight:700; font-size:14px; cursor:pointer; box-shadow:0 4px 12px rgba(255,87,6,0.3); margin-bottom:12px;">Confirmar e Ativar Conta</button>
+          
+          <button type="button" class="btn btn-ghost" style="font-size:12px; color:#94a3b8;" onclick="toggleAuthMode('register')">← Voltar</button>
+        </form>
+      </div>
+
       <div style="margin-top:20px; font-size:11px; color:#64748b; text-align:center;">
         🔒 Sistema restrito aos colaboradores autorizados do Grupo DDM.
       </div>
     </div>
   </div>
+
 
 
 
@@ -1306,6 +1326,7 @@
 
   let currentUser = null;
   let currentAuthMode = 'login';
+  let pendingOtpEmail = '';
 
   function toggleAuthMode(mode) {
     currentAuthMode = mode;
@@ -1314,8 +1335,12 @@
     const nameGroup = document.getElementById('group-auth-name');
     const submitBtn = document.getElementById('btn-login-submit');
     const alertEl = document.getElementById('login-alert');
+    const loginForm = document.getElementById('login-form');
+    const otpContainer = document.getElementById('otp-step-container');
 
     alertEl.style.display = 'none';
+    if (loginForm) loginForm.style.display = 'block';
+    if (otpContainer) otpContainer.style.display = 'none';
 
     if (mode === 'register') {
       loginBtn.style.background = 'transparent';
@@ -1329,7 +1354,7 @@
       nameGroup.style.display = 'block';
       const authNameInput = document.getElementById('auth-name');
       if (authNameInput) authNameInput.required = true;
-      submitBtn.textContent = 'Criar Minha Conta DDM';
+      submitBtn.textContent = 'Enviar Código para E-mail DDM';
     } else {
       regBtn.style.background = 'transparent';
       regBtn.style.color = '#94a3b8';
@@ -1377,9 +1402,9 @@
 
     alertEl.style.display = 'none';
     submitBtn.disabled = true;
-    submitBtn.textContent = currentAuthMode === 'register' ? 'Criando Conta...' : 'Autenticando...';
+    submitBtn.textContent = currentAuthMode === 'register' ? 'Enviando Código...' : 'Autenticando...';
 
-    const endpoint = currentAuthMode === 'register' ? '/api/auth/register' : '/api/auth/login';
+    const endpoint = currentAuthMode === 'register' ? '/api/auth/send-otp' : '/api/auth/login';
     const payload = currentAuthMode === 'register' ? { email, password, name } : { email, password };
 
     try {
@@ -1390,11 +1415,20 @@
       });
       const data = await res.json();
       if (res.ok && data.ok) {
-        currentUser = data.user;
-        document.getElementById('user-display-name').textContent = currentUser.name || currentUser.email;
-        document.getElementById('login-overlay').style.display = 'none';
-        toast(currentAuthMode === 'register' ? 'Conta DDM criada com sucesso!' : 'Login efetuado com sucesso!');
-        loadLines();
+        if (currentAuthMode === 'register' && data.otp_required) {
+          pendingOtpEmail = email;
+          document.getElementById('otp-email-display').textContent = email;
+          document.getElementById('login-form').style.display = 'none';
+          document.getElementById('otp-step-container').style.display = 'block';
+          document.getElementById('otp-code-input').value = '';
+          toast('Código de 6 dígitos enviado para seu e-mail DDM!');
+        } else {
+          currentUser = data.user;
+          document.getElementById('user-display-name').textContent = currentUser.name || currentUser.email;
+          document.getElementById('login-overlay').style.display = 'none';
+          toast('Login efetuado com sucesso!');
+          loadLines();
+        }
       } else {
         alertEl.textContent = data.error || 'Erro ao processar requisição.';
         alertEl.style.display = 'block';
@@ -1404,9 +1438,46 @@
       alertEl.style.display = 'block';
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = currentAuthMode === 'register' ? 'Criar Minha Conta DDM' : 'Entrar no Sistema';
+      submitBtn.textContent = currentAuthMode === 'register' ? 'Enviar Código para E-mail DDM' : 'Entrar no Sistema';
     }
   }
+
+  async function handleOtpVerifySubmit(e) {
+    e.preventDefault();
+    const code = document.getElementById('otp-code-input').value.trim();
+    const alertEl = document.getElementById('login-alert');
+    const submitBtn = document.getElementById('btn-otp-submit');
+
+    alertEl.style.display = 'none';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Verificando...';
+
+    try {
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: pendingOtpEmail, code })
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        currentUser = data.user;
+        document.getElementById('user-display-name').textContent = currentUser.name || currentUser.email;
+        document.getElementById('login-overlay').style.display = 'none';
+        toast('Conta DDM verificada e ativada com sucesso! 🚀');
+        loadLines();
+      } else {
+        alertEl.textContent = data.error || 'Código inválido.';
+        alertEl.style.display = 'block';
+      }
+    } catch (err) {
+      alertEl.textContent = 'Erro ao conectar ao servidor.';
+      alertEl.style.display = 'block';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Confirmar e Ativar Conta';
+    }
+  }
+
 
 
   async function doLogout() {

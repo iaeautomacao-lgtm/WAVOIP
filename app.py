@@ -20,7 +20,8 @@ app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "wavoip_ddm_secret_key_2026_production")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
-ALLOWED_EMAIL_DOMAINS = ["ddm.adv.br", "grupoddm.ia.br"]
+ALLOWED_EMAIL_DOMAINS = ["grupoddm.com.br", "ddm.adv.br", "grupoddm.ia.br"]
+
 
 def is_ddm_email(email: str) -> bool:
     if not email or "@" not in str(email):
@@ -1060,12 +1061,86 @@ def _ensure_default_user():
 
 
 
+def send_otp_email(destinatario: str, code: str, nome: str) -> bool:
+    try:
+        import smtplib
+        import socket
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+
+        smtp_host = env("SMTP_HOST", "mail.grupoddm.ia.br")
+        smtp_port = int(env("SMTP_PORT", "465"))
+        smtp_user = env("SMTP_USER", "")
+        smtp_pass = env("SMTP_PASSWORD", "")
+        smtp_from = env("SMTP_FROM", smtp_user or "nao-responda@grupoddm.ia.br")
+        smtp_sec  = env("SMTP_SECURITY", "ssl").lower()
+
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"></head>
+        <body style="font-family:Arial,sans-serif;background-color:#0b0f19;margin:0;padding:40px 20px;">
+          <div style="max-width:500px;margin:0 auto;background:#131b2e;border:1px solid #2a364f;border-radius:16px;padding:32px;color:#f8fafc;box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+            <div style="text-align:center;margin-bottom:24px;">
+              <div style="display:inline-block;width:48px;height:48px;background:linear-gradient(135deg, #ff5706, #ea580c);border-radius:12px;font-size:24px;font-weight:800;color:white;line-height:48px;text-align:center;">W</div>
+              <h2 style="margin:12px 0 4px;font-size:20px;color:#ffffff;">Verificação de Segurança WAVOIP</h2>
+              <p style="margin:0;font-size:13px;color:#94a3b8;">Grupo DDM Assessoria</p>
+            </div>
+            
+            <p style="font-size:14px;color:#cbd5e1;line-height:1.5;">Olá <strong>{nome}</strong>,</p>
+            <p style="font-size:14px;color:#cbd5e1;line-height:1.5;">Seu código de 6 dígitos para ativamento da sua conta no WAVOIP é:</p>
+            
+            <div style="text-align:center;margin:28px 0;">
+              <div style="display:inline-block;padding:16px 32px;background:#0f172a;border:2px dashed #ff5706;border-radius:12px;font-size:32px;font-weight:800;letter-spacing:8px;color:#ff5706;">
+                {code}
+              </div>
+              <p style="font-size:11px;color:#64748b;margin-top:8px;">Válido por 10 minutos.</p>
+            </div>
+            
+            <p style="font-size:12px;color:#64748b;line-height:1.5;margin-top:24px;border-top:1px solid #1e293b;padding-top:16px;">
+              Se você não solicitou este cadastro, ignore este e-mail.
+            </p>
+          </div>
+        </body>
+        </html>
+        """
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"🔒 Código de Verificação WAVOIP DDM: {code}"
+        msg["From"]    = smtp_from
+        msg["To"]      = destinatario
+        msg.attach(MIMEText(html, "html"))
+
+        if not smtp_host or not smtp_user or not smtp_pass:
+            logging.warning("[OTP] SMTP não configurado. Código para %s: %s", destinatario, code)
+            return True
+
+        if smtp_sec == "ssl":
+            srv = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
+        else:
+            srv = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
+
+        with srv:
+            srv.ehlo()
+            if smtp_sec == "starttls":
+                srv.starttls()
+                srv.ehlo()
+            srv.login(smtp_user, smtp_pass)
+            srv.sendmail(smtp_from, [destinatario], msg.as_string())
+        
+        logging.info("[OTP] Código de verificação enviado para %s", destinatario)
+        return True
+    except Exception as e:
+        logging.error("[OTP] Erro ao enviar e-mail para %s: %s", destinatario, e)
+        return True
+
+
 @app.before_request
 def check_authentication():
     path = request.path
     if (
         path.startswith("/static/")
-        or path in ["/", "/login", "/vapi/webhook", "/api/auth/login", "/api/auth/register", "/api/auth/logout", "/api/auth/me", "/api/cron"]
+        or path in ["/", "/login", "/vapi/webhook", "/api/auth/login", "/api/auth/register", "/api/auth/send-otp", "/api/auth/verify-otp", "/api/auth/logout", "/api/auth/me", "/api/cron"]
     ):
         return None
 
@@ -1075,8 +1150,127 @@ def check_authentication():
         return None
 
 
+@app.route("/api/auth/send-otp", methods=["POST"])
+def auth_send_otp():
+    try:
+        body = request.json or {}
+        email = str(body.get("email", "")).strip().lower()
+        name = str(body.get("name", "")).strip()
+        password = str(body.get("password", "")).strip()
+
+        if not email or not password or not name:
+            return jsonify({"ok": False, "error": "Nome, e-mail e senha são obrigatórios."}), 400
+
+        if not is_ddm_email(email):
+            return jsonify({
+                "ok": False,
+                "error": "Acesso restrito. O e-mail deve pertencer aos domínios corporativos DDM (@grupoddm.com.br, @ddm.adv.br ou @grupoddm.ia.br)."
+            }), 403
+
+        if len(password) < 6:
+            return jsonify({"ok": False, "error": "A senha deve ter no mínimo 6 caracteres."}), 400
+
+        supabase = create_client()
+        # Garante tabela email_verifications no MySQL
+        try:
+            with supabase.connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                    CREATE TABLE IF NOT EXISTS email_verifications (
+                      email varchar(255) PRIMARY KEY,
+                      code varchar(6) NOT NULL,
+                      name varchar(255) NOT NULL,
+                      password_hash varchar(255) NOT NULL,
+                      expires_at datetime NOT NULL,
+                      created_at timestamp DEFAULT CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                    """)
+        except Exception:
+            pass
+
+        existing = supabase.table("users").select("id").eq("email", email).execute()
+        if existing.data:
+            return jsonify({"ok": False, "error": "Este e-mail já está cadastrado no sistema. Efetue login."}), 400
+
+        # Gera código aleatório de 6 dígitos
+        import random
+        otp_code = f"{random.randint(100000, 999999)}"
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+        pass_hash = generate_password_hash(password)
+
+        supabase.table("email_verifications").upsert({
+            "email": email,
+            "code": otp_code,
+            "name": name,
+            "password_hash": pass_hash,
+            "expires_at": expires_at
+        }, on_conflict="email").execute()
+
+        send_otp_email(email, otp_code, name)
+
+        return jsonify({
+            "ok": True,
+            "otp_required": True,
+            "message": f"Código de verificação de 6 dígitos enviado para seu e-mail DDM ({email}). Verifique sua caixa de entrada."
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/auth/verify-otp", methods=["POST"])
+def auth_verify_otp():
+    try:
+        body = request.json or {}
+        email = str(body.get("email", "")).strip().lower()
+        code = str(body.get("code", "")).strip()
+
+        if not email or not code:
+            return jsonify({"ok": False, "error": "E-mail e código de 6 dígitos são obrigatórios."}), 400
+
+        supabase = create_client()
+        res = supabase.table("email_verifications").select("*").eq("email", email).execute()
+        records = res.data or []
+
+        if not records:
+            return jsonify({"ok": False, "error": "Nenhuma verificação pendente para este e-mail. Solicite um novo código."}), 400
+
+        rec = records[0]
+        if str(rec.get("code", "")).strip() != code:
+            return jsonify({"ok": False, "error": "Código de verificação incorreto. Confira no seu e-mail DDM."}), 400
+
+        user_id = str(uuid.uuid4())
+        supabase.table("users").insert({
+            "id": user_id,
+            "email": email,
+            "password_hash": rec.get("password_hash"),
+            "name": rec.get("name"),
+            "role": "admin"
+        }).execute()
+
+        supabase.table("email_verifications").delete().eq("email", email).execute()
+
+        session.permanent = True
+        session["user_id"] = user_id
+        session["user_email"] = email
+        session["user_name"] = rec.get("name")
+        session["user_role"] = "admin"
+
+        return jsonify({
+            "ok": True,
+            "user": {
+                "id": user_id,
+                "email": email,
+                "name": rec.get("name"),
+                "role": "admin"
+            }
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/auth/register", methods=["POST"])
 def auth_register():
+
     try:
         body = request.json or {}
         email = str(body.get("email", "")).strip().lower()
