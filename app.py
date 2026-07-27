@@ -328,21 +328,32 @@ def _active_line_counts(line_tokens: list) -> dict:
         return counts
     try:
         rows = supabase.table("campaign_calls")\
-            .select("id, status, line_token, debito_data")\
-            .in_("status", ["enfileirado", "em_andamento", "atendido"])\
+            .select("id, status, line_token, debito_data, vapi_call_id")\
+            .in_("status", ["enfileirado", "em_andamento"])\
             .execute().data or []
     except Exception:
         rows = supabase.table("campaign_calls")\
-            .select("id, status, debito_data")\
-            .in_("status", ["enfileirado", "em_andamento", "atendido"])\
+            .select("id, status, debito_data, vapi_call_id")\
+            .in_("status", ["enfileirado", "em_andamento"])\
             .execute().data or []
 
     for row in rows:
-        meta = _line_meta_from_debito(row)
-        token = row.get("line_token") or (meta or {}).get("line_token")
-        if token in counts:
-            counts[token] += 1
+        vapi_id = row.get("vapi_call_id")
+        cur_status = row.get("status")
+        if cur_status == "em_andamento" and vapi_id:
+            try:
+                synced = _sync_vapi_call_status(vapi_id)
+                if synced:
+                    cur_status = synced
+            except Exception:
+                pass
+        if cur_status in ("enfileirado", "em_andamento"):
+            meta = _line_meta_from_debito(row)
+            token = row.get("line_token") or (meta or {}).get("line_token")
+            if token in counts:
+                counts[token] += 1
     return counts
+
 
 
 def _line_overrides_map() -> dict:
@@ -2001,7 +2012,7 @@ def dashboard_summary():
             "campaigns_paused": sum(1 for c in campaigns if c.get("status") == "pausada"),
             "calls": len(calls),
             "pending": sum(1 for r in calls if r.get("status") == "pendente"),
-            "active": sum(1 for r in calls if r.get("status") in ("enfileirado", "em_andamento", "atendido")),
+            "active": sum(1 for r in calls if r.get("status") in ("enfileirado", "em_andamento")),
             "answered": answered_calls,
             "finished": sum(1 for r in calls if r.get("status") == "finalizado"),
             "errors": sum(1 for r in calls if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
@@ -2030,7 +2041,7 @@ def dashboard_summary():
                 "group": (groups.get(camp.get("sip_group_id")) or {}).get("name", ""),
                 "total": camp.get("total") or len(rows),
                 "finished": camp.get("finished") or sum(1 for r in rows if r.get("status") == "finalizado"),
-                "active": sum(1 for r in rows if r.get("status") in ("enfileirado", "em_andamento", "atendido")),
+                "active": sum(1 for r in rows if r.get("status") in ("enfileirado", "em_andamento")),
                 "answered": camp_answered,
                 "errors": sum(1 for r in rows if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
                 "formalized": camp_formalized,
@@ -2071,7 +2082,7 @@ def dashboard_summary():
                 "name": line_names.get(token, token[:6]),
                 "groups": groups_by_token.get(token, []),
                 "total": len(rows),
-                "active": sum(1 for r in rows if r.get("status") in ("enfileirado", "em_andamento", "atendido")),
+                "active": sum(1 for r in rows if r.get("status") in ("enfileirado", "em_andamento")),
                 "answered": sum(1 for r in rows if r.get("answered") or r.get("status") == "atendido"),
                 "finished": sum(1 for r in rows if r.get("status") == "finalizado"),
                 "errors": sum(1 for r in rows if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
