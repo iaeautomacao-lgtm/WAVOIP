@@ -343,8 +343,9 @@ class QueryBuilder:
         return ", ".join(f"`{c}`" for c in cols) if cols else "*"
 
     def _prepare_payload(self, payload: dict, ensure_id: bool):
-        if ensure_id and "id" not in payload and self.table_name not in {"line_overrides"}:
+        if ensure_id and "id" not in payload and self.table_name not in {"line_overrides", "email_verifications"}:
             payload["id"] = str(uuid.uuid4())
+
         out = {}
         for key, value in payload.items():
             if value == "now()":
