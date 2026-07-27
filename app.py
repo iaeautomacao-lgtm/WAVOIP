@@ -442,11 +442,19 @@ def vapi_call(phone: str, name: str = "", cpf: str = "", debito: dict = None) ->
         first_name = (name or "").strip().split()[0].title() if name else ""
         first_msg = f"Oi, {first_name or 'tudo bem'}. Aqui é a Júlia, da assessoria financeira da {inst or 'nossa instituição'}. Por segurança, pode me confirmar apenas os três primeiros números do seu CPF?"
 
+        server_url = env("VAPI_SERVER_URL", "").strip() or env("PUBLIC_WEBHOOK_URL", "").strip()
+
         payload["assistantOverrides"] = {
             "firstMessage": first_msg,
             "silenceTimeoutSeconds": 12,
             "maxDurationSeconds": 600,
-            "variableValues": {
+        }
+        if server_url:
+            payload["assistantOverrides"]["serverUrl"] = server_url
+
+        payload["assistantOverrides"]["variableValues"] = {
+
+
 
                 "cpf":                 cpf_clean,
                 "CPF":                 cpf_clean,

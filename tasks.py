@@ -543,6 +543,11 @@ def vapi_call(
             "maxDurationSeconds": 600,
         }
 
+        server_url = env("VAPI_SERVER_URL", "").strip() or env("PUBLIC_WEBHOOK_URL", "").strip()
+        if server_url:
+            overrides["serverUrl"] = server_url
+
+
         overrides["variableValues"] = {
             "cpf":                 cpf_clean,
             "CPF":                 cpf_clean,
