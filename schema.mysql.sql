@@ -143,3 +143,13 @@ CREATE TABLE IF NOT EXISTS users (
   INDEX idx_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS email_verifications (
+  email varchar(255) PRIMARY KEY,
+  code varchar(6) NOT NULL,
+  name varchar(255) NOT NULL,
+  password_hash varchar(255) NOT NULL,
+  expires_at datetime NOT NULL,
+  created_at timestamp DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
