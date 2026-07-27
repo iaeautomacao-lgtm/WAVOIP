@@ -1141,68 +1141,42 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> tuple:
         msg["To"]      = destinatario
         msg.attach(MIMEText(html, "html"))
 
-        last_err = None
-        last_err_2 = None
-        try:
-            if smtp_sec == "ssl":
-                srv = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=8)
-            else:
-                srv = smtplib.SMTP(smtp_host, smtp_port, timeout=8)
-            with srv:
-                srv.ehlo()
-                if smtp_sec == "starttls":
-                    srv.starttls()
-                    srv.ehlo()
-                srv.login(smtp_user, smtp_pass)
-                srv.sendmail(smtp_from, [destinatario], msg.as_string())
-            logging.info("[OTP] Código (%s) enviado com sucesso para %s (via %s:%s)", code, destinatario, smtp_host, smtp_port)
-            return True, "Enviado"
-        except Exception as e1:
-            last_err = e1
-            logging.warning("[OTP] Tentativa 1 (host=%s, port=%s) falhou: %s", smtp_host, smtp_port, e1)
+        target_hosts = []
+        for h in [smtp_host, "mail.grupoddm.ia.br", "localhost", "127.0.0.1"]:
+            if h and h not in target_hosts:
+                target_hosts.append(h)
 
-        try:
-            fallback_port = 587 if smtp_port == 465 else 465
-            if fallback_port == 465:
-                srv = smtplib.SMTP_SSL(smtp_host, fallback_port, timeout=8)
-            else:
-                srv = smtplib.SMTP(smtp_host, fallback_port, timeout=8)
-            with srv:
-                srv.ehlo()
-                if fallback_port == 587:
-                    srv.starttls()
-                    srv.ehlo()
-                srv.login(smtp_user, smtp_pass)
-                srv.sendmail(smtp_from, [destinatario], msg.as_string())
-            logging.info("[OTP] Código enviado via fallback (%s:%s) para %s", smtp_host, fallback_port, destinatario)
-            return True, "Enviado via fallback"
-        except Exception as e2:
-            last_err_2 = e2
-            logging.warning("[OTP] Tentativa 2 falhou: %s", e2)
-
-        # Tentativa 3: Conexão direta via localhost cPanel
-        for local_port in [25, 587, 465]:
-            try:
-                if local_port == 465:
-                    srv = smtplib.SMTP_SSL("localhost", local_port, timeout=5)
-                else:
-                    srv = smtplib.SMTP("localhost", local_port, timeout=5)
-                with srv:
-                    srv.ehlo()
-                    if local_port == 587:
-                        srv.starttls()
+        errors = []
+        for host in target_hosts:
+            for port, sec in [(int(smtp_port), smtp_sec), (587, "starttls"), (465, "ssl"), (25, "none")]:
+                try:
+                    if sec == "ssl":
+                        srv = smtplib.SMTP_SSL(host, port, timeout=4)
+                    else:
+                        srv = smtplib.SMTP(host, port, timeout=4)
+                    with srv:
                         srv.ehlo()
-                    try:
-                        srv.login(smtp_user, smtp_pass)
-                    except Exception:
-                        pass
-                    srv.sendmail(smtp_from, [destinatario], msg.as_string())
-                logging.info("[OTP] Código enviado via localhost:%s para %s", local_port, destinatario)
-                return True, "Enviado via localhost"
-            except Exception as e3:
-                logging.warning("[OTP] Tentativa localhost:%s falhou: %s", local_port, e3)
+                        if sec == "starttls":
+                            srv.starttls()
+                            srv.ehlo()
+                        if smtp_user and smtp_pass:
+                            try:
+                                srv.login(smtp_user, smtp_pass)
+                            except Exception:
+                                pass
+                        srv.sendmail(smtp_from, [destinatario], msg.as_string())
+                    logging.info("[OTP] Código (%s) enviado com sucesso via %s:%s para %s", code, host, port, destinatario)
+                    return True, "Enviado"
+                except Exception as err:
+                    errors.append(f"{host}:{port} ({err})")
 
-        return False, f"Timeout em {smtp_host}:{smtp_port} e {smtp_host}:{fallback_port}. (Host externo bloqueado pela hospedagem)"
+        err_summary = " | ".join(errors[:2])
+        return False, f"Falha de conexão SMTP nos servidores do cPanel ({err_summary})"
+
+    except Exception as e:
+        logging.error("[OTP] Erro ao enviar e-mail para %s: %s", destinatario, e)
+        return False, str(e)
+
 
 
     except Exception as e:
