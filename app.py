@@ -458,11 +458,15 @@ def vapi_call(phone: str, name: str = "", cpf: str = "", debito: dict = None) ->
 
                 "cpf":                 cpf_clean,
                 "CPF":                 cpf_clean,
-                "Valorcpf":            cpf_clean,
-                "valorcpf":            cpf_clean,
+                "Valorcpf":            cpf_prefixo3,
+                "valorcpf":            cpf_prefixo3,
+                "Valorcpf_full":       cpf_clean,
                 "cpf_formatado":       cpf_formatted,
                 "cpf_prefixo3":        cpf_prefixo3,
                 "cpf_esperado":        cpf_prefixo3,
+                "Valorcpf_prefixo3":   cpf_prefixo3,
+                "Valorcpf_3digitos":   cpf_prefixo3,
+
                 "Valorcpf_prefixo3":   cpf_prefixo3,
                 "Valorcpf_3digitos":   cpf_prefixo3,
 

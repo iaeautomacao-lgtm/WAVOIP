@@ -551,8 +551,9 @@ def vapi_call(
         overrides["variableValues"] = {
             "cpf":                 cpf_clean,
             "CPF":                 cpf_clean,
-            "Valorcpf":            cpf_clean,
-            "valorcpf":            cpf_clean,
+            "Valorcpf":            cpf_prefixo3,
+            "valorcpf":            cpf_prefixo3,
+            "Valorcpf_full":       cpf_clean,
             "cpf_formatado":       cpf_formatted,
             "cpf_prefixo3":        cpf_prefixo3,
             "cpf_esperado":        cpf_prefixo3,
@@ -568,6 +569,7 @@ def vapi_call(
             "QuantidadeMensalidades": (debito or {}).get("numero_debitos", "1") if debito else "1",
             "ValorFinalAVista":    valor_final_avista,
         }
+
 
         payload["assistantOverrides"] = overrides
 
