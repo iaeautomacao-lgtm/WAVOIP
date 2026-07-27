@@ -1087,7 +1087,7 @@ def _ensure_default_user():
 
 
 
-def send_otp_email(destinatario: str, code: str, nome: str) -> bool:
+def send_otp_email(destinatario: str, code: str, nome: str) -> tuple:
     try:
         import smtplib
         import socket
@@ -1100,6 +1100,10 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> bool:
         smtp_pass = env("SMTP_PASSWORD", "")
         smtp_from = env("SMTP_FROM", smtp_user or "nao-responda@grupoddm.ia.br")
         smtp_sec  = env("SMTP_SECURITY", "ssl").lower()
+
+        if not smtp_host or not smtp_user or not smtp_pass:
+            logging.warning("[OTP] SMTP não configurado no .env. Código gerado para %s: %s", destinatario, code)
+            return True, "SMTP não configurado"
 
         html = f"""
         <!DOCTYPE html>
@@ -1114,7 +1118,7 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> bool:
             </div>
             
             <p style="font-size:14px;color:#cbd5e1;line-height:1.5;">Olá <strong>{nome}</strong>,</p>
-            <p style="font-size:14px;color:#cbd5e1;line-height:1.5;">Seu código de 6 dígitos para ativamento da sua conta no WAVOIP é:</p>
+            <p style="font-size:14px;color:#cbd5e1;line-height:1.5;">Seu código de 6 dígitos para ativação da sua conta no WAVOIP é:</p>
             
             <div style="text-align:center;margin:28px 0;">
               <div style="display:inline-block;padding:16px 32px;background:#0f172a;border:2px dashed #ff5706;border-radius:12px;font-size:32px;font-weight:800;letter-spacing:8px;color:#ff5706;">
@@ -1137,14 +1141,16 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> bool:
         msg["To"]      = destinatario
         msg.attach(MIMEText(html, "html"))
 
-        if not smtp_host or not smtp_user or not smtp_pass:
-            logging.warning("[OTP] SMTP não configurado. Código para %s: %s", destinatario, code)
-            return True
+        host_ipv4 = smtp_host
+        try:
+            host_ipv4 = socket.gethostbyname(smtp_host)
+        except Exception:
+            pass
 
         if smtp_sec == "ssl":
-            srv = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
+            srv = smtplib.SMTP_SSL(host_ipv4, smtp_port, timeout=15)
         else:
-            srv = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
+            srv = smtplib.SMTP(host_ipv4, smtp_port, timeout=15)
 
         with srv:
             srv.ehlo()
@@ -1154,11 +1160,12 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> bool:
             srv.login(smtp_user, smtp_pass)
             srv.sendmail(smtp_from, [destinatario], msg.as_string())
         
-        logging.info("[OTP] Código de verificação enviado para %s", destinatario)
-        return True
+        logging.info("[OTP] Código de verificação (%s) enviado com sucesso para %s", code, destinatario)
+        return True, "Enviado"
     except Exception as e:
         logging.error("[OTP] Erro ao enviar e-mail para %s: %s", destinatario, e)
-        return True
+        return False, str(e)
+
 
 
 def validate_password_strength(password: str) -> tuple:
