@@ -755,6 +755,10 @@
           <span class="tab-icon">📊</span>
           <span>Dashboard</span>
         </div>
+        <div class="tab" data-tab="users">
+          <span class="tab-icon">👥</span>
+          <span>Usuários</span>
+        </div>
       </nav>
       <div style="padding: 18px 22px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); line-height: 1.5;">
         Tecnologia financeira para<br>instituições de ensino.
@@ -767,6 +771,11 @@
       <!-- HEADER -->
       <header>
         <div class="header-right">
+          <div id="user-info-bar" style="display:flex; align-items:center; gap:10px; margin-right:12px; font-size:12px; background:rgba(255,255,255,0.04); padding:4px 12px; border-radius:20px; border:1px solid var(--border);">
+            <span style="color:var(--muted)">👤</span>
+            <span id="user-display-name" style="font-weight:600; color:var(--text)">—</span>
+            <button class="btn btn-ghost" style="padding:2px 8px; font-size:11px; color:var(--muted)" onclick="doLogout()">Sair 🚪</button>
+          </div>
           <div class="status-pill">
             <div class="status-dot"></div>
             <span id="healthy-count">—</span>
@@ -1083,9 +1092,91 @@
         </div>
       </div>
 
+      <!-- USUÁRIOS DDM -->
+      <div class="section" id="tab-users">
+        <div class="sec-head">
+          <span class="sec-title">Gestão de Usuários (Acesso DDM)</span>
+          <button class="btn btn-brand" onclick="openNewUserModal()">+ Criar Novo Usuário DDM</button>
+        </div>
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden;">
+          <table width="100%" cellpadding="0" cellspacing="0" class="data-table">
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>E-mail Corporativo</th>
+                <th>Perfil</th>
+                <th>Data de Cadastro</th>
+                <th style="text-align:right">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body">
+              <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando usuários DDM...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </main>
     </div>
   </div>
+
+  <!-- Modal Criar Usuário DDM -->
+  <div class="overlay" id="new-user-modal">
+    <div class="modal">
+      <div class="modal-title">👤 Criar Novo Usuário DDM</div>
+      <div id="new-user-error" style="display:none; padding:10px; border-radius:6px; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#f87171; font-size:12px; margin-bottom:12px;"></div>
+      <div class="modal-field">
+        <span class="modal-label">Nome Completo</span>
+        <input type="text" class="modal-input" id="new-user-name" placeholder="Ex: Maria Silva">
+      </div>
+      <div class="modal-field">
+        <span class="modal-label">E-mail DDM (@ddm.adv.br ou @grupoddm.ia.br)</span>
+        <input type="email" class="modal-input" id="new-user-email" placeholder="nome@ddm.adv.br">
+      </div>
+      <div class="modal-field">
+        <span class="modal-label">Senha Inicial (mínimo 6 caracteres)</span>
+        <input type="password" class="modal-input" id="new-user-password" placeholder="••••••••">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeNewUserModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="submitCreateUser()">Criar Conta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TELA DE LOGIN OVERLAY -->
+  <div id="login-overlay" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#0b0f19; z-index:999999; display:none; align-items:center; justify-content:center; backdrop-filter:blur(10px);">
+    <div style="background:#131b2e; border:1px solid #2a364f; border-radius:16px; width:100%; max-width:420px; padding:36px; box-shadow:0 20px 40px rgba(0,0,0,0.6);">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px; justify-content:center;">
+        <div style="width:44px; height:44px; background:linear-gradient(135deg, #ff5706, #ea580c); border-radius:12px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:22px; color:white; box-shadow:0 4px 14px rgba(255,87,6,0.4);">W</div>
+        <div>
+          <div style="font-size:22px; font-weight:800; color:#f8fafc; letter-spacing:-0.5px;">WAVOIP</div>
+          <div style="font-size:12px; color:#94a3b8;">Acesso Corporativo Grupo DDM</div>
+        </div>
+      </div>
+      
+      <div id="login-alert" style="display:none; padding:12px; border-radius:8px; font-size:13px; margin-bottom:18px; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#f87171;"></div>
+      
+      <form id="login-form" onsubmit="handleLoginSubmit(event)">
+        <div style="margin-bottom:16px;">
+          <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:6px;">E-mail DDM (@ddm.adv.br ou @grupoddm.ia.br)</label>
+          <input type="email" id="login-email" required placeholder="seu.nome@ddm.adv.br" style="width:100%; padding:12px 14px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:white; font-size:14px; outline:none; transition:border-color 0.2s;">
+        </div>
+        
+        <div style="margin-bottom:24px;">
+          <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:6px;">Senha de Acesso</label>
+          <input type="password" id="login-password" required placeholder="••••••••" style="width:100%; padding:12px 14px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:white; font-size:14px; outline:none; transition:border-color 0.2s;">
+        </div>
+        
+        <button type="submit" id="btn-login-submit" style="width:100%; padding:12px; background:linear-gradient(135deg, #ff5706, #ea580c); border:none; border-radius:8px; color:white; font-weight:700; font-size:14px; cursor:pointer; box-shadow:0 4px 12px rgba(255,87,6,0.3);">Entrar no Sistema</button>
+      </form>
+      
+      <div style="margin-top:20px; font-size:11px; color:#64748b; text-align:center;">
+        🔒 Sistema restrito aos colaboradores autorizados do Grupo DDM.
+      </div>
+    </div>
+  </div>
+
 
   <!-- Modal chamada manual -->
   <div class="overlay" id="call-modal">
@@ -1196,8 +1287,182 @@
       if (tab.dataset.tab === 'campaigns' && !campaignsLoaded) loadCampaigns();
       if (tab.dataset.tab === 'monitor')  { loadMonitor(); startMonitor(); }
       if (tab.dataset.tab === 'dashboard') loadDashboard();
+      if (tab.dataset.tab === 'users')     loadUsers();
     });
   });
+
+  let currentUser = null;
+
+  async function checkAuthSession() {
+    try {
+      const res = await fetch('/api/auth/me');
+      const data = await res.json();
+      if (res.ok && data.authenticated && data.user) {
+        currentUser = data.user;
+        document.getElementById('user-display-name').textContent = currentUser.name || currentUser.email;
+        document.getElementById('login-overlay').style.display = 'none';
+      } else {
+        showLoginOverlay();
+      }
+    } catch (e) {
+      showLoginOverlay();
+    }
+  }
+
+  function showLoginOverlay() {
+    document.getElementById('login-overlay').style.display = 'flex';
+  }
+
+  async function handleLoginSubmit(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value.trim();
+    const alertEl = document.getElementById('login-alert');
+    const submitBtn = document.getElementById('btn-login-submit');
+
+    alertEl.style.display = 'none';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Autenticando...';
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        currentUser = data.user;
+        document.getElementById('user-display-name').textContent = currentUser.name || currentUser.email;
+        document.getElementById('login-overlay').style.display = 'none';
+        toast('Login efetuado com sucesso!');
+        loadLines();
+      } else {
+        alertEl.textContent = data.error || 'Erro ao efetuar login.';
+        alertEl.style.display = 'block';
+      }
+    } catch (err) {
+      alertEl.textContent = 'Erro de conexão com o servidor.';
+      alertEl.style.display = 'block';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Entrar no Sistema';
+    }
+  }
+
+  async function doLogout() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      currentUser = null;
+      document.getElementById('user-display-name').textContent = '—';
+      showLoginOverlay();
+      toast('Sessão encerrada.');
+    } catch (e) {
+      showLoginOverlay();
+    }
+  }
+
+  let usersLoaded = false;
+  async function loadUsers() {
+    const tbody = document.getElementById('users-table-body');
+    tbody.innerHTML = '<tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando usuários DDM...</div></td></tr>';
+    try {
+      const res = await fetch('/api/users');
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        usersLoaded = true;
+        renderUsers(data.users || []);
+      } else {
+        tbody.innerHTML = `<tr><td colspan="5" class="td-dim" style="color:var(--red)">${escapeHtml(data.error || 'Erro ao carregar usuários')}</td></tr>`;
+      }
+    } catch (err) {
+      tbody.innerHTML = '<tr><td colspan="5" class="td-dim" style="color:var(--red)">Erro ao conectar ao servidor</td></tr>';
+    }
+  }
+
+  function renderUsers(users) {
+    const tbody = document.getElementById('users-table-body');
+    if (!users.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="td-dim">Nenhum usuário cadastrado.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map(u => `
+      <tr>
+        <td style="font-weight:600">${escapeHtml(u.name)}</td>
+        <td><span style="font-family:monospace; color:var(--brand)">${escapeHtml(u.email)}</span></td>
+        <td><span class="badge ${u.role === 'admin' ? 'badge-amber' : 'badge-cyan'}">${escapeHtml(u.role === 'admin' ? 'Administrador' : 'Usuário')}</span></td>
+        <td class="td-dim">${u.created_at ? new Date(u.created_at).toLocaleString('pt-BR') : '—'}</td>
+        <td style="text-align:right">
+          ${currentUser && currentUser.id !== u.id ? `<button class="btn btn-ghost" style="color:var(--red); padding:4px 8px; font-size:11px;" onclick="deleteUser('${u.id}', '${escapeHtml(u.name)}')">Excluir</button>` : '<span class="td-dim" style="font-size:11px;">(Você)</span>'}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function openNewUserModal() {
+    document.getElementById('new-user-name').value = '';
+    document.getElementById('new-user-email').value = '';
+    document.getElementById('new-user-password').value = '';
+    document.getElementById('new-user-error').style.display = 'none';
+    document.getElementById('new-user-modal').style.display = 'flex';
+  }
+
+  function closeNewUserModal() {
+    document.getElementById('new-user-modal').style.display = 'none';
+  }
+
+  async function submitCreateUser() {
+    const name = document.getElementById('new-user-name').value.trim();
+    const email = document.getElementById('new-user-email').value.trim();
+    const password = document.getElementById('new-user-password').value.trim();
+    const errEl = document.getElementById('new-user-error');
+
+    errEl.style.display = 'none';
+    if (!name || !email || !password) {
+      errEl.textContent = 'Preencha todos os campos obrigatórios.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password })
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        closeNewUserModal();
+        toast('Novo usuário DDM criado com sucesso!');
+        loadUsers();
+      } else {
+        errEl.textContent = data.error || 'Erro ao criar usuário.';
+        errEl.style.display = 'block';
+      }
+    } catch (e) {
+      errEl.textContent = 'Erro ao conectar ao servidor.';
+      errEl.style.display = 'block';
+    }
+  }
+
+  async function deleteUser(id, name) {
+    if (!confirm(`Tem certeza que deseja excluir a conta de ${name}?`)) return;
+    try {
+      const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        toast('Usuário removido.');
+        loadUsers();
+      } else {
+        toast(data.error || 'Erro ao excluir usuário', 'err');
+      }
+    } catch (e) {
+      toast('Erro de conexão', 'err');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', checkAuthSession);
+
 
   function toast(msg, type = 'ok') {
     const el = document.getElementById('toast');

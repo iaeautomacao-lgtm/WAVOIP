@@ -1,6 +1,6 @@
-# WAVOIP Backend Application (Updated 23/07/2026 16:08)
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, session, redirect, url_for, Response, stream_with_context
 from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
 import requests
 import os
 import re
@@ -10,17 +10,28 @@ import json
 import logging
 import hmac
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from mysql_adapter import create_client, MySQLClient as Client
 from tasks import process_file, process_import_from_storage, formalizar_acordo, fill_campaign_capacity, fill_campaign_capacity_task, _get_import_rows, _dispatch_task
-from flask import Response, stream_with_context
+
 app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", "wavoip_ddm_secret_key_2026_production")
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
+
+ALLOWED_EMAIL_DOMAINS = ["ddm.adv.br", "grupoddm.ia.br"]
+
+def is_ddm_email(email: str) -> bool:
+    if not email or "@" not in str(email):
+        return False
+    domain = str(email).split("@")[-1].strip().lower()
+    return domain in ALLOWED_EMAIL_DOMAINS
 
 def env(name: str, default: str = "") -> str:
     value = os.getenv(name, default)
     return value.strip().strip('"').strip("'") if isinstance(value, str) else value
+
 
 
 def now_iso() -> str:
@@ -1004,6 +1015,186 @@ def run_cron_endpoint():
         return jsonify({"ok": True, "message": "Cron executado com sucesso"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ── SISTEMA DE AUTENTICAÇÃO E USUÁRIOS DDM ─────────────────────────────────
+
+def _ensure_default_user():
+    try:
+        supabase = create_client()
+        res = supabase.table("users").select("id").limit(1).execute()
+        if not res.data:
+            default_email = "atendimento@ddm.adv.br"
+            default_pass = env("INITIAL_ADMIN_PASSWORD", "Mudar@123")
+            pass_hash = generate_password_hash(default_pass)
+            user_id = str(uuid.uuid4())
+            supabase.table("users").insert({
+                "id": user_id,
+                "email": default_email,
+                "password_hash": pass_hash,
+                "name": "Administrador DDM",
+                "role": "admin"
+            }).execute()
+            logging.info("[AUTH] Criado usuário administrador inicial: %s", default_email)
+    except Exception as e:
+        logging.error("[AUTH] Erro ao verificar/criar usuário inicial: %s", e)
+
+
+@app.before_request
+def check_authentication():
+    path = request.path
+    if (
+        path.startswith("/static/")
+        or path in ["/", "/login", "/vapi/webhook", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/cron"]
+    ):
+        return None
+
+    if not session.get("user_id"):
+        if path.startswith("/api/"):
+            return jsonify({"ok": False, "error": "Sessão expirada ou não encontrada. Faça login no sistema.", "auth_required": True}), 401
+        return None
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    try:
+        _ensure_default_user()
+        body = request.json or {}
+        email = str(body.get("email", "")).strip().lower()
+        password = str(body.get("password", "")).strip()
+
+        if not email or not password:
+            return jsonify({"ok": False, "error": "E-mail e senha são obrigatórios."}), 400
+
+        if not is_ddm_email(email):
+            return jsonify({
+                "ok": False,
+                "error": "Acesso restrito. O e-mail deve pertencer aos domínios corporativos DDM (@ddm.adv.br ou @grupoddm.ia.br)."
+            }), 403
+
+        supabase = create_client()
+        res = supabase.table("users").select("*").eq("email", email).execute()
+        users = res.data or []
+
+        if not users:
+            return jsonify({"ok": False, "error": "E-mail ou senha incorretos."}), 401
+
+        user = users[0]
+        if not check_password_hash(user.get("password_hash", ""), password):
+            return jsonify({"ok": False, "error": "E-mail ou senha incorretos."}), 401
+
+        session.permanent = True
+        session["user_id"] = user.get("id")
+        session["user_email"] = user.get("email")
+        session["user_name"] = user.get("name")
+        session["user_role"] = user.get("role", "user")
+
+        return jsonify({
+            "ok": True,
+            "user": {
+                "id": user.get("id"),
+                "email": user.get("email"),
+                "name": user.get("name"),
+                "role": user.get("role")
+            }
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/me", methods=["GET"])
+def auth_me():
+    if not session.get("user_id"):
+        return jsonify({"ok": False, "authenticated": False}), 401
+    return jsonify({
+        "ok": True,
+        "authenticated": True,
+        "user": {
+            "id": session.get("user_id"),
+            "email": session.get("user_email"),
+            "name": session.get("user_name"),
+            "role": session.get("user_role")
+        }
+    })
+
+
+@app.route("/api/users", methods=["GET"])
+def list_users():
+    try:
+        supabase = create_client()
+        res = supabase.table("users").select("id, email, name, role, created_at").order("created_at", desc=True).execute()
+        return jsonify({"ok": True, "users": res.data or []})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/users", methods=["POST"])
+def create_user():
+    try:
+        body = request.json or {}
+        email = str(body.get("email", "")).strip().lower()
+        password = str(body.get("password", "")).strip()
+        name = str(body.get("name", "")).strip()
+        role = str(body.get("role", "user")).strip()
+
+        if not email or not password or not name:
+            return jsonify({"ok": False, "error": "Nome, e-mail e senha são obrigatórios"}), 400
+
+        if not is_ddm_email(email):
+            return jsonify({
+                "ok": False,
+                "error": "Acesso restrito. O e-mail do novo usuário deve pertencer aos domínios corporativos DDM (@ddm.adv.br ou @grupoddm.ia.br)."
+            }), 400
+
+        if len(password) < 6:
+            return jsonify({"ok": False, "error": "A senha deve conter no mínimo 6 caracteres"}), 400
+
+        supabase = create_client()
+        existing = supabase.table("users").select("id").eq("email", email).execute()
+        if existing.data:
+            return jsonify({"ok": False, "error": "Este e-mail já está cadastrado no sistema."}), 400
+
+        user_id = str(uuid.uuid4())
+        pass_hash = generate_password_hash(password)
+
+        supabase.table("users").insert({
+            "id": user_id,
+            "email": email,
+            "password_hash": pass_hash,
+            "name": name,
+            "role": role
+        }).execute()
+
+        return jsonify({
+            "ok": True,
+            "user": {
+                "id": user_id,
+                "email": email,
+                "name": name,
+                "role": role
+            }
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/users/<user_id>", methods=["DELETE"])
+def delete_user(user_id):
+    try:
+        if user_id == session.get("user_id"):
+            return jsonify({"ok": False, "error": "Você não pode excluir seu próprio usuário logado."}), 400
+        supabase = create_client()
+        supabase.table("users").delete().eq("id", user_id).execute()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 
 @app.route("/api/vapi/assistants", methods=["GET"])

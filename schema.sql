@@ -150,3 +150,15 @@ CREATE INDEX IF NOT EXISTS idx_campaign_calls_updated_at ON campaign_calls (upda
 CREATE INDEX IF NOT EXISTS idx_campaign_calls_line_token ON campaign_calls (line_token);
 CREATE INDEX IF NOT EXISTS idx_import_jobs_status ON import_jobs (status);
 CREATE INDEX IF NOT EXISTS idx_acordos_campaign_call_id ON acordos_formalizados (campaign_call_id);
+
+CREATE TABLE IF NOT EXISTS users (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email text UNIQUE NOT NULL,
+  password_hash text NOT NULL,
+  name text NOT NULL,
+  role text DEFAULT 'user',
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
+
