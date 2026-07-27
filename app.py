@@ -21,13 +21,18 @@ app.secret_key = os.getenv("SECRET_KEY", "wavoip_ddm_secret_key_2026_production"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 ALLOWED_EMAIL_DOMAINS = ["grupoddm.com.br", "ddm.adv.br", "grupoddm.ia.br"]
+ALLOWED_EXPLICIT_EMAILS = ["caiovicenterj@gmail.com", "caiovicenteti@gmail.com"]
 
 
 def is_ddm_email(email: str) -> bool:
     if not email or "@" not in str(email):
         return False
-    domain = str(email).split("@")[-1].strip().lower()
+    email_clean = str(email).strip().lower()
+    if email_clean in ALLOWED_EXPLICIT_EMAILS:
+        return True
+    domain = email_clean.split("@")[-1].strip().lower()
     return domain in ALLOWED_EMAIL_DOMAINS
+
 
 def env(name: str, default: str = "") -> str:
     value = os.getenv(name, default)
