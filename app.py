@@ -1837,6 +1837,41 @@ def delete_wacalls_session(session_id):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+def _sync_vapi_call_status(vapi_call_id):
+    if not vapi_call_id:
+        return None
+    try:
+        url = f"https://api.vapi.ai/call/{vapi_call_id}"
+        v_key = os.getenv("VAPI_API_KEY", "332987f4-f832-4542-9fd0-76de02bde971")
+        headers = {"Authorization": f"Bearer {v_key}"}
+        r = requests.get(url, headers=headers, timeout=4)
+        if r.ok:
+            data = r.json()
+            status = data.get("status")
+            ended_reason = data.get("endedReason", "")
+            recording_url = data.get("recordingUrl") or (data.get("artifact") or {}).get("recordingUrl") or ""
+            transcript = data.get("transcript") or (data.get("artifact") or {}).get("transcript") or ""
+            
+            if status in ("ended", "completed", "failed"):
+                is_answered = bool(recording_url or "customer" in str(ended_reason).lower() or "answered" in str(ended_reason).lower())
+                new_status = "atendido" if is_answered else "finalizado"
+                update_data = {
+                    "status": new_status,
+                    "answered": is_answered,
+                }
+                if recording_url:
+                    update_data["recording_url"] = recording_url
+                if transcript:
+                    update_data["transcript"] = transcript
+                
+                supabase.table("campaign_calls").update(update_data).eq("vapi_call_id", vapi_call_id).execute()
+                logging.info(f"[SYNC_VAPI] Chamada {vapi_call_id} sincronizada -> '{new_status}'")
+                return new_status
+    except Exception as e:
+        logging.error(f"[SYNC_VAPI] Erro ao sincronizar chamada vapi {vapi_call_id}: {e}")
+    return None
+
+
 @app.route("/api/monitor", methods=["GET"])
 def monitor():
     try:
@@ -1857,18 +1892,25 @@ def monitor():
 
         rows = []
         for r in result.data:
-            meta = _line_meta_from_debito(r)
-            rows.append({
-                "id":              r["id"],
-                "cpf":             r["cpf"],
-                "phone":           r["phone"],
-                "status":          r["status"],
-                "campaign":        camp_map.get(r["campaign_id"], "—"),
-                "created_at":      r["created_at"],
-                "line_token":      r.get("line_token") or (meta or {}).get("line_token", ""),
-                "line_name":       r.get("line_name") or (meta or {}).get("line_name", ""),
-                "phone_number_id": r.get("phone_number_id") or (meta or {}).get("phone_number_id", ""),
-            })
+            vapi_id = r.get("vapi_call_id")
+            cur_status = r.get("status")
+            if cur_status in ("em_andamento", "enfileirado") and vapi_id:
+                synced = _sync_vapi_call_status(vapi_id)
+                if synced:
+                    cur_status = synced
+            if cur_status in ("em_andamento", "enfileirado", "atendido", "erro"):
+                meta = _line_meta_from_debito(r)
+                rows.append({
+                    "id":              r["id"],
+                    "cpf":             r["cpf"],
+                    "phone":           r["phone"],
+                    "status":          cur_status,
+                    "campaign":        camp_map.get(r["campaign_id"], "—"),
+                    "created_at":      r["created_at"],
+                    "line_token":      r.get("line_token") or (meta or {}).get("line_token", ""),
+                    "line_name":       r.get("line_name") or (meta or {}).get("line_name", ""),
+                    "phone_number_id": r.get("phone_number_id") or (meta or {}).get("phone_number_id", ""),
+                })
 
         stats = {
             "em_andamento": sum(1 for r in rows if r["status"] in ("em_andamento", "enfileirado")),
@@ -1890,9 +1932,16 @@ def list_campaigns():
             cid = c.get("id")
             if cid:
                 try:
-                    calls = supabase.table("campaign_calls").select("id, status, answered, error").eq("campaign_id", cid).execute().data or []
+                    calls = supabase.table("campaign_calls").select("id, status, answered, error, vapi_call_id").eq("campaign_id", cid).execute().data or []
+                    # Sincroniza chamadas presas em andamento
+                    for r in calls:
+                        if r.get("status") in ("em_andamento", "enfileirado") and r.get("vapi_call_id"):
+                            synced = _sync_vapi_call_status(r.get("vapi_call_id"))
+                            if synced:
+                                r["status"] = synced
+
                     c["answered"] = sum(1 for r in calls if r.get("answered") or r.get("status") == "atendido")
-                    c["errors"] = sum(1 for r in calls if not r.get("answered") and r.get("status") not in ("pendente", "enfileirado"))
+                    c["errors"] = sum(1 for r in calls if not r.get("answered") and r.get("status") not in ("pendente", "enfileirado", "finalizado", "atendido"))
                     c["last_error"] = next((r.get("error") for r in calls if r.get("error")), "Falha de linha ou chamada não atendida")
                     
                     # Auto-heal: se a campanha está 'em_andamento', mas não restam chamadas ativas ou pendentes, marca como 'finalizada'!
@@ -1909,6 +1958,7 @@ def list_campaigns():
         return jsonify({"ok": True, "data": camps})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
 
 
 
