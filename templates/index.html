@@ -1294,10 +1294,12 @@
       <div class="modal-title" style="margin-bottom: 12px; flex-shrink: 0;" id="details-modal-title">Detalhes da Chamada</div>
       
       <!-- Player de Áudio -->
-      <div id="details-audio-container" style="margin-bottom: 16px; padding: 12px; background: var(--surface2); border-radius: var(--radius); display: none; flex-shrink: 0; align-items: center; gap: 12px;">
+      <div id="details-audio-container" style="margin-bottom: 16px; padding: 12px; background: var(--surface2); border-radius: var(--radius); display: none; flex-shrink: 0; align-items: center; gap: 12px; flex-wrap: wrap;">
         <span class="modal-label" style="margin: 0; text-transform: none; font-size: 0.75rem;">Ouvir Gravação:</span>
-        <audio id="details-audio-player" controls style="flex: 1; height: 36px;"></audio>
+        <audio id="details-audio-player" controls style="flex: 1; height: 36px; min-width: 220px;"></audio>
+        <a id="details-audio-link" href="#" target="_blank" style="font-size: 0.75rem; color: var(--brand); font-weight: 600; text-decoration: underline; white-space: nowrap; margin-left: 6px;">🔗 Abrir / Baixar Áudio</a>
       </div>
+
 
       <!-- Histórico de Chat (Transcrição) -->
       <div id="details-transcript-container" style="flex: 1; overflow-y: auto; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 10px; min-height: 200px;">
@@ -3048,13 +3050,17 @@
     document.getElementById('details-modal-title').textContent = `Detalhes da Chamada — ${label}`;
     const audioContainer = document.getElementById('details-audio-container');
     const audioPlayer = document.getElementById('details-audio-player');
+    const audioLink = document.getElementById('details-audio-link');
     if (recordingUrl) {
       audioPlayer.src = recordingUrl;
+      if (audioLink) audioLink.href = recordingUrl;
       audioContainer.style.display = 'flex';
     } else {
       audioPlayer.src = '';
+      if (audioLink) audioLink.href = '#';
       audioContainer.style.display = 'none';
     }
+
 
     const transcriptContainer = document.getElementById('details-transcript-container');
     if (transcript) {

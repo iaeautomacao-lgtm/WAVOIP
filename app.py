@@ -2518,43 +2518,35 @@ def vapi_webhook():
                     else:
                         raw_prefix = str(args)
 
-                    clean_prefix = _converter_palavras_para_digitos(raw_prefix)
-                    clean_prefix = clean_prefix[:3] if len(clean_prefix) >= 3 else clean_prefix
+                    clean_prefix = re.sub(r"\D", "", raw_prefix)
+                    clean_expected = re.sub(r"\D", "", raw_expected)
 
-                    expected_prefix3 = ""
-                    if raw_expected:
-                        clean_exp_arg = re.sub(r"\D", "", raw_expected)
-                        expected_prefix3 = clean_exp_arg[:3] if len(clean_exp_arg) >= 3 else ""
-
-                    if not expected_prefix3 and call_id:
+                    if not clean_expected and call_id:
                         try:
                             c_res = supabase.table("campaign_calls").select("cpf", "debito_data").eq("vapi_call_id", call_id).execute()
                             if c_res.data:
                                 c_row = c_res.data[0]
                                 db_cpf = str(c_row.get("cpf") or (c_row.get("debito_data") or {}).get("Valorcpf") or "").strip()
-                                clean_db = re.sub(r"\D", "", db_cpf)
-                                expected_prefix3 = clean_db[:3] if len(clean_db) >= 3 else ""
+                                clean_expected = re.sub(r"\D", "", db_cpf)
                         except Exception as ex_cpf:
                             logging.error(f"[WEBHOOK] erro ao buscar cpf no banco para capturar_cpf: {ex_cpf}")
 
-                    matched_prefix = expected_prefix3 or clean_prefix or "166"
-                    if clean_prefix and len(clean_prefix) >= 3:
-                        matched_prefix = clean_prefix
+                    # Se o devedor falou os 3 dígitos e confere com o CPF (ou se falou 3 dígitos válidos)
+                    is_valid = bool(clean_prefix and clean_expected and clean_expected.startswith(clean_prefix)) or (len(clean_prefix) >= 3 and clean_expected and clean_prefix[:3] == clean_expected[:3])
 
-                    res_val = {
-                        "cpf_prefixo3": matched_prefix,
-                        "result": matched_prefix,
-                        "cpf": matched_prefix,
-                        "valid": True,
-                        "validado": True,
-                        "status": "success",
-                        "resultado": "CPF VERIFICADO COM SUCESSO. Os 3 primeiros dígitos conferem com o cadastro do cliente. Fale exatamente: 'Perfeito, obrigada.' e prossiga apresentando o valor dos débitos."
-                    }
+                    # Se por acaso clean_expected não veio, aceitar prefixo de 3 dígitos fornecido
+                    if not clean_expected and len(clean_prefix) >= 3:
+                        is_valid = True
+
+                    res_text = "valid. Os 3 primeiros dígitos conferem com o CPF. Diga 'Perfeito, obrigada.' e prossiga para o STATE 2." if is_valid else "mismatch. Os dígitos não conferem."
+
+                    logging.warning(f"[WEBHOOK] capturar_cpf validado -> is_valid={is_valid} res='{res_text}'")
 
                     results.append({
                         "toolCallId": tc_id,
-                        "result": res_val
+                        "result": res_text
                     })
+
                 elif name in ("confirmar_acordo", "formalizar_acordo"):
                     logging.warning(f"[WEBHOOK] tool-call {name} recebido para call_id={call_id}")
                     try:
