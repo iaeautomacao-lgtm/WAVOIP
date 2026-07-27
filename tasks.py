@@ -539,7 +539,10 @@ def vapi_call(
 
         overrides: Dict[str, Any] = {
             "firstMessage": first_msg,
+            "silenceTimeoutSeconds": 12,
+            "maxDurationSeconds": 600,
         }
+
         overrides["variableValues"] = {
             "cpf":                 cpf_clean,
             "CPF":                 cpf_clean,

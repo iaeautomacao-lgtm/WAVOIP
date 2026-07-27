@@ -444,7 +444,10 @@ def vapi_call(phone: str, name: str = "", cpf: str = "", debito: dict = None) ->
 
         payload["assistantOverrides"] = {
             "firstMessage": first_msg,
+            "silenceTimeoutSeconds": 12,
+            "maxDurationSeconds": 600,
             "variableValues": {
+
                 "cpf":                 cpf_clean,
                 "CPF":                 cpf_clean,
                 "Valorcpf":            cpf_clean,
