@@ -1818,26 +1818,44 @@ def _enviar_email_acordo(
     msg["To"]      = destinatario
     msg.attach(MIMEText(html, "html"))
 
-    # Resolve o host para IPv4 para evitar problemas de roteamento IPv6 no container Railway
-    host_ipv4 = SMTP_HOST
-    if SMTP_FORCE_IPV4:
-        try:
-            host_ipv4 = socket.gethostbyname(SMTP_HOST)
-        except Exception:
-            pass
+    target_hosts = []
+    for h in [SMTP_HOST, "mail.grupoddm.ia.br", "localhost", "127.0.0.1"]:
+        if h and h not in target_hosts:
+            target_hosts.append(h)
 
-    if SMTP_SECURITY == "ssl":
-        srv = smtplib.SMTP_SSL(host_ipv4, SMTP_PORT, timeout=SMTP_TIMEOUT)
-    else:
-        srv = smtplib.SMTP(host_ipv4, SMTP_PORT, timeout=SMTP_TIMEOUT)
+    errors = []
+    sent = False
+    for host in target_hosts:
+        for port, sec in [(int(SMTP_PORT), SMTP_SECURITY), (587, "starttls"), (465, "ssl"), (25, "none")]:
+            try:
+                if sec == "ssl":
+                    srv = smtplib.SMTP_SSL(host, port, timeout=5)
+                else:
+                    srv = smtplib.SMTP(host, port, timeout=5)
+                with srv:
+                    srv.ehlo()
+                    if sec == "starttls":
+                        srv.starttls()
+                        srv.ehlo()
+                    if SMTP_USER and SMTP_PASSWORD:
+                        try:
+                            srv.login(SMTP_USER, SMTP_PASSWORD)
+                        except Exception:
+                            pass
+                    srv.sendmail(SMTP_FROM, [destinatario], msg.as_string())
+                logger.info(f"[EMAIL_ACORDO] E-mail de acordo para {destinatario} enviado com sucesso via {host}:{port}!")
+                sent = True
+                break
+            except Exception as err:
+                errors.append(f"{host}:{port} ({err})")
+        if sent:
+            break
 
-    with srv:
-        srv.ehlo()
-        if SMTP_SECURITY == "starttls":
-            srv.starttls()
-            srv.ehlo()
-        srv.login(SMTP_USER, SMTP_PASSWORD)
-        srv.sendmail(SMTP_FROM, [destinatario], msg.as_string())
+    if not sent:
+        err_msg = " | ".join(errors[:2])
+        logger.error(f"[EMAIL_ACORDO] Erro ao enviar e-mail para {destinatario}: {err_msg}")
+        raise Exception(f"Falha de SMTP: {err_msg}")
+
 
 
 def _enviar_whatsapp_acordo(
