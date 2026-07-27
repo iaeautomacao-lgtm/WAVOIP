@@ -1065,7 +1065,7 @@ def check_authentication():
     path = request.path
     if (
         path.startswith("/static/")
-        or path in ["/", "/login", "/vapi/webhook", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/cron"]
+        or path in ["/", "/login", "/vapi/webhook", "/api/auth/login", "/api/auth/register", "/api/auth/logout", "/api/auth/me", "/api/cron"]
     ):
         return None
 
@@ -1075,8 +1075,82 @@ def check_authentication():
         return None
 
 
+@app.route("/api/auth/register", methods=["POST"])
+def auth_register():
+    try:
+        body = request.json or {}
+        email = str(body.get("email", "")).strip().lower()
+        password = str(body.get("password", "")).strip()
+        name = str(body.get("name", "")).strip()
+
+        if not email or not password or not name:
+            return jsonify({"ok": False, "error": "Nome, e-mail e senha são obrigatórios."}), 400
+
+        if not is_ddm_email(email):
+            return jsonify({
+                "ok": False,
+                "error": "Acesso restrito. O e-mail deve pertencer aos domínios corporativos DDM (@ddm.adv.br ou @grupoddm.ia.br)."
+            }), 403
+
+        if len(password) < 6:
+            return jsonify({"ok": False, "error": "A senha deve ter no mínimo 6 caracteres."}), 400
+
+        supabase = create_client()
+        try:
+            with supabase.connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                      id char(36) PRIMARY KEY,
+                      email varchar(255) NOT NULL UNIQUE,
+                      password_hash varchar(255) NOT NULL,
+                      name varchar(255) NOT NULL,
+                      role varchar(50) DEFAULT 'user',
+                      created_at timestamp DEFAULT CURRENT_TIMESTAMP,
+                      updated_at timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                      INDEX idx_users_email (email)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                    """)
+        except Exception:
+            pass
+
+        existing = supabase.table("users").select("id").eq("email", email).execute()
+        if existing.data:
+            return jsonify({"ok": False, "error": "Este e-mail já está cadastrado no sistema. Efetue login."}), 400
+
+        user_id = str(uuid.uuid4())
+        pass_hash = generate_password_hash(password)
+
+        supabase.table("users").insert({
+            "id": user_id,
+            "email": email,
+            "password_hash": pass_hash,
+            "name": name,
+            "role": "admin"
+        }).execute()
+
+        session.permanent = True
+        session["user_id"] = user_id
+        session["user_email"] = email
+        session["user_name"] = name
+        session["user_role"] = "admin"
+
+        return jsonify({
+            "ok": True,
+            "user": {
+                "id": user_id,
+                "email": email,
+                "name": name,
+                "role": "admin"
+            }
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
+
     try:
         _ensure_default_user()
         body = request.json or {}
