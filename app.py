@@ -1135,6 +1135,20 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> bool:
         return True
 
 
+def validate_password_strength(password: str) -> tuple:
+    if len(password) < 8:
+        return False, "A senha deve conter no mínimo 8 caracteres."
+    if not re.search(r"[A-Z]", password):
+        return False, "A senha deve conter pelo menos uma letra maiúscula (A-Z)."
+    if not re.search(r"[a-z]", password):
+        return False, "A senha deve conter pelo menos uma letra minúscula (a-z)."
+    if not re.search(r"[0-9]", password):
+        return False, "A senha deve conter pelo menos um número (0-9)."
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-\\\/]', password):
+        return False, "A senha deve conter pelo menos um caractere especial (ex: @, #, $, !)."
+    return True, ""
+
+
 @app.before_request
 def check_authentication():
     path = request.path
@@ -1167,8 +1181,10 @@ def auth_send_otp():
                 "error": "Acesso restrito. O e-mail deve pertencer aos domínios corporativos DDM (@grupoddm.com.br, @ddm.adv.br ou @grupoddm.ia.br)."
             }), 403
 
-        if len(password) < 6:
-            return jsonify({"ok": False, "error": "A senha deve ter no mínimo 6 caracteres."}), 400
+        valid_pass, pass_err = validate_password_strength(password)
+        if not valid_pass:
+            return jsonify({"ok": False, "error": pass_err}), 400
+
 
         supabase = create_client()
         # Garante tabela email_verifications no MySQL
@@ -1286,8 +1302,10 @@ def auth_register():
                 "error": "Acesso restrito. O e-mail deve pertencer aos domínios corporativos DDM (@ddm.adv.br ou @grupoddm.ia.br)."
             }), 403
 
-        if len(password) < 6:
-            return jsonify({"ok": False, "error": "A senha deve ter no mínimo 6 caracteres."}), 400
+        valid_pass, pass_err = validate_password_strength(password)
+        if not valid_pass:
+            return jsonify({"ok": False, "error": pass_err}), 400
+
 
         supabase = create_client()
         try:
@@ -1440,8 +1458,10 @@ def create_user():
                 "error": "Acesso restrito. O e-mail do novo usuário deve pertencer aos domínios corporativos DDM (@ddm.adv.br ou @grupoddm.ia.br)."
             }), 400
 
-        if len(password) < 6:
-            return jsonify({"ok": False, "error": "A senha deve conter no mínimo 6 caracteres"}), 400
+        valid_pass, pass_err = validate_password_strength(password)
+        if not valid_pass:
+            return jsonify({"ok": False, "error": pass_err}), 400
+
 
         supabase = create_client()
         existing = supabase.table("users").select("id").eq("email", email).execute()

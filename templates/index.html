@@ -1177,8 +1177,26 @@
         
         <div style="margin-bottom:24px;">
           <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:6px;">Senha de Acesso</label>
-          <input type="password" id="login-password" required placeholder="••••••••" style="width:100%; padding:12px 14px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:white; font-size:14px; outline:none;">
+          <input type="password" id="login-password" required placeholder="••••••••" oninput="updatePasswordStrength(this.value)" style="width:100%; padding:12px 14px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:white; font-size:14px; outline:none;">
+          
+          <!-- BARRA DE FORÇA DA SENHA & REQUISITOS AO VIVO -->
+          <div id="password-strength-box" style="display:none; margin-top:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; margin-bottom:4px;">
+              <span style="color:#94a3b8;">Força da Senha:</span>
+              <span id="password-strength-label" style="font-weight:700; color:#ef4444;">Muito Fraca</span>
+            </div>
+            <div style="width:100%; height:6px; background:#1e293b; border-radius:3px; overflow:hidden; margin-bottom:8px;">
+              <div id="password-strength-bar" style="width:0%; height:100%; background:#ef4444; transition:all 0.3s;"></div>
+            </div>
+            <div style="font-size:11px; color:#64748b; line-height:1.6; display:flex; flex-direction:column; gap:2px;">
+              <div id="req-length" style="color:#ef4444;">✖ Mínimo 8 caracteres</div>
+              <div id="req-upper" style="color:#ef4444;">✖ Pelo menos 1 letra maiúscula (A-Z)</div>
+              <div id="req-special" style="color:#ef4444;">✖ Pelo menos 1 caractere especial (@, #, $, !, %, etc.)</div>
+              <div id="req-number" style="color:#ef4444;">✖ Pelo menos 1 número (0-9)</div>
+            </div>
+          </div>
         </div>
+
         
         <button type="submit" id="btn-login-submit" style="width:100%; padding:12px; background:linear-gradient(135deg, #ff5706, #ea580c); border:none; border-radius:8px; color:white; font-weight:700; font-size:14px; cursor:pointer; box-shadow:0 4px 12px rgba(255,87,6,0.3);">Entrar no Sistema</button>
       </form>
@@ -1328,6 +1346,64 @@
   let currentAuthMode = 'login';
   let pendingOtpEmail = '';
 
+  function updatePasswordStrength(pwd) {
+    const box = document.getElementById('password-strength-box');
+    if (!box) return;
+    if (currentAuthMode !== 'register') {
+      box.style.display = 'none';
+      return;
+    }
+    box.style.display = 'block';
+
+    const reqLength = pwd.length >= 8;
+    const reqUpper = /[A-Z]/.test(pwd);
+    const reqSpecial = /[!@#$%^&*(),.?":{}|<>_\-\\\/]/.test(pwd);
+    const reqNumber = /[0-9]/.test(pwd);
+
+    const updateReq = (id, valid, labelText) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.innerHTML = valid ? `✔ ${labelText}` : `✖ ${labelText}`;
+        el.style.color = valid ? '#22c55e' : '#ef4444';
+      }
+    };
+
+    updateReq('req-length', reqLength, 'Mínimo 8 caracteres');
+    updateReq('req-upper', reqUpper, 'Pelo menos 1 letra maiúscula (A-Z)');
+    updateReq('req-special', reqSpecial, 'Pelo menos 1 caractere especial (@, #, $, !, %, etc.)');
+    updateReq('req-number', reqNumber, 'Pelo menos 1 número (0-9)');
+
+    let score = 0;
+    if (reqLength) score += 25;
+    if (reqUpper) score += 25;
+    if (reqSpecial) score += 25;
+    if (reqNumber) score += 25;
+
+    const bar = document.getElementById('password-strength-bar');
+    const label = document.getElementById('password-strength-label');
+
+    if (bar) bar.style.width = score + '%';
+    if (label) {
+      if (score <= 25) {
+        if (bar) bar.style.background = '#ef4444';
+        label.textContent = 'Muito Fraca';
+        label.style.color = '#ef4444';
+      } else if (score <= 50) {
+        if (bar) bar.style.background = '#f97316';
+        label.textContent = 'Fraca';
+        label.style.color = '#f97316';
+      } else if (score <= 75) {
+        if (bar) bar.style.background = '#eab308';
+        label.textContent = 'Média';
+        label.style.color = '#eab308';
+      } else {
+        if (bar) bar.style.background = '#22c55e';
+        label.textContent = 'Forte 🛡️';
+        label.style.color = '#22c55e';
+      }
+    }
+  }
+
   function toggleAuthMode(mode) {
     currentAuthMode = mode;
     const loginBtn = document.getElementById('tab-btn-login');
@@ -1337,6 +1413,7 @@
     const alertEl = document.getElementById('login-alert');
     const loginForm = document.getElementById('login-form');
     const otpContainer = document.getElementById('otp-step-container');
+    const pwdInput = document.getElementById('login-password');
 
     alertEl.style.display = 'none';
     if (loginForm) loginForm.style.display = 'block';
@@ -1355,6 +1432,7 @@
       const authNameInput = document.getElementById('auth-name');
       if (authNameInput) authNameInput.required = true;
       submitBtn.textContent = 'Enviar Código para E-mail DDM';
+      if (pwdInput) updatePasswordStrength(pwdInput.value || '');
     } else {
       regBtn.style.background = 'transparent';
       regBtn.style.color = '#94a3b8';
@@ -1368,8 +1446,11 @@
       const authNameInput = document.getElementById('auth-name');
       if (authNameInput) authNameInput.required = false;
       submitBtn.textContent = 'Entrar no Sistema';
+      const box = document.getElementById('password-strength-box');
+      if (box) box.style.display = 'none';
     }
   }
+
 
   async function checkAuthSession() {
     try {
