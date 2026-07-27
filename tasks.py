@@ -522,20 +522,27 @@ def vapi_call(
         overrides: Dict[str, Any] = {
             "firstMessage": first_msg,
         }
-        if debito:
-            overrides["variableValues"] = {
-                "instituicao":         debito.get("instituicao", ""),
-                "Valorcpf":            cpf,
-                "NominalPrinc":        debito.get("PgtoAvista", {}).get("ValorTotal", "0,00"),
-                "PgtoAvista":          debito.get("PgtoAvista", {}),
-                "CalculoBoleto":       debito.get("CalculoBoleto", {}),
-                "ParcelasBoleto":      debito.get("ParcelasBoleto", "0"),
-                "PgtoParceladoCartao": debito.get("PgtoParceladoCartao", {}),
-                "PrimeiroVencto":      debito.get("PrimeiroVencto", "em dois dias"),
-                "QuantidadeMensalidades": debito.get("numero_debitos", "1"),
-                "ValorFinalAVista":    debito.get("PgtoAvista", {}).get("ValorFinal", "0,00"),
-            }
+        cpf_clean = re.sub(r"\D", "", str(cpf or ""))
+        cpf_formatted = f"{cpf_clean[:3]}.{cpf_clean[3:6]}.{cpf_clean[6:9]}-{cpf_clean[9:]}" if len(cpf_clean) == 11 else (cpf or "")
+        
+        overrides["variableValues"] = {
+            "cpf":                 cpf_clean,
+            "CPF":                 cpf_clean,
+            "Valorcpf":            cpf_clean,
+            "valorcpf":            cpf_clean,
+            "cpf_formatado":       cpf_formatted,
+            "instituicao":         (debito or {}).get("instituicao", "") if debito else "",
+            "NominalPrinc":        (debito or {}).get("PgtoAvista", {}).get("ValorTotal", "0,00") if debito else "0,00",
+            "PgtoAvista":          (debito or {}).get("PgtoAvista", {}) if debito else {},
+            "CalculoBoleto":       (debito or {}).get("CalculoBoleto", {}) if debito else {},
+            "ParcelasBoleto":      (debito or {}).get("ParcelasBoleto", "0") if debito else "0",
+            "PgtoParceladoCartao": (debito or {}).get("PgtoParceladoCartao", {}) if debito else {},
+            "PrimeiroVencto":      (debito or {}).get("PrimeiroVencto", "em dois dias") if debito else "em dois dias",
+            "QuantidadeMensalidades": (debito or {}).get("numero_debitos", "1") if debito else "1",
+            "ValorFinalAVista":    (debito or {}).get("PgtoAvista", {}).get("ValorFinal", "0,00") if debito else "0,00",
+        }
         payload["assistantOverrides"] = overrides
+
 
 
         try:
