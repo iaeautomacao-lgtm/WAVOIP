@@ -1494,7 +1494,12 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        data = { ok: false, error: 'O servidor retornou uma resposta inesperada. Verifique se clicou em RESTART no Setup Python App do cPanel.' };
+      }
       if (res.ok && data.ok) {
         if (currentAuthMode === 'register' && data.otp_required) {
           pendingOtpEmail = email;
@@ -1511,13 +1516,14 @@
           loadLines();
         }
       } else {
-        alertEl.textContent = data.error || 'Erro ao processar requisição.';
+        alertEl.textContent = data.error || 'Erro ao processar requisição no servidor.';
         alertEl.style.display = 'block';
       }
     } catch (err) {
-      alertEl.textContent = 'Erro de conexão com o servidor.';
+      alertEl.textContent = 'Erro de conexão com o servidor. Verifique se clicou em RESTART no cPanel.';
       alertEl.style.display = 'block';
     } finally {
+
       submitBtn.disabled = false;
       submitBtn.textContent = currentAuthMode === 'register' ? 'Enviar Código para E-mail DDM' : 'Entrar no Sistema';
     }
