@@ -1039,6 +1039,7 @@ def _ensure_auth_tables_exist():
                 """)
                 cur.execute("""
                 CREATE TABLE IF NOT EXISTS email_verifications (
+                  id char(36) DEFAULT NULL,
                   email varchar(255) PRIMARY KEY,
                   code varchar(6) NOT NULL,
                   name varchar(255) NOT NULL,
@@ -1047,8 +1048,13 @@ def _ensure_auth_tables_exist():
                   created_at timestamp DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                 """)
+                try:
+                    cur.execute("ALTER TABLE email_verifications ADD COLUMN id char(36) DEFAULT NULL;")
+                except Exception:
+                    pass
     except Exception as table_err:
         logging.warning("[AUTH] Verificação de tabelas no MySQL: %s", table_err)
+
 
 
 def _ensure_default_user():
