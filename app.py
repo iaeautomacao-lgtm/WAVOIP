@@ -454,6 +454,10 @@ def vapi_call(phone: str, name: str = "", cpf: str = "", debito: dict = None) ->
                 "valorcpf":            cpf_clean,
                 "cpf_formatado":       cpf_formatted,
                 "cpf_prefixo3":        cpf_prefixo3,
+                "cpf_esperado":        cpf_prefixo3,
+                "Valorcpf_prefixo3":   cpf_prefixo3,
+                "Valorcpf_3digitos":   cpf_prefixo3,
+
                 "instituicao":         inst,
                 "NominalPrinc":        (debito or {}).get("PgtoAvista", {}).get("ValorTotal", "0,00") if debito else "0,00",
                 "PgtoAvista":          (debito or {}).get("PgtoAvista", {}) if debito else {},
