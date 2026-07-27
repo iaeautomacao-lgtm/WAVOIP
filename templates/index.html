@@ -1710,17 +1710,23 @@
   let acordosData = [];
 
   async function loadLines() {
-    document.getElementById('lines-grid').innerHTML = '<div class="loader"><div class="spin"></div>Carregando linhas...</div>';
+    const grid = document.getElementById('lines-grid');
+    if (grid) grid.innerHTML = '<div class="loader"><div class="spin"></div>Carregando linhas...</div>';
     try {
       const res  = await fetch(`${API}/api/lines`);
       const json = await res.json();
+      if (res.status === 401 || json.auth_required) {
+        showLoginOverlay();
+        return;
+      }
       if (!json.ok) throw new Error(json.error);
-      linesData = json.data;
+      linesData = json.data || [];
       renderLines(linesData);
     } catch(e) {
-      document.getElementById('lines-grid').innerHTML = `<div class="loader">Erro: ${escapeHtml(e.message)}</div>`;
+      if (grid) grid.innerHTML = `<div class="loader">Erro: ${escapeHtml(e.message)}</div>`;
     }
   }
+
 
   function renderLines(lines, refreshCampaigns = true) {
     const grid = document.getElementById('lines-grid');
