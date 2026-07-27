@@ -141,7 +141,8 @@ LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "
 LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
 CALL_DELAY_MIN = float(env("CALL_DELAY_MIN", "10.0"))
 CALL_DELAY_MAX = float(env("CALL_DELAY_MAX", "30.0"))
-ACTIVE_CALL_STATUSES = ["enfileirado", "em_andamento", "atendido"]
+ACTIVE_CALL_STATUSES = ["enfileirado", "em_andamento"]
+
 
 celery = Celery("tasks", broker=REDIS_URL, backend=REDIS_URL)
 celery.conf.update(

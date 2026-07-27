@@ -2221,8 +2221,31 @@ def start_campaign(campaign_id):
             .execute()
 
         if not (pending_count.count or 0):
-            supabase.table("campaigns").update({"status": "finalizada"}).eq("id", campaign_id).execute()
-            return jsonify({"ok": True, "fired": 0, "message": "Nenhum pendente"})
+            # Se o usuário clica em 'Religar' numa campanha concluída, resetamos as chamadas para 'pendente' permitindo nova rodada de discagem!
+            calls_to_retry = supabase.table("campaign_calls")\
+                .select("id")\
+                .eq("campaign_id", campaign_id)\
+                .execute().data or []
+            
+            if calls_to_retry:
+                retry_ids = [r["id"] for r in calls_to_retry]
+                for i in range(0, len(retry_ids), 200):
+                    supabase.table("campaign_calls").update({
+                        "status": "pendente",
+                        "error": None,
+                        "answered": False
+                    }).in_("id", retry_ids[i:i+200]).execute()
+                
+                supabase.table("campaigns").update({
+                    "status": "em_andamento",
+                    "finished": 0,
+                    "updated_at": "now()"
+                }).eq("id", campaign_id).execute()
+                already_running = True
+            else:
+                supabase.table("campaigns").update({"status": "finalizada"}).eq("id", campaign_id).execute()
+                return jsonify({"ok": True, "fired": 0, "message": "Nenhum pendente"})
+
 
         result = fill_campaign_capacity(campaign_id)
         if not result.get("ok"):
