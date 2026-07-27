@@ -651,6 +651,10 @@ def _normalize_phone(phone) -> str:
     digits = re.sub(r"\D", "", value)
     if digits.endswith("0") and re.search(r"\.0+$", value):
         digits = digits[:-1]
+    while digits.startswith("0"):
+        digits = digits[1:]
+    if digits.startswith("55") and len(digits) >= 12:
+        digits = digits[2:]
     return digits
 
 
@@ -658,9 +662,8 @@ def _phone_e164(phone) -> str:
     digits = _normalize_phone(phone)
     if not digits:
         return ""
-    if not digits.startswith("55"):
-        digits = "55" + digits
-    return "+" + digits
+    return "+55" + digits
+
 
 
 def _first_phone(row, cols: list) -> str:
