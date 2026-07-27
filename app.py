@@ -1928,6 +1928,58 @@ def _sync_vapi_call_status(vapi_call_id, force_refresh_recording=False):
     return None
 
 
+@app.route("/api/calls/<call_id>/audio", methods=["GET"])
+def proxy_call_audio(call_id):
+    try:
+        call_res = supabase.table("campaign_calls").select("recording_url", "vapi_call_id").eq("id", call_id).execute()
+        if not call_res.data:
+            call_res = supabase.table("campaign_calls").select("recording_url", "vapi_call_id").eq("vapi_call_id", call_id).execute()
+
+        if not call_res.data:
+            return jsonify({"error": "Chamada não encontrada"}), 404
+
+        c_row = call_res.data[0]
+        rec_url = c_row.get("recording_url")
+        vapi_id = c_row.get("vapi_call_id")
+
+        if not rec_url and vapi_id:
+            v_key = os.getenv("VAPI_API_KEY", "332987f4-f832-4542-9fd0-76de02bde971")
+            r_call = requests.get(f"https://api.vapi.ai/call/{vapi_id}", headers={"Authorization": f"Bearer {v_key}"}, timeout=6)
+            if r_call.ok:
+                d_call = r_call.json()
+                art = d_call.get("artifact") or {}
+                rec = d_call.get("recording") or {}
+                rec_url = d_call.get("recordingUrl") or d_call.get("stereoRecordingUrl") or d_call.get("monoRecordingUrl") or art.get("recordingUrl") or art.get("stereoRecordingUrl") or rec.get("url") or ""
+
+        if not rec_url:
+            return jsonify({"error": "Gravação de áudio não disponível para esta chamada."}), 404
+
+        headers = {}
+        if "vapi.ai" in rec_url:
+            v_key = os.getenv("VAPI_API_KEY", "332987f4-f832-4542-9fd0-76de02bde971")
+            headers["Authorization"] = f"Bearer {v_key}"
+
+        audio_resp = requests.get(rec_url, headers=headers, stream=True, timeout=15)
+        if not audio_resp.ok:
+            return jsonify({"error": f"Erro ao acessar gravação ({audio_resp.status_code})"}), 502
+
+        from flask import Response
+        content_type = audio_resp.headers.get("Content-Type", "audio/mpeg")
+
+        def generate():
+            for chunk in audio_resp.iter_content(chunk_size=8192):
+                if chunk:
+                    yield chunk
+
+        return Response(generate(), mimetype=content_type, headers={
+            "Content-Disposition": f"inline; filename=gravacao_{call_id}.mp3",
+            "Accept-Ranges": "bytes"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 
 @app.route("/api/monitor", methods=["GET"])
 def monitor():
