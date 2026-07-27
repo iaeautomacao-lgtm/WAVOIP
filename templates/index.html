@@ -875,7 +875,10 @@
       <div class="section" id="tab-acordos">
         <div class="sec-head">
           <span class="sec-title">Acordos Formalizados</span>
-          <button class="btn btn-ghost" onclick="loadAcordos()">↻ &nbsp;Atualizar</button>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-primary" onclick="exportGlobalPdfReport()">📄 Exportar Relatório PDF</button>
+            <button class="btn btn-ghost" onclick="loadAcordos()">↻ &nbsp;Atualizar</button>
+          </div>
         </div>
         <div class="table-card">
           <table>
@@ -924,7 +927,10 @@
       <div class="section" id="tab-campaigns">
         <div class="sec-head">
           <span class="sec-title">Campanhas de discagem</span>
-          <button class="btn btn-ghost" onclick="loadCampaigns()">↻ &nbsp;Atualizar</button>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-primary" onclick="exportGlobalPdfReport()">📄 Exportar Relatório PDF</button>
+            <button class="btn btn-ghost" onclick="loadCampaigns()">↻ &nbsp;Atualizar</button>
+          </div>
         </div>
         <div class="table-card">
           <table>
@@ -1011,7 +1017,10 @@
       <div class="section" id="tab-dashboard">
         <div class="sec-head">
           <span class="sec-title">Dashboard operacional</span>
-          <button class="btn btn-ghost" onclick="loadDashboard()">↻ &nbsp;Atualizar</button>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-primary" onclick="exportGlobalPdfReport()">📄 Relatório Executivo PDF</button>
+            <button class="btn btn-ghost" onclick="loadDashboard()">↻ &nbsp;Atualizar</button>
+          </div>
         </div>
 
         <div class="kpi-strip" id="dashboard-kpis">
@@ -3351,6 +3360,191 @@
     }
   }
 
+  /* ── RELATÓRIO EXECUTIVO PDF (EXPORT) ── */
+  async function exportGlobalPdfReport() {
+    toast('Gerando relatório executivo PDF...', 'warn');
+    try {
+      const res = await fetch(`${API}/api/dashboard/summary`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Erro ao obter dados');
+
+      const resAcordos = await fetch(`${API}/api/acordos?per_page=1000`);
+      const jsonAcordos = await resAcordos.json();
+      const acordosList = (jsonAcordos.ok ? jsonAcordos.data : []) || [];
+
+      generateExecutivePdfReport({
+        title: 'Relatório Executivo de Cobrança e Inteligência Operacional',
+        subtitle: 'Grupo DDM Assessoria Jurídica · WAVOIP AI Engine',
+        totals: json.totals || {},
+        lines: json.lines || [],
+        campaigns: json.campaigns || [],
+        acordos: acordosList,
+      });
+    } catch(e) {
+      toast(`Erro ao gerar PDF: ${e.message}`, 'err');
+    }
+  }
+
+  function generateExecutivePdfReport(data) {
+    const printWin = window.open('', '_blank', 'width=1000,height=800');
+    if (!printWin) {
+      toast('Permita popups no navegador para visualizar/salvar o PDF.', 'err');
+      return;
+    }
+
+    const totals = data.totals || {};
+    const acordos = data.acordos || [];
+    const lines = data.lines || [];
+    const nowStr = new Date().toLocaleString('pt-BR');
+
+    const acordosRowsHtml = acordos.length
+      ? acordos.map(a => `
+        <tr>
+          <td><b>${escapeHtml(a.nome || '—')}</b></td>
+          <td>${escapeHtml(a.cpf || '—')}</td>
+          <td>${escapeHtml(a.instituicao || '—')}</td>
+          <td><b>R$ ${escapeHtml(a.valor || '0,00')}</b></td>
+          <td>${escapeHtml(a.forma_pagamento || 'À vista')}</td>
+          <td><code>${escapeHtml(a.nr_acordo || '—')}</code></td>
+          <td><span style="color:${a.email_enviado ? '#16a34a' : '#dc2626'};font-weight:bold">${a.email_enviado ? 'Enviado' : 'Pendente'}</span></td>
+          <td>${a.created_at ? new Date(a.created_at).toLocaleString('pt-BR') : '—'}</td>
+        </tr>
+      `).join('')
+      : '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:12px;">Nenhum acordo formalizado registrado no período.</td></tr>';
+
+    const linesRowsHtml = lines.length
+      ? lines.map(l => `
+        <tr>
+          <td><b>${escapeHtml(l.name || l.token || 'SIP')}</b></td>
+          <td><code>${escapeHtml((l.token || '').slice(0,8))}...</code></td>
+          <td>${l.total ?? 0}</td>
+          <td>${l.answered ?? 0}</td>
+          <td>${l.errors ?? 0}</td>
+          <td>${l.formalized ?? 0}</td>
+        </tr>
+      `).join('')
+      : '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:12px;">Nenhuma linha registrada.</td></tr>';
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${escapeHtml(data.title)}</title>
+        <style>
+          body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #0f172a; margin: 0; padding: 30px; font-size: 13px; }
+          .header { background: #FF5706; color: white; padding: 24px 30px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+          .header-title { font-size: 20px; font-weight: 800; margin: 0; }
+          .header-sub { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+          .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+          .kpi-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; text-align: center; }
+          .kpi-title { font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 6px; }
+          .kpi-value { font-size: 22px; font-weight: 800; color: #0f172a; }
+          .kpi-value.orange { color: #FF5706; }
+          .kpi-value.green { color: #16a34a; }
+          .section-title { font-size: 15px; font-weight: 700; color: #0f172a; border-bottom: 2px solid #FF5706; padding-bottom: 6px; margin: 24px 0 12px; display: flex; justify-content: space-between; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
+          th { background: #f1f5f9; color: #475467; text-align: left; padding: 10px; border-bottom: 2px solid #cbd5e1; font-weight: 700; }
+          td { padding: 10px; border-bottom: 1px solid #e2e8f0; color: #334155; }
+          .footer { margin-top: 36px; padding-top: 16px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; color: #94a3b8; font-size: 11px; }
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="margin-bottom: 20px; text-align: right;">
+          <button onclick="window.print()" style="background: #FF5706; color: white; border: none; padding: 10px 20px; font-weight: bold; border-radius: 8px; cursor: pointer;">🖨️ Salvar como PDF / Imprimir</button>
+        </div>
+
+        <div class="header">
+          <div>
+            <div class="header-title">DDM ASSESSORIA JURÍDICA</div>
+            <div class="header-sub">${escapeHtml(data.title)}</div>
+          </div>
+          <div style="text-align: right; font-size: 12px;">
+            <div><b>WAVOIP AI PLATFORM</b></div>
+            <div>${nowStr}</div>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-title">Total de Chamadas</div>
+            <div class="kpi-value">${totals.calls ?? 0}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Chamadas Atendidas</div>
+            <div class="kpi-value green">${totals.answered ?? 0}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Taxa de Alô (%)</div>
+            <div class="kpi-value orange">${totals.alo_rate ?? 0}%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Acordos Formalizados</div>
+            <div class="kpi-value green">${totals.formalized ?? acordos.length}</div>
+          </div>
+        </div>
+
+        <div class="section-title">
+          <span>📜 Acordos Formalizados no Período</span>
+          <span style="font-size: 12px; font-weight: normal; color: #64748b;">Total: ${acordos.length}</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>CPF</th>
+              <th>Instituição</th>
+              <th>Valor Acordado</th>
+              <th>Forma Pagto</th>
+              <th>Nº Acordo</th>
+              <th>Notificação</th>
+              <th>Data/Hora</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${acordosRowsHtml}
+          </tbody>
+        </table>
+
+        <div class="section-title">
+          <span>📶 Desempenho por Dispositivo / Linha SIP</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Linha SIP</th>
+              <th>Token</th>
+              <th>Total Disparos</th>
+              <th>Atendidas</th>
+              <th>Erros</th>
+              <th>Acordos</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linesRowsHtml}
+          </tbody>
+        </table>
+
+        <div class="footer">
+          <div>Relatório emitido automaticamente pelo sistema WAVOIP · Grupo DDM Assessoria</div>
+          <div>Documento Confidencial · Página 1</div>
+        </div>
+
+        <script>
+          setTimeout(() => { window.print(); }, 800);
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWin.document.write(htmlContent);
+    printWin.document.close();
+  }
+
   loadLines();
   loadSipGroups();
   loadWaCallsSessions();
@@ -3358,6 +3552,7 @@
   setInterval(() => {
     if (!realtimeConnected) { loadLines(); loadWaCallsSessions(); }
   }, 120_000);
+
   </script>
 
   <!-- MODAL WACALLS QR CODE -->
