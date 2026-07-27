@@ -1022,8 +1022,8 @@ def run_cron_endpoint():
 
 def _ensure_auth_tables_exist():
     try:
-        supabase = create_client()
-        with supabase.connect() as conn:
+        db = create_client()
+        with db.connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -1054,14 +1054,14 @@ def _ensure_auth_tables_exist():
 def _ensure_default_user():
     try:
         _ensure_auth_tables_exist()
-        supabase = create_client()
-        res = supabase.table("users").select("id").limit(1).execute()
+        db = create_client()
+        res = db.table("users").select("id").limit(1).execute()
         if not res.data:
             default_email = "atendimento@ddm.adv.br"
             default_pass = env("INITIAL_ADMIN_PASSWORD", "Mudar@123")
             pass_hash = generate_password_hash(default_pass)
             user_id = str(uuid.uuid4())
-            supabase.table("users").insert({
+            db.table("users").insert({
                 "id": user_id,
                 "email": default_email,
                 "password_hash": pass_hash,
@@ -1071,6 +1071,7 @@ def _ensure_default_user():
             logging.info("[AUTH] Criado usuário administrador inicial no MySQL: %s", default_email)
     except Exception as e:
         logging.error("[AUTH] Erro ao verificar/criar usuário inicial no MySQL: %s", e)
+
 
 
 
