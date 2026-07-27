@@ -866,9 +866,55 @@ def make_call_task(self, campaign_id: str, contact: dict):
 
     else:
         _update_result(row_id, "erro", None, phones[0], error)
+        try:
+            _check_campaign_completion(campaign_id)
+        except Exception:
+            pass
+
+
+def _check_campaign_completion(campaign_id: str) -> bool:
+    """
+    Verifica se ainda existem chamadas em status 'pendente', 'enfileirado' ou 'em_andamento'
+    para esta campanha. Se não houver mais chamadas ativas/pendentes, marca a campanha como 'finalizada'.
+    """
+    if not campaign_id:
+        return False
+    try:
+        active_res = supabase.table("campaign_calls") \
+            .select("id", count="exact") \
+            .eq("campaign_id", campaign_id) \
+            .in_("status", ["pendente", "enfileirado", "em_andamento"]) \
+            .execute()
+        active_count = active_res.count or 0
+
+        finished_res = supabase.table("campaign_calls") \
+            .select("id", count="exact") \
+            .eq("campaign_id", campaign_id) \
+            .in_("status", ["finalizado", "erro", "atendido", "sem_debito", "sem_telefone", "falha_sem_linha"]) \
+            .execute()
+        finished_count = finished_res.count or 0
+
+        if active_count == 0:
+            supabase.table("campaigns").update({
+                "status": "finalizada",
+                "finished": finished_count,
+                "updated_at": "now()"
+            }).eq("id", campaign_id).execute()
+            logger.info(f"[CAMPAIGN] Campanha {campaign_id} finalizada automaticamente! (finished={finished_count})")
+            return True
+        else:
+            supabase.table("campaigns").update({
+                "finished": finished_count,
+                "updated_at": "now()"
+            }).eq("id", campaign_id).execute()
+            return False
+    except Exception as e:
+        logger.error(f"[CAMPAIGN] Erro ao verificar finalização da campanha {campaign_id}: {e}")
+        return False
 
 
 def _merge_debito_with_import_meta(row: dict, debito: dict) -> dict:
+
     merged = dict(debito or {})
     imported = row.get("debito_data") if isinstance(row.get("debito_data"), dict) else {}
     for key in ("all_phones", "email", "imported_id", "iddev", "idcrm", "uf", "cidade", "raw_phone_fallback"):

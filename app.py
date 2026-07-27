@@ -1894,11 +1894,22 @@ def list_campaigns():
                     c["answered"] = sum(1 for r in calls if r.get("answered") or r.get("status") == "atendido")
                     c["errors"] = sum(1 for r in calls if not r.get("answered") and r.get("status") not in ("pendente", "enfileirado"))
                     c["last_error"] = next((r.get("error") for r in calls if r.get("error")), "Falha de linha ou chamada não atendida")
+                    
+                    # Auto-heal: se a campanha está 'em_andamento', mas não restam chamadas ativas ou pendentes, marca como 'finalizada'!
+                    active_calls = [r for r in calls if r.get("status") in ("pendente", "enfileirado", "em_andamento")]
+                    if c.get("status") == "em_andamento" and not active_calls and calls:
+                        c["status"] = "finalizada"
+                        c["finished"] = len(calls)
+                        try:
+                            supabase.table("campaigns").update({"status": "finalizada", "finished": len(calls)}).eq("id", cid).execute()
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         return jsonify({"ok": True, "data": camps})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
 
 
 @app.route("/api/dashboard/summary", methods=["GET"])
