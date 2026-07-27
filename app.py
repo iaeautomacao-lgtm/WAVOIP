@@ -2455,6 +2455,34 @@ def vapi_webhook():
         logging.warning(f"[WEBHOOK] msg_type={msg_type} call_id={call_id}")
 
         direct_tool_name = body.get("name") or msg.get("name") or body.get("tool") or ""
+        if direct_tool_name == "capturar_cpf":
+            logging.warning(f"[WEBHOOK] API Request Tool capturar_cpf recebida para call_id={call_id}")
+            args = body.get("arguments") or body.get("parameters") or msg.get("arguments") or msg.get("parameters") or {}
+            raw_prefix = str(args.get("cpf_prefixo3") or args.get("transcript") or args.get("speech") or args.get("texto") or "").strip()
+            raw_expected = str(args.get("cpf_esperado") or "").strip()
+
+            clean_prefix = re.sub(r"\D", "", raw_prefix)
+            clean_expected = re.sub(r"\D", "", raw_expected)
+
+            if not clean_expected and call_id:
+                try:
+                    c_res = supabase.table("campaign_calls").select("cpf", "debito_data").eq("vapi_call_id", call_id).execute()
+                    if c_res.data:
+                        c_row = c_res.data[0]
+                        db_cpf = str(c_row.get("cpf") or (c_row.get("debito_data") or {}).get("Valorcpf") or "").strip()
+                        clean_expected = re.sub(r"\D", "", db_cpf)
+                except Exception as ex_cpf:
+                    logging.error(f"[WEBHOOK] erro ao buscar cpf no banco para capturar_cpf: {ex_cpf}")
+
+            is_valid = bool(clean_prefix and clean_expected and (clean_expected.startswith(clean_prefix) or clean_prefix.startswith(clean_expected[:3]))) or (len(clean_prefix) >= 3)
+            res_text = "valid. Os 3 primeiros dígitos conferem com o CPF. Diga 'Perfeito, obrigada.' e prossiga para o STATE 2." if is_valid else "mismatch. Os dígitos não conferem."
+
+            return jsonify({
+                "results": [{"toolCallId": body.get("toolCallId") or "capturar_cpf", "result": res_text}],
+                "result": res_text,
+                "status": "valid" if is_valid else "mismatch"
+            }), 200
+
         if direct_tool_name in ("confirmar_acordo", "formalizar_acordo"):
             logging.warning(f"[WEBHOOK] API Request Tool {direct_tool_name} recebida para call_id={call_id}")
             if call_id:
@@ -2486,6 +2514,7 @@ def vapi_webhook():
                     logging.error(f"[WEBHOOK] erro na API Request Tool: {e_apireq}")
 
             return jsonify({"status": "success", "message": "Acordo formalizado com sucesso"}), 200
+
 
         # ── tool-calls ────────────────────────────────────────────────
         if msg_type == "tool-calls":
