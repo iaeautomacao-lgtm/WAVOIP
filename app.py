@@ -1262,25 +1262,22 @@ def _ensure_default_user():
     try:
         _ensure_auth_tables_exist()
         db = create_client()
-        default_accounts = [
-            {"email": "atendimento@ddm.adv.br", "name": "Administrador DDM", "pass": env("INITIAL_ADMIN_PASSWORD", "Mudar@123")},
-            {"email": "diretoria@ddm.adv.br", "name": "Diretoria DDM", "pass": "DDM@Diretoria2026"},
-        ]
-        for acc in default_accounts:
-            existing = db.table("users").select("id").eq("email", acc["email"]).execute()
-            if not (existing.data if existing else None):
-                pass_hash = generate_password_hash(acc["pass"])
-                db.table("users").insert({
-                    "id": str(uuid.uuid4()),
-                    "email": acc["email"],
-                    "password_hash": pass_hash,
-                    "name": acc["name"],
-                    "role": "admin"
-                }).execute()
-                logging.info("[AUTH] Criado usuário no MySQL: %s", acc["email"])
+        res = db.table("users").select("id").limit(1).execute()
+        if not res.data:
+            default_email = "atendimento@ddm.adv.br"
+            default_pass = env("INITIAL_ADMIN_PASSWORD", "Mudar@123")
+            pass_hash = generate_password_hash(default_pass)
+            user_id = str(uuid.uuid4())
+            db.table("users").insert({
+                "id": user_id,
+                "email": default_email,
+                "password_hash": pass_hash,
+                "name": "Administrador DDM",
+                "role": "admin"
+            }).execute()
+            logging.info("[AUTH] Criado usuário administrador inicial no MySQL: %s", default_email)
     except Exception as e:
-        logging.error("[AUTH] Erro ao verificar/criar usuários iniciais no MySQL: %s", e)
-
+        logging.error("[AUTH] Erro ao verificar/criar usuário inicial no MySQL: %s", e)
 
 
 
