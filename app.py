@@ -1020,28 +1020,41 @@ def run_cron_endpoint():
 
 # ── SISTEMA DE AUTENTICAÇÃO E USUÁRIOS DDM (MYSQL) ──────────────────────────
 
-def _ensure_default_user():
+def _ensure_auth_tables_exist():
     try:
         supabase = create_client()
-        # Garante a criação da tabela users no MySQL automaticamente caso ainda não exista
-        try:
-            with supabase.connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                      id char(36) PRIMARY KEY,
-                      email varchar(255) NOT NULL UNIQUE,
-                      password_hash varchar(255) NOT NULL,
-                      name varchar(255) NOT NULL,
-                      role varchar(50) DEFAULT 'user',
-                      created_at timestamp DEFAULT CURRENT_TIMESTAMP,
-                      updated_at timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                      INDEX idx_users_email (email)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-                    """)
-        except Exception as table_err:
-            logging.warning("[AUTH] Verificação da tabela users no MySQL: %s", table_err)
+        with supabase.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                  id char(36) PRIMARY KEY,
+                  email varchar(255) NOT NULL UNIQUE,
+                  password_hash varchar(255) NOT NULL,
+                  name varchar(255) NOT NULL,
+                  role varchar(50) DEFAULT 'user',
+                  created_at timestamp DEFAULT CURRENT_TIMESTAMP,
+                  updated_at timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  INDEX idx_users_email (email)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS email_verifications (
+                  email varchar(255) PRIMARY KEY,
+                  code varchar(6) NOT NULL,
+                  name varchar(255) NOT NULL,
+                  password_hash varchar(255) NOT NULL,
+                  expires_at datetime NOT NULL,
+                  created_at timestamp DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+    except Exception as table_err:
+        logging.warning("[AUTH] Verificação de tabelas no MySQL: %s", table_err)
 
+
+def _ensure_default_user():
+    try:
+        _ensure_auth_tables_exist()
+        supabase = create_client()
         res = supabase.table("users").select("id").limit(1).execute()
         if not res.data:
             default_email = "atendimento@ddm.adv.br"
@@ -1058,6 +1071,7 @@ def _ensure_default_user():
             logging.info("[AUTH] Criado usuário administrador inicial no MySQL: %s", default_email)
     except Exception as e:
         logging.error("[AUTH] Erro ao verificar/criar usuário inicial no MySQL: %s", e)
+
 
 
 
@@ -1167,7 +1181,9 @@ def check_authentication():
 @app.route("/api/auth/send-otp", methods=["POST"])
 def auth_send_otp():
     try:
+        _ensure_auth_tables_exist()
         body = request.json or {}
+
         email = str(body.get("email", "")).strip().lower()
         name = str(body.get("name", "")).strip()
         password = str(body.get("password", "")).strip()
