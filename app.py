@@ -421,27 +421,48 @@ def vapi_call(phone: str, name: str = "", cpf: str = "", debito: dict = None) ->
             "customer":      {"number": phone_e164, "name": name}
         }
 
-        cpf_clean = re.sub(r"\D", "", str(cpf or ""))
-        cpf_formatted = f"{cpf_clean[:3]}.{cpf_clean[3:6]}.{cpf_clean[6:9]}-{cpf_clean[9:]}" if len(cpf_clean) == 11 else (cpf or "")
+        cpf_raw = str(cpf or (debito or {}).get("cpf") or (debito or {}).get("CPF") or (debito or {}).get("Valorcpf") or "").strip()
+        cpf_clean = re.sub(r"\D", "", cpf_raw)
+        cpf_formatted = f"{cpf_clean[:3]}.{cpf_clean[3:6]}.{cpf_clean[6:9]}-{cpf_clean[9:]}" if len(cpf_clean) == 11 else cpf_raw
+        cpf_prefixo3 = cpf_clean[:3] if len(cpf_clean) >= 3 else ""
+
+        inst = (debito or {}).get("instituicao", "")
+        valor_final_avista = (debito or {}).get("PgtoAvista", {}).get("ValorFinal") or (debito or {}).get("ValorFinalAVista") or "0,00"
+
+        pgto_cartao = (debito or {}).get("PgtoParceladoCartao")
+        if not isinstance(pgto_cartao, dict):
+            pgto_cartao = {"Parcelas": "1", "ValorParcela": valor_final_avista}
+        else:
+            pgto_cartao = dict(pgto_cartao)
+            if "Parcelas" not in pgto_cartao:
+                pgto_cartao["Parcelas"] = str(pgto_cartao.get("parcelas") or "1")
+            if "ValorParcela" not in pgto_cartao:
+                pgto_cartao["ValorParcela"] = str(pgto_cartao.get("valor_parcela") or pgto_cartao.get("ValorFinal") or valor_final_avista)
+
+        first_name = (name or "").strip().split()[0].title() if name else ""
+        first_msg = f"Oi, {first_name or 'tudo bem'}. Aqui é a Júlia, da assessoria financeira da {inst or 'nossa instituição'}. Por segurança, pode me confirmar apenas os três primeiros números do seu CPF?"
 
         payload["assistantOverrides"] = {
+            "firstMessage": first_msg,
             "variableValues": {
                 "cpf":                 cpf_clean,
                 "CPF":                 cpf_clean,
                 "Valorcpf":            cpf_clean,
                 "valorcpf":            cpf_clean,
                 "cpf_formatado":       cpf_formatted,
-                "instituicao":         (debito or {}).get("instituicao", "") if debito else "",
+                "cpf_prefixo3":        cpf_prefixo3,
+                "instituicao":         inst,
                 "NominalPrinc":        (debito or {}).get("PgtoAvista", {}).get("ValorTotal", "0,00") if debito else "0,00",
                 "PgtoAvista":          (debito or {}).get("PgtoAvista", {}) if debito else {},
                 "CalculoBoleto":       (debito or {}).get("CalculoBoleto", {}) if debito else {},
                 "ParcelasBoleto":      (debito or {}).get("ParcelasBoleto", "0") if debito else "0",
-                "PgtoParceladoCartao": (debito or {}).get("PgtoParceladoCartao", {}) if debito else {},
+                "PgtoParceladoCartao": pgto_cartao,
                 "PrimeiroVencto":      (debito or {}).get("PrimeiroVencto", "em dois dias") if debito else "em dois dias",
                 "QuantidadeMensalidades": (debito or {}).get("numero_debitos", "1") if debito else "1",
-                "ValorFinalAVista":    (debito or {}).get("PgtoAvista", {}).get("ValorFinal", "0,00") if debito else "0,00",
+                "ValorFinalAVista":    valor_final_avista,
             }
         }
+
 
 
         try:
