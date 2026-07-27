@@ -1880,7 +1880,7 @@ def delete_wacalls_session(session_id):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-def _sync_vapi_call_status(vapi_call_id):
+def _sync_vapi_call_status(vapi_call_id, force_refresh_recording=False):
     if not vapi_call_id:
         return None
     try:
@@ -1892,10 +1892,20 @@ def _sync_vapi_call_status(vapi_call_id):
             data = r.json()
             status = data.get("status")
             ended_reason = data.get("endedReason", "")
-            recording_url = data.get("recordingUrl") or (data.get("artifact") or {}).get("recordingUrl") or ""
-            transcript = data.get("transcript") or (data.get("artifact") or {}).get("transcript") or ""
+            artifact = data.get("artifact") or {}
+            recording = data.get("recording") or {}
+
+            recording_url = (
+                data.get("recordingUrl") or
+                data.get("stereoRecordingUrl") or
+                data.get("monoRecordingUrl") or
+                artifact.get("recordingUrl") or
+                artifact.get("stereoRecordingUrl") or
+                recording.get("url") or ""
+            )
+            transcript = data.get("transcript") or artifact.get("transcript") or ""
             
-            if status in ("ended", "completed", "failed"):
+            if status in ("ended", "completed", "failed") or recording_url or force_refresh_recording:
                 is_answered = bool(recording_url or "customer" in str(ended_reason).lower() or "answered" in str(ended_reason).lower())
                 new_status = "atendido" if is_answered else "finalizado"
                 update_data = {
@@ -1908,11 +1918,12 @@ def _sync_vapi_call_status(vapi_call_id):
                     update_data["transcript"] = transcript
                 
                 supabase.table("campaign_calls").update(update_data).eq("vapi_call_id", vapi_call_id).execute()
-                logging.info(f"[SYNC_VAPI] Chamada {vapi_call_id} sincronizada -> '{new_status}'")
+                logging.info(f"[SYNC_VAPI] Chamada {vapi_call_id} sincronizada -> status='{new_status}' rec='{bool(recording_url)}'")
                 return new_status
     except Exception as e:
         logging.error(f"[SYNC_VAPI] Erro ao sincronizar chamada vapi {vapi_call_id}: {e}")
     return None
+
 
 
 @app.route("/api/monitor", methods=["GET"])
