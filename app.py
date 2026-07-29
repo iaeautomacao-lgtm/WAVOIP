@@ -329,12 +329,12 @@ def _active_line_counts(line_tokens: list) -> dict:
     try:
         rows = supabase.table("campaign_calls")\
             .select("id, status, line_token, debito_data, vapi_call_id")\
-            .in_("status", ["enfileirado", "em_andamento"])\
+            .in_("status", ["enfileirado", "em_andamento", "atendido"])\
             .execute().data or []
     except Exception:
         rows = supabase.table("campaign_calls")\
             .select("id, status, debito_data, vapi_call_id")\
-            .in_("status", ["enfileirado", "em_andamento"])\
+            .in_("status", ["enfileirado", "em_andamento", "atendido"])\
             .execute().data or []
 
     for row in rows:
@@ -347,7 +347,7 @@ def _active_line_counts(line_tokens: list) -> dict:
                     cur_status = synced
             except Exception:
                 pass
-        if cur_status in ("enfileirado", "em_andamento"):
+        if cur_status in ("enfileirado", "em_andamento", "atendido"):
             meta = _line_meta_from_debito(row)
             token = row.get("line_token") or (meta or {}).get("line_token")
             if token in counts:
@@ -526,6 +526,42 @@ def _detectar_acordo_formalizado(transcript: str) -> bool:
         "comprovante e os dados",
     ]
     return any(f in t for f in frases)
+
+
+def _inferir_tabulacao(transcript: str, ended_reason: str, status: str, acordo_pela_tool: bool) -> str:
+    if status == "sem_debito":
+        return "sem_debito"
+    if status == "sem_telefone":
+        return "sem_telefone"
+    if status == "falha_sem_linha":
+        return "sem_linha"
+        
+    reason_lower = str(ended_reason or "").lower()
+    t_lower = str(transcript or "").lower()
+    
+    if acordo_pela_tool or _detectar_acordo_formalizado(transcript) or "#acordoformalizado" in t_lower:
+        return "acordo_formalizado"
+        
+    if reason_lower in ("customer-did-not-answer", "did-not-answer", "no-answer"):
+        return "sem_resposta"
+    if reason_lower in ("customer-busy", "busy"):
+        return "ocupado"
+        
+    if _is_voicemail_or_self_talk(transcript, ended_reason) or "voicemail" in reason_lower:
+        return "caixa_postal"
+        
+    if "#agendamento" in t_lower or "agendar" in t_lower or "agendado" in t_lower:
+        return "agendado"
+        
+    if "#recusa" in t_lower or "recusa" in t_lower or "não quer" in t_lower or "nao quer" in t_lower:
+        return "recusa"
+    if reason_lower in ("customer-ended-call", "assistant-ended-call"):
+        return "desligou"
+        
+    if "erro" in status or "error" in reason_lower or "fail" in reason_lower:
+        return "erro"
+        
+    return "outros"
 
 
 def _is_voicemail_or_self_talk(transcript: str, ended_reason: str = "") -> bool:
@@ -842,15 +878,18 @@ def get_calls():
         per_page = int(request.args.get("per_page", 50))
         offset   = (page - 1) * per_page
         only_answered = request.args.get("only_answered", "false").lower() == "true"
+        tabulation = request.args.get("tabulation", "").strip()
         
         query = supabase.table("campaign_calls").select(
-            "id, cpf, status, created_at, duration, campaign_id, recording_url, transcript, answered, error", count="exact"
+            "id, cpf, status, created_at, duration, campaign_id, recording_url, transcript, answered, error, tabulation", count="exact"
         )
         
         if only_answered:
             query = query.eq("answered", True)
+        if tabulation:
+            query = query.eq("tabulation", tabulation)
             
-        result = query.order("answered DESC, created_at DESC").range(offset, offset + per_page - 1).execute()
+        result = query.order("answered DESC, created_at DESC, id DESC").range(offset, offset + per_page - 1).execute()
         rows = []
         camp_ids = set()
         for row in (result.data or []):
@@ -858,6 +897,7 @@ def get_calls():
                 "id": row.get("id"),
                 "cpf": row.get("cpf"),
                 "status": row.get("status"),
+                "tabulation": row.get("tabulation"),
                 "duration": row.get("duration") or row.get("call_duration"),
                 "created_at": row.get("created_at"),
                 "campaign_id": row.get("campaign_id"),
@@ -1009,7 +1049,7 @@ def manual_formalizar_acordo():
 @app.route("/api/monitor", methods=["GET"])
 def get_monitor():
     try:
-        calls = supabase.table("campaign_calls").select("*").order("created_at", desc=True).limit(100).execute().data or []
+        calls = supabase.table("campaign_calls").select("*").order("created_at DESC, id DESC").limit(100).execute().data or []
         
         camp_ids = {str(c.get("campaign_id")) for c in calls if c.get("campaign_id")}
         name_map = {}
@@ -1254,7 +1294,8 @@ def _ensure_all_mysql_tables():
                     "ALTER TABLE campaigns ADD COLUMN assistant_id varchar(128) DEFAULT NULL;",
                     "ALTER TABLE campaigns ADD COLUMN sip_group_id char(36) DEFAULT NULL;",
                     "ALTER TABLE email_verifications ADD COLUMN id char(36) DEFAULT NULL;",
-                    "ALTER TABLE acordos_formalizados ADD COLUMN deletado_painel boolean DEFAULT false;"
+                    "ALTER TABLE acordos_formalizados ADD COLUMN deletado_painel boolean DEFAULT false;",
+                    "ALTER TABLE campaign_calls ADD COLUMN tabulation varchar(64) DEFAULT NULL;"
                 ]:
                     try:
                         cur.execute(col_sql)
@@ -1411,7 +1452,23 @@ def check_authentication():
     path = request.path
     if (
         path.startswith("/static/")
-        or path in ["/", "/login", "/vapi/webhook", "/api/auth/login", "/api/auth/register", "/api/auth/send-otp", "/api/auth/verify-otp", "/api/auth/logout", "/api/auth/me", "/api/cron"]
+        or path in [
+            "/",
+            "/login",
+            "/vapi/webhook",
+            "/api/webhook/vapi",
+            "/api/vapi/webhook",
+            "/webhook/vapi",
+            "/webhook",
+            "/api/acordos/formalizar",
+            "/api/auth/login",
+            "/api/auth/register",
+            "/api/auth/send-otp",
+            "/api/auth/verify-otp",
+            "/api/auth/logout",
+            "/api/auth/me",
+            "/api/cron"
+        ]
     ):
         return None
 
@@ -1778,11 +1835,34 @@ def debug_import():
         calls = supabase.table("campaign_calls").select("*").order("updated_at", desc=True).limit(20).execute().data
         jobs = supabase.table("import_jobs").select("*").order("created_at", desc=True).limit(5).execute().data
         count_calls = len(supabase.table("campaign_calls").select("id").execute().data or [])
+        import sys
+        import os
         return jsonify({
             "acordos": acordos,
             "calls": calls,
             "jobs": jobs,
-            "count_calls": count_calls
+            "count_calls": count_calls,
+            "sys_executable": sys.executable,
+            "sys_path": sys.path,
+            "mysql_env": {
+                "MYSQL_HOST": os.environ.get("MYSQL_HOST"),
+                "MYSQL_USER": os.environ.get("MYSQL_USER"),
+                "MYSQL_PASSWORD": os.environ.get("MYSQL_PASSWORD"),
+                "MYSQL_DATABASE": os.environ.get("MYSQL_DATABASE"),
+                "MYSQL_PORT": os.environ.get("MYSQL_PORT"),
+                "MYSQL_URL": os.environ.get("MYSQL_URL"),
+                "WAVOIP_EMAIL": os.environ.get("WAVOIP_EMAIL"),
+                "WAVOIP_PASSWORD": os.environ.get("WAVOIP_PASSWORD"),
+                "VAPI_API_KEY": os.environ.get("VAPI_API_KEY"),
+                "VAPI_ASSISTANT_ID": os.environ.get("VAPI_ASSISTANT_ID"),
+                "VAPI_ASSISTANT_ID_DDM": os.environ.get("VAPI_ASSISTANT_ID_DDM"),
+                "VAPI_ASSISTANT_ID_CRUZEIRO": os.environ.get("VAPI_ASSISTANT_ID_CRUZEIRO"),
+                "VAPI_PHONE_NUMBER_ID_1": os.environ.get("VAPI_PHONE_NUMBER_ID_1"),
+                "VAPI_PHONE_NUMBER_ID_2": os.environ.get("VAPI_PHONE_NUMBER_ID_2"),
+                "DDM_TOKEN": os.environ.get("DDM_TOKEN"),
+                "DDM_AGREEMENT_TOKEN": os.environ.get("DDM_AGREEMENT_TOKEN"),
+                "REDIS_URL": os.environ.get("REDIS_URL")
+            }
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1918,7 +1998,12 @@ def _sync_vapi_call_status(vapi_call_id, force_refresh_recording=False):
             transcript = data.get("transcript") or artifact.get("transcript") or ""
             
             if status in ("ended", "completed", "failed") or recording_url or force_refresh_recording:
-                is_answered = bool(recording_url or "customer" in str(ended_reason).lower() or "answered" in str(ended_reason).lower())
+                reason_lower = str(ended_reason).lower()
+                is_answered = bool(
+                    recording_url or 
+                    ("ended-call" in reason_lower) or 
+                    ("answered" in reason_lower and "did-not-answer" not in reason_lower)
+                )
                 new_status = "atendido" if is_answered else "finalizado"
                 update_data = {
                     "status": new_status,
@@ -1951,26 +2036,45 @@ def proxy_call_audio(call_id):
         rec_url = c_row.get("recording_url")
         vapi_id = c_row.get("vapi_call_id")
 
-        if not rec_url and vapi_id:
-            v_key = os.getenv("VAPI_API_KEY", "332987f4-f832-4542-9fd0-76de02bde971")
-            r_call = requests.get(f"https://api.vapi.ai/call/{vapi_id}", headers={"Authorization": f"Bearer {v_key}"}, timeout=6)
-            if r_call.ok:
-                d_call = r_call.json()
-                art = d_call.get("artifact") or {}
-                rec = d_call.get("recording") or {}
-                rec_url = d_call.get("recordingUrl") or d_call.get("stereoRecordingUrl") or d_call.get("monoRecordingUrl") or art.get("recordingUrl") or art.get("stereoRecordingUrl") or rec.get("url") or ""
+        audio_resp = None
+        v_key = os.getenv("VAPI_API_KEY", "332987f4-f832-4542-9fd0-76de02bde971")
+        headers = {"Authorization": f"Bearer {v_key}"}
 
-        if not rec_url:
+        # Se temos o ID do Vapi, tentamos baixar diretamente pelas rotas seguras do Vapi que retornam redirect assinado.
+        if vapi_id:
+            # 1. Tenta mono-recording primeiro
+            try:
+                r_mono = requests.get(f"https://api.vapi.ai/call/{vapi_id}/mono-recording", headers=headers, stream=True, timeout=10)
+                if r_mono.ok:
+                    audio_resp = r_mono
+            except Exception as e_mono:
+                logging.warning(f"[PROXY_AUDIO] Falha ao tentar mono-recording para {vapi_id}: {e_mono}")
+
+            # 2. Se falhou, tenta stereo-recording
+            if not audio_resp:
+                try:
+                    r_stereo = requests.get(f"https://api.vapi.ai/call/{vapi_id}/stereo-recording", headers=headers, stream=True, timeout=10)
+                    if r_stereo.ok:
+                        audio_resp = r_stereo
+                except Exception as e_stereo:
+                    logging.warning(f"[PROXY_AUDIO] Falha ao tentar stereo-recording para {vapi_id}: {e_stereo}")
+
+        # Se não temos vapi_id ou as rotas seguras falharam, tenta usar a URL salva como fallback
+        if not audio_resp and rec_url:
+            req_headers = {}
+            # Só passa Bearer token se for de fato um endpoint da vapi.ai e não S3/R2 diretamente
+            if "vapi.ai" in rec_url and "amazonaws.com" not in rec_url and "cloudflarestorage.com" not in rec_url:
+                req_headers["Authorization"] = f"Bearer {v_key}"
+            
+            try:
+                r_direct = requests.get(rec_url, headers=req_headers, stream=True, timeout=15)
+                if r_direct.ok:
+                    audio_resp = r_direct
+            except Exception as e_direct:
+                logging.warning(f"[PROXY_AUDIO] Falha ao tentar URL direta {rec_url}: {e_direct}")
+
+        if not audio_resp:
             return jsonify({"error": "Gravação de áudio não disponível para esta chamada."}), 404
-
-        headers = {}
-        if "vapi.ai" in rec_url:
-            v_key = os.getenv("VAPI_API_KEY", "332987f4-f832-4542-9fd0-76de02bde971")
-            headers["Authorization"] = f"Bearer {v_key}"
-
-        audio_resp = requests.get(rec_url, headers=headers, stream=True, timeout=15)
-        if not audio_resp.ok:
-            return jsonify({"error": f"Erro ao acessar gravação ({audio_resp.status_code})"}), 502
 
         from flask import Response
         content_type = audio_resp.headers.get("Content-Type", "audio/mpeg")
@@ -2005,7 +2109,7 @@ def monitor():
             .select("*")\
             .in_("campaign_id", camp_ids)\
             .in_("status", ["em_andamento", "atendido", "enfileirado", "erro"])\
-            .order("created_at", desc=True)\
+            .order("created_at DESC, id DESC")\
             .limit(100).execute()
 
         rows = []
@@ -2284,6 +2388,76 @@ def create_campaign():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/campaigns/create-from-tabulation", methods=["POST"])
+def create_campaign_from_tabulation():
+    try:
+        body = request.json or {}
+        name = body.get("name", "").strip()
+        source_campaign_id = body.get("source_campaign_id")
+        tabulations = body.get("tabulations", [])
+        line_tokens = body.get("line_tokens", [])
+        sip_group_id = body.get("sip_group_id") or None
+        assistant_id = body.get("assistant_id") or None
+        dialer_provider = body.get("dialer_provider", "hybrid")
+
+        if not name:
+            return jsonify({"ok": False, "error": "Nome da campanha é obrigatório"}), 400
+        if not source_campaign_id:
+            return jsonify({"ok": False, "error": "Campanha de origem é obrigatória"}), 400
+        if not tabulations:
+            return jsonify({"ok": False, "error": "Ao menos uma tabulação deve ser selecionada"}), 400
+
+        # Busca chamadas da campanha de origem que batem com as tabulações
+        res = supabase.table("campaign_calls")\
+            .select("*")\
+            .eq("campaign_id", source_campaign_id)\
+            .in_("tabulation", tabulations)\
+            .execute()
+
+        calls_to_copy = res.data or []
+        if not calls_to_copy:
+            return jsonify({"ok": False, "error": "Nenhum lead encontrado com as tabulações selecionadas nesta campanha"}), 400
+
+        # Cria a nova campanha
+        campaign_id = str(uuid.uuid4())
+        supabase.table("campaigns").insert({
+            "id": campaign_id,
+            "name": name,
+            "status": "rascunho",
+            "total": len(calls_to_copy),
+            "finished": 0,
+            "fired": 0,
+            "line_tokens": line_tokens,
+            "sip_group_id": sip_group_id,
+            "assistant_id": assistant_id,
+            "dialer_provider": dialer_provider,
+        }).execute()
+
+        # Prepara e copia os leads
+        new_calls = []
+        for idx, call in enumerate(calls_to_copy):
+            new_calls.append({
+                "id": str(uuid.uuid4()),
+                "campaign_id": campaign_id,
+                "cpf": call.get("cpf"),
+                "phone": call.get("phone"),
+                "name": call.get("name"),
+                "status": "pendente",
+                "order_idx": idx,
+                "debito_data": call.get("debito_data"),
+                "watchdog_retries": 0,
+                "answered": False,
+            })
+
+        # Insere em lotes de 200
+        for i in range(0, len(new_calls), 200):
+            supabase.table("campaign_calls").insert(new_calls[i:i+200]).execute()
+
+        return jsonify({"ok": True, "campaign_id": campaign_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/campaigns/<campaign_id>/lines", methods=["PUT"])
 def update_campaign_lines(campaign_id):
     try:
@@ -2313,6 +2487,111 @@ def update_campaign_lines(campaign_id):
             _dispatch_task(fill_campaign_capacity_task, args=[campaign_id])
 
         return jsonify({"ok": True, "line_tokens": line_tokens, "sip_group_id": sip_group_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/campaigns/<campaign_id>/export", methods=["GET"])
+def export_campaign_calls(campaign_id):
+    try:
+        camp = supabase.table("campaigns").select("name").eq("id", campaign_id).execute().data
+        if not camp:
+            return jsonify({"ok": False, "error": "Campanha não encontrada"}), 404
+        camp_name = camp[0].get("name", "campanha")
+        
+        calls = supabase.table("campaign_calls")\
+            .select("cpf, phone, name, status, error, duration, created_at, updated_at, tabulation")\
+            .eq("campaign_id", campaign_id)\
+            .order("order_idx").execute().data or []
+            
+        import csv
+        import io
+        from flask import Response
+        
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=';')
+        
+        # Header
+        writer.writerow(["Nome", "CPF", "Telefone", "Status", "Tabulação", "Motivo/Detalhe", "Duracao (segundos)", "Criado em", "Atualizado em"])
+        
+        status_translation = {
+            "pendente": "Pendente",
+            "enfileirado": "Aguardando Linha",
+            "em_andamento": "Ligando",
+            "atendido": "Atendido",
+            "finalizado": "Não Atendeu / Concluído",
+            "erro": "Erro",
+            "sem_debito": "Sem Débito",
+            "sem_telefone": "Sem Telefone Válido",
+            "falha_sem_linha": "Sem Linha Disponível"
+        }
+        
+        tabulation_translation = {
+            "acordo_formalizado": "🏆 Acordo Formalizado",
+            "agendado": "📅 Agendamento",
+            "recusa": "❌ Recusa",
+            "caixa_postal": "📟 Caixa Postal",
+            "sem_resposta": "🚫 Sem Resposta",
+            "ocupado": "📞 Ocupado",
+            "desligou": "📵 Desligou",
+            "erro": "⚠️ Erro",
+            "sem_debito": "🔍 Sem Débito",
+            "sem_telefone": "📞 Sem Telefone",
+            "sem_linha": "⚠️ Sem Linha",
+            "outros": "❓ Outros"
+        }
+        
+        reason_translation = {
+            "customer-did-not-answer": "Cliente não atendeu",
+            "customer-did-not-give-detect-speech": "Silêncio/Não falou nada",
+            "customer-busy": "Linha ocupada",
+            "voicemail": "Caiu na caixa postal",
+            "no-answer": "Sem resposta",
+            "customer-ended-call": "Cliente desligou",
+            "assistant-ended-call": "Robô desligou",
+            "call.start.error-get-assistant": "Erro: Assistente inexistente na Vapi",
+            "call.in-progress.error-providerfault-outbound-sip-480-temporarily-unavailable": "Operadora Wavoip Indisponível (SIP 480)",
+            "ddm: sem debito antes da chamada": "Sem dívida ativa na DDM",
+            "ddm: cpf vazio": "CPF em branco",
+        }
+        
+        for c in calls:
+            status_raw = c.get("status")
+            status_label = status_translation.get(status_raw, status_raw)
+            
+            tab_raw = c.get("tabulation")
+            tab_label = tabulation_translation.get(tab_raw, tab_raw or "—")
+            
+            err_raw = c.get("error") or ""
+            # Traduz ou ampara motivos comuns
+            err_label = reason_translation.get(err_raw, err_raw)
+            if not err_label and status_raw == "sem_debito":
+                err_label = "Sem dívida ativa na DDM"
+                
+            writer.writerow([
+                c.get("name") or "",
+                c.get("cpf") or "",
+                c.get("phone") or "",
+                status_label,
+                tab_label,
+                err_label,
+                c.get("duration") or "0",
+                c.get("created_at") or "",
+                c.get("updated_at") or ""
+            ])
+            
+        csv_data = output.getvalue()
+        # Unicode encoding block to open correctly in Excel (UTF-8 BOM)
+        csv_data_bom = "\ufeff" + csv_data
+        
+        # Clean filename
+        safe_name = "".join(x for x in camp_name if x.isalnum() or x in " -_").strip()
+        
+        return Response(
+            csv_data_bom.encode('utf-8'),
+            mimetype="text/csv",
+            headers={"Content-disposition": f"attachment; filename=relatorio_{safe_name}.csv"}
+        )
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -2481,6 +2760,36 @@ def _end_vapi_call(call_id):
         logging.error(f"[VAPI_END] Erro ao encerrar chamada {call_id}: {e}")
 
 
+def _resolver_valor_autorizado(deb_data: dict, tipo_pagamento: str = "avista"):
+    """
+    Busca o valor autorizado no debito_data salvo no banco, de acordo com o tipo
+    de pagamento negociado. NUNCA aceita valor vindo do modelo — só o que já
+    estava calculado e salvo no banco antes da ligação começar.
+    Retorna (valor, forma_label, parc).
+    """
+    tipo = (tipo_pagamento or "avista").strip().lower()
+    
+    # 1. Boleto Parcelado
+    if tipo == "boleto":
+        valor = (deb_data.get("CalculoBoleto") or {}).get("ValorCobrarBoleto") \
+            or deb_data.get("ValorFinalBoleto") \
+            or (deb_data.get("PgtoAvista") or {}).get("ValorFinal", "0,00")
+        parc_str = str(deb_data.get("ParcelasBoleto") or "1")
+        return valor, f"Boleto ({parc_str}x)", int(parc_str)
+        
+    # 2. Cartão Parcelado
+    if tipo == "cartao":
+        valor = (deb_data.get("PgtoAvista") or {}).get("ValorFinal", "0,00")
+        cartao_meta = deb_data.get("PgtoParceladoCartao") or {}
+        parc_str = str(cartao_meta.get("Parcelas") or "1")
+        # Para a DDM, cartão é registrado como 1 parcela (à vista), pois o banco liquida o total.
+        return valor, f"Cartão ({parc_str}x)", 1
+        
+    # 3. À Vista (Padrão)
+    valor = (deb_data.get("PgtoAvista") or {}).get("ValorFinal", "0,00")
+    return valor, "À vista", 1
+
+
 @app.route("/api/webhook/vapi", methods=["POST"])
 @app.route("/vapi/webhook", methods=["POST"])
 @app.route("/api/vapi/webhook", methods=["POST"])
@@ -2535,7 +2844,12 @@ def vapi_webhook():
                 except Exception as ex_cpf:
                     logging.error(f"[WEBHOOK] erro ao buscar cpf no banco para capturar_cpf: {ex_cpf}")
 
-            is_valid = bool(clean_prefix and clean_expected and (clean_expected.startswith(clean_prefix) or clean_prefix.startswith(clean_expected[:3]))) or (len(clean_prefix) >= 3)
+            if not clean_expected:
+                logging.error(f"[WEBHOOK] capturar_cpf: CPF esperado não encontrado para call_id={call_id} — negando por segurança")
+                is_valid = False
+            else:
+                is_valid = bool(clean_prefix) and len(clean_prefix) >= 3 and clean_prefix[:3] == clean_expected[:3]
+
             res_text = "valid. Os 3 primeiros dígitos conferem com o CPF. Diga 'Perfeito, obrigada.' e prossiga para o STATE 2." if is_valid else "mismatch. Os dígitos não conferem."
 
             return jsonify({
@@ -2556,6 +2870,10 @@ def vapi_webhook():
                         supabase.table("campaign_calls").update({"debito_data": deb_data}).eq("vapi_call_id", call_id).execute()
                         logging.warning(f"[WEBHOOK] flag acordo_confirmado_tool salva via API Request para call_id={call_id}")
 
+                        req_args = body.get("arguments") or body.get("parameters") or msg.get("arguments") or msg.get("parameters") or {}
+                        tipo_solicitado = str((req_args or {}).get("tipo_pagamento") or "avista")
+                        valor_autorizado, forma_label, parc_real = _resolver_valor_autorizado(deb_data, tipo_solicitado)
+
                         _dispatch_task(formalizar_acordo, args=[{
                             "cpf":              c_row.get("cpf", ""),
                             "nome":             c_row.get("name", ""),
@@ -2564,8 +2882,9 @@ def vapi_webhook():
                             "instituicao":      deb_data.get("instituicao", ""),
                             "idcalc":           deb_data.get("idcalc", ""),
                             "debito":           deb_data,
-                            "valor":            deb_data.get("PgtoAvista", {}).get("ValorFinal", "0,00"),
-                            "forma_pagamento":  "À vista",
+                            "valor":            valor_autorizado,
+                            "forma_pagamento":  forma_label,
+                            "parc":             parc_real,
                             "vapi_call_id":     call_id,
                             "campaign_call_id": c_row["id"],
                         }])
@@ -2621,12 +2940,11 @@ def vapi_webhook():
                         except Exception as ex_cpf:
                             logging.error(f"[WEBHOOK] erro ao buscar cpf no banco para capturar_cpf: {ex_cpf}")
 
-                    # Se o devedor falou os 3 dígitos e confere com o CPF (ou se falou 3 dígitos válidos)
-                    is_valid = bool(clean_prefix and clean_expected and clean_expected.startswith(clean_prefix)) or (len(clean_prefix) >= 3 and clean_expected and clean_prefix[:3] == clean_expected[:3])
-
-                    # Se por acaso clean_expected não veio, aceitar prefixo de 3 dígitos fornecido
-                    if not clean_expected and len(clean_prefix) >= 3:
-                        is_valid = True
+                    if not clean_expected:
+                        logging.error(f"[WEBHOOK] capturar_cpf: CPF esperado não encontrado para call_id={call_id} — negando por segurança")
+                        is_valid = False
+                    else:
+                        is_valid = bool(clean_prefix) and len(clean_prefix) >= 3 and clean_prefix[:3] == clean_expected[:3]
 
                     res_text = "valid. Os 3 primeiros dígitos conferem com o CPF. Diga 'Perfeito, obrigada.' e prossiga para o STATE 2." if is_valid else "mismatch. Os dígitos não conferem."
 
@@ -2650,6 +2968,9 @@ def vapi_webhook():
                             }).eq("vapi_call_id", call_id).execute()
                             logging.warning(f"[WEBHOOK] flag acordo_confirmado_tool salva para call_id={call_id}")
 
+                            tipo_solicitado = str((args or {}).get("tipo_pagamento") or "avista")
+                            valor_autorizado, forma_label, parc_real = _resolver_valor_autorizado(deb_data, tipo_solicitado)
+
                             _dispatch_task(formalizar_acordo, args=[{
                                 "cpf":              c_row.get("cpf", ""),
                                 "nome":             c_row.get("name", ""),
@@ -2658,8 +2979,9 @@ def vapi_webhook():
                                 "instituicao":      deb_data.get("instituicao", ""),
                                 "idcalc":           deb_data.get("idcalc", ""),
                                 "debito":           deb_data,
-                                "valor":            deb_data.get("PgtoAvista", {}).get("ValorFinal", "0,00"),
-                                "forma_pagamento":  "À vista",
+                                "valor":            valor_autorizado,
+                                "forma_pagamento":  forma_label,
+                                "parc":             parc_real,
                                 "vapi_call_id":     call_id,
                                 "campaign_call_id": c_row["id"],
                             }])
@@ -2750,26 +3072,22 @@ def vapi_webhook():
         recording_url = (
             msg.get("recordingUrl") or
             body.get("recordingUrl") or
+            msg.get("stereoRecordingUrl") or
+            body.get("stereoRecordingUrl") or
+            msg.get("monoRecordingUrl") or
+            body.get("monoRecordingUrl") or
             msg.get("artifact", {}).get("recordingUrl") or
             body.get("artifact", {}).get("recordingUrl") or
+            msg.get("artifact", {}).get("stereoRecordingUrl") or
+            body.get("artifact", {}).get("stereoRecordingUrl") or
+            msg.get("recording", {}).get("url") or
+            body.get("recording", {}).get("url") or
             ""
         )
 
         logging.warning(f"[WEBHOOK] end-of-call call_id={call_id} transcript_len={len(transcript)} ended_reason={ended_reason}")
 
-        supabase.table("campaign_calls").update({
-            "status":        "finalizado",
-            "error":         ended_reason,
-            "duration":      duration,
-            "recording_url": recording_url,
-            "transcript":    transcript,
-        }).eq("id", row["id"]).execute()
-
-        fresh_res = supabase.table("campaign_calls").select("*").eq("id", row["id"]).execute()
-        fresh_row = fresh_res.data[0] if fresh_res.data else row
-        debito_data_updated = fresh_row.get("debito_data") or {}
-        acordo_pela_tool = debito_data_updated.get("acordo_confirmado_tool") is True
-
+        acordo_pela_tool = (row.get("debito_data") or {}).get("acordo_confirmado_tool") is True
         if not acordo_pela_tool:
             analysis_tools = msg.get("analysis", {}).get("toolCalls") or body.get("analysis", {}).get("toolCalls") or []
             for t_call in analysis_tools:
@@ -2778,10 +3096,27 @@ def vapi_webhook():
                     break
 
         is_voicemail = _is_voicemail_or_self_talk(transcript, ended_reason)
+        acordo_detectado_texto = not acordo_pela_tool and not is_voicemail and _detectar_acordo_formalizado(transcript)
+
+        tab = _inferir_tabulacao(transcript, ended_reason, "finalizado", acordo_pela_tool or acordo_detectado_texto)
+
+        supabase.table("campaign_calls").update({
+            "status":        "finalizado",
+            "error":         ended_reason,
+            "duration":      duration,
+            "recording_url": recording_url,
+            "transcript":    transcript,
+            "tabulation":    tab
+        }).eq("id", row["id"]).execute()
+
+        fresh_res = supabase.table("campaign_calls").select("*").eq("id", row["id"]).execute()
+        fresh_row = fresh_res.data[0] if fresh_res.data else row
+        debito_data_updated = fresh_row.get("debito_data") or {}
+        
         # Se a tool de acordo foi chamada em tempo real, NÃO dispara novamente no end-of-call para evitar duplicidade
         if acordo_pela_tool:
             logging.info(f"[WEBHOOK] Acordo já formalizado em tempo real via Tool Call para call_id={call_id}. Ignorando disparo redundante.")
-        elif not is_voicemail and _detectar_acordo_formalizado(transcript):
+        elif acordo_detectado_texto:
             logging.warning(f"[WEBHOOK] ACORDO DETECTADO VIA TEXTO NO FIM DA CHAMADA para call_id={call_id}")
             try:
                 _dispatch_task(formalizar_acordo, args=[{

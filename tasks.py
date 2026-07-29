@@ -37,6 +37,20 @@ def env(name: str, default: str = "") -> str:
     return value.strip().strip('"').strip("'") if isinstance(value, str) else value
 
 
+_dispatched_threads = []
+_dispatched_threads_lock = threading.Lock()
+
+def wait_for_dispatched_tasks(timeout: float = 60.0):
+    """Aguarda a conclusão de todas as threads locais disparadas nesta instância do runner."""
+    import time
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        with _dispatched_threads_lock:
+            active = [t for t in _dispatched_threads if t.is_alive()]
+        if not active:
+            break
+        time.sleep(0.5)
+
 def _dispatch_task(task_obj, args=None, kwargs=None, countdown=0):
     """
     Executa tarefas de forma resiliente: tenta via Celery (se disponível)
@@ -76,6 +90,9 @@ def _dispatch_task(task_obj, args=None, kwargs=None, countdown=0):
         t = threading.Thread(target=runner)
         t.daemon = True
         t.start()
+
+    with _dispatched_threads_lock:
+        _dispatched_threads.append(t)
 
 
 #credenciais
@@ -749,6 +766,8 @@ def _update_result(row_id, status, call_id, phone, error=None):
         if call_id: update["vapi_call_id"] = call_id
         if phone:   update["phone"]         = phone
         if error:   update["error"]         = error
+        if status in ("sem_debito", "sem_telefone", "falha_sem_linha", "erro"):
+            update["tabulation"] = status
         supabase.table("campaign_calls").update(update).eq("id", row_id).execute()
     except Exception:
         pass
@@ -1037,17 +1056,18 @@ def _validate_debt_before_call(row: dict) -> dict:
         supabase.table("campaign_calls").update({
             "status": "sem_debito",
             "error": "ddm: cpf vazio",
+            "tabulation": "sem_debito",
         }).eq("id", row["id"]).execute()
         return {"ok": False, "reason": "cpf vazio"}
 
     # MOCK MODE / MODO HOMOLOGAÇÃO:
     # Se o CPF começar com '119' ou o nome contiver 'test' (caso de teste/homologação),
     # geramos um débito simulado de R$ 1.500,00 da Cruzeiro do Sul para a chamada prosseguir e ser testada na hora!
-    is_test_mode = str(cpf).startswith("119") or "test" in str(row.get("name", "")).lower()
+    is_test_mode = "test" in str(row.get("name", "")).lower()
     if is_test_mode:
         debito_data = {
             "nominal": "1.500,00",
-            "instituicao": "Cruzeiro do Sul (Teste Homologação)",
+            "instituicao": "UNIVERSIDADE VEIGA DE ALMEIDA (Teste Homologação)",
         }
         fallback = _build_fallback_debito_from_meta({**debito_data, "name": row.get("name", "Aluno Teste")})
         return {"ok": True, "debito": _merge_debito_with_import_meta(row, fallback), "stale_ddm": True}
@@ -1072,6 +1092,7 @@ def _validate_debt_before_call(row: dict) -> dict:
         supabase.table("campaign_calls").update({
             "status": "erro",
             "error": f"ddm: {result.get('error', 'erro DDM')}",
+            "tabulation": "erro",
         }).eq("id", row["id"]).execute()
         return {"ok": False, "reason": result.get("error", "erro DDM")}
 
@@ -1088,6 +1109,7 @@ def _validate_debt_before_call(row: dict) -> dict:
         supabase.table("campaign_calls").update({
             "status": "sem_debito",
             "error": "ddm: sem debito antes da chamada",
+            "tabulation": "sem_debito",
         }).eq("id", row["id"]).execute()
         return {"ok": False, "reason": "sem debito"}
 
@@ -1304,6 +1326,26 @@ def fill_campaign_capacity_task(campaign_id: str):
     return fill_campaign_capacity(campaign_id)
 
 
+def _is_vapi_call_active(call_id: str) -> bool:
+    if not call_id:
+        return False
+    try:
+        import requests
+        url = f"https://api.vapi.ai/call/{call_id}"
+        v_key = os.getenv("VAPI_API_KEY", "332987f4-f832-4542-9fd0-76de02bde971")
+        headers = {"Authorization": f"Bearer {v_key}"}
+        r = requests.get(url, headers=headers, timeout=5)
+        if r.status_code == 200:
+            call_data = r.json()
+            status = call_data.get("status")
+            if status in ("queued", "ringing", "in-progress"):
+                return True
+        return False
+    except Exception as e:
+        logger.error(f"[VAPI_ACTIVE_CHECK] Erro ao verificar status da chamada {call_id}: {e}")
+        return False
+
+
 @celery.task(name="tasks.campaign_watchdog")
 def campaign_watchdog():
     """
@@ -1326,7 +1368,7 @@ def campaign_watchdog():
         if not camps:
             return {"checked": 0}
 
-        cutoff  = (datetime.now(timezone.utc) - timedelta(minutes=WATCHDOG_TIMEOUT_MIN)).isoformat()
+        cutoff  = (datetime.now() - timedelta(minutes=WATCHDOG_TIMEOUT_MIN)).strftime("%Y-%m-%d %H:%M:%S")
         rescued = 0
         errors  = 0
 
@@ -1335,7 +1377,7 @@ def campaign_watchdog():
             try:
                 # Chamadas travadas (sem webhook no tempo limite)
                 stuck = supabase.table("campaign_calls") \
-                    .select("id, cpf, phone, name, debito_data, order_idx, watchdog_retries") \
+                    .select("id, cpf, phone, name, debito_data, order_idx, watchdog_retries, vapi_call_id") \
                     .eq("campaign_id", campaign_id) \
                     .in_("status", ["em_andamento", "enfileirado", "atendido"]) \
                     .lt("updated_at", cutoff) \
@@ -1361,6 +1403,17 @@ def campaign_watchdog():
                     continue
 
                 for row in stuck:
+                    vapi_id = row.get("vapi_call_id")
+                    if vapi_id and _is_vapi_call_active(vapi_id):
+                        logger.info(f"[WATCHDOG] Chamada {vapi_id} (row_id={row['id']}) ainda está ativa na Vapi. Postergando watchdog.")
+                        try:
+                            supabase.table("campaign_calls").update({
+                                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            }).eq("id", row["id"]).execute()
+                        except Exception:
+                            pass
+                        continue
+
                     retries = row.get("watchdog_retries") or 0
                     if retries >= WATCHDOG_MAX_RETRIES:
                         # Esgotou tentativas — marca erro e avanca
@@ -1618,20 +1671,33 @@ def _ddm_get_payment_links(iddev: str, cli: str = "ddm") -> dict:
 def _get_discount_percentage(debito: dict, parc: int) -> str:
     if not isinstance(debito, dict):
         return "0"
+        
+    def clean_pct(pct_val) -> str:
+        if pct_val is None:
+            return "0"
+        s = str(pct_val).strip()
+        if not s:
+            return "0"
+        s = s.replace("%", "").replace(",", ".").strip()
+        try:
+            val = float(s)
+            if 0 < val < 1:
+                val = val * 100
+            return str(int(round(val)))
+        except Exception:
+            return "0"
+
     try:
         if parc <= 1:
             pct = debito.get("PgtoAvista", {}).get("PercDesconto")
-            if pct:
-                return str(int(float(str(pct).replace(",", "."))))
-            return "0"
+            return clean_pct(pct)
         
         lista_parcelas = debito.get("ListaParcelas", {}) or {}
         parcelas = lista_parcelas.get("Parcelas") or []
         for p in parcelas:
             if isinstance(p, dict) and int(p.get("Parcelas", 0)) == parc:
                 pct = p.get("PercDescontoParcela") or p.get("PercDesconto")
-                if pct:
-                    return str(int(float(str(pct).replace(",", "."))))
+                return clean_pct(pct)
     except Exception:
         pass
     return "0"
@@ -1645,21 +1711,6 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1, debito: dict = None) -> dict
         raise RuntimeError("DDM_TOKEN_BUSCA ou DDM_TOKEN nao configurado")
 
     cpf = _norm_cpf(cpf)
-    
-    # MOCK MODE / MODO HOMOLOGAÇÃO:
-    # Se o CPF começar com '119' (caso clássico de testes),
-    # simulamos o retorno do acordo DDM com links válidos de boletos para testar o envio de e-mails!
-    if str(cpf).startswith("119"):
-        return {
-            "link_boleto": "https://ddmacordos.com/boletos/itau_DDM.php?nr_acordo=16668235&pcl=01&dwb=S&cod=bol",
-            "link_pix": "https://ddmpay.ddmacordos.com/pix/pixddmpay.php?ac=16668235&pcl=01&tk=c80a4488ae4579c679d82d81894bc620",
-            "linha_dig": "34191.09065 82350.150387 72039.040000 8 14950000215395",
-            "vencimento": "02/07/2026",
-            "nr_acordo": "16668235",
-            "idcalc": "69080",
-            "email": "caiovicenteti@gmail.com",
-            "nome": "Caio (Teste)"
-        }
     
     # 1. Localiza o iddev e o sistema pelo CPF usando o token_busca
     url_loc = "https://ddmacordos.com/calc/localiza_dev.php"
@@ -1686,50 +1737,32 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1, debito: dict = None) -> dict
         raise RuntimeError(f"Devedor encontrado mas sem iddev para o CPF {cpf}")
 
     data2 = {}
-    if int(parc or 1) <= 1:
-        # À Vista: Chama CalculaDebitos.php com o token_calcula
-        url_calc = "https://www.ddmacordos.com/ws_ddm/ws/CalculaDebitos.php"
-        params = {
-            "tk": token_calcula,
-            "OpcaoAcordo": "1",
-            "TipoAcordo": "1",
-            "Doc": cpf
-        }
-        logger.warning("[DDM_FORMALIZA] CPF_FINAL=%s formalizando À Vista no CalculaDebitos.php", cpf[-4:])
-        r2 = requests.get(url_calc, params=params, timeout=30)
-        r2.raise_for_status()
-        if r2.text.strip():
-            try:
-                data2 = r2.json()
-            except Exception:
-                pass
-    else:
-        # Parcelado: Determina o percentual de desconto e chama efetiva_acordo.php com o token_calcula
-        desconto = _get_discount_percentage(debito, parc)
-        url_efe = "https://ddmacordos.com/calc/efetiva_acordo.php"
-        params = {
-            "tk": token_calcula,
-            "idDev": iddev,
-            "cli": sistema,
-            "Parc": str(parc)
-        }
-        if desconto and desconto != "0":
-            params["Desconto"] = desconto
+    desconto = _get_discount_percentage(debito, int(parc or 1))
+    url_efe = "https://ddmacordos.com/calc/efetiva_acordo.php"
+    params = {
+        "tk": token_calcula,
+        "idDev": iddev,
+        "cli": sistema,
+        "Parc": str(int(parc or 1))
+    }
+    if desconto and desconto != "0":
+        params["Desconto"] = desconto
 
-        logger.warning("[DDM_FORMALIZA] CPF_FINAL=%s formalizando Parcelado (parc=%s) no efetiva_acordo.php", cpf[-4:], parc)
-        r2 = requests.get(url_efe, params=params, timeout=30)
-        r2.raise_for_status()
-        if r2.text.strip():
-            try:
-                data2 = r2.json()
-            except Exception:
-                pass
+    logger.warning("[DDM_FORMALIZA] CPF_FINAL=%s formalizando acordo (parc=%s, desc=%s) no efetiva_acordo.php", cpf[-4:], parc, desconto)
+    r2 = requests.get(url_efe, params=params, timeout=30)
+    r2.raise_for_status()
+    if r2.text.strip():
+        try:
+            data2 = r2.json()
+        except Exception:
+            pass
         
     link_boleto = _ddm_find_first(data2, {"linkboleto", "boletourl", "urlboleto"})
     link_pix    = _ddm_find_first(data2, {"linkpix", "pixurl", "urlpix", "qrcodepix", "qrcode"})
     linha_dig   = _valid_linha_digitavel(_ddm_find_first(data2, {"linhaboleto", "linhadigitavel", "linhadig", "digitalline", "digitableline"}))
     vencimento  = _ddm_find_first(data2, {"vencimento", "datavencto", "vencto", "due_date"})
     nr_acordo   = _ddm_find_first(data2, {"nracordo", "nr_acordo", "acordo", "agreement_number"})
+    valor_ret   = _ddm_find_first(data2, {"valor", "valortotal", "valor_total", "valoracordo", "valor_acordo", "amount", "valorfinal", "valordocumento", "valor_documento", "val_total", "total"})
     
     return {
         "raw": data2,
@@ -1738,6 +1771,7 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1, debito: dict = None) -> dict
         "linha_dig": linha_dig,
         "vencimento": vencimento,
         "nr_acordo": nr_acordo,
+        "valor": valor_ret,
         "idcalc": iddev,
         "nome": nome,
         "cpf": cpf,
@@ -2351,10 +2385,13 @@ def formalizar_acordo(self, dados: dict):
             try:
                 forma_pagamento = dados.get("forma_pagamento", "À vista")
                 import re
-                parc = 1
-                digits = re.findall(r"\d+", forma_pagamento)
-                if digits:
-                    parc = int(digits[0])
+                parc = dados.get("parc")
+                if parc is None:
+                    import re
+                    parc = 1
+                    digits = re.findall(r"\d+", forma_pagamento)
+                    if digits:
+                        parc = int(digits[0])
                 acordo = _ddm_formalizar_acordo(cpf, parc=parc, debito=debito)
                 link_boleto = acordo.get("link_boleto") or ""
                 link_pix    = acordo.get("link_pix") or ""
@@ -2362,6 +2399,8 @@ def formalizar_acordo(self, dados: dict):
                 vencimento  = acordo.get("vencimento") or ""
                 nr_acordo   = acordo.get("nr_acordo") or ""
                 idcalc      = acordo.get("idcalc") or idcalc
+                if acordo.get("valor"):
+                    valor = acordo["valor"]
                 if acordo.get("email") and not email:
                     email = acordo["email"]
                 if acordo.get("nome") and nome == "Cliente":
@@ -2618,7 +2657,7 @@ def process_file(self, job_id: str, file_id: str, fname: str):
         except Exception:
             pass
 
-        if len(df) > 20000:
+        if len(df) > 60000:
             _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite atual de 20000 linhas.")
             return
 

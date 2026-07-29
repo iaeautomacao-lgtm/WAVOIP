@@ -126,5 +126,14 @@ def main():
     if args.job in ("import", "all"):
         run_import_jobs()
 
+    # Aguarda todas as threads disparadas em background (como chamadas com delay) finalizarem
+    try:
+        from tasks import wait_for_dispatched_tasks
+        logger.info("Aguardando tarefas em background finalizarem...")
+        wait_for_dispatched_tasks(timeout=120.0)
+        logger.info("Todas as tarefas concluídas.")
+    except Exception as e:
+        logger.error(f"Erro ao aguardar tarefas em background: {e}")
+
 if __name__ == "__main__":
     main()

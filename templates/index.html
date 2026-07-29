@@ -847,9 +847,24 @@
         <div class="sec-head">
           <span class="sec-title">Histórico de chamadas</span>
           <div style="display:flex;gap:12px;align-items:center;">
+            <select id="calls-filter-tabulation" onchange="toggleCallsFilter()" style="background:var(--card-bg);color:var(--text);border:1px solid var(--border);padding:6px 12px;border-radius:6px;outline:none;cursor:pointer;font-size:14px;">
+              <option value="">Todas as Tabulações</option>
+              <option value="acordo_formalizado">🏆 Acordo Formalizado</option>
+              <option value="agendado">📅 Agendamento</option>
+              <option value="recusa">❌ Recusa</option>
+              <option value="caixa_postal">📟 Caixa Postal</option>
+              <option value="sem_resposta">🚫 Sem Resposta</option>
+              <option value="ocupado">📞 Ocupado</option>
+              <option value="desligou">📵 Desligou</option>
+              <option value="erro">⚠️ Erro</option>
+              <option value="sem_debito">🔍 Sem Débito</option>
+              <option value="sem_telefone">📞 Sem Telefone</option>
+              <option value="sem_linha">⚠️ Sem Linha</option>
+              <option value="outros">❓ Outros</option>
+            </select>
             <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text-dim);cursor:pointer;user-select:none;">
               <input type="checkbox" id="calls-filter-answered" onchange="toggleCallsFilter()" style="cursor:pointer;" />
-              Somente chamadas atendidas/com gravação
+              Somente atendidas/com gravação
             </label>
             <button class="btn btn-ghost" onclick="loadCalls(true)">↻ &nbsp;Atualizar</button>
           </div>
@@ -857,10 +872,10 @@
         <div class="table-card">
           <table>
             <thead>
-              <tr><th>ID</th><th>Contato</th><th>Status</th><th>Duração</th><th>Data</th><th>Ações</th></tr>
+              <tr><th>ID</th><th>Contato</th><th>Status</th><th>Tabulação</th><th>Duração</th><th>Data</th><th>Ações</th></tr>
             </thead>
             <tbody id="calls-body">
-              <tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+              <tr><td colspan="7"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -1931,11 +1946,12 @@
   function renderGroupOptions() {
     const selects = [
       document.getElementById('campaign-group-select'),
-      document.getElementById('edit-campaign-group-select')
+      document.getElementById('edit-campaign-group-select'),
+      document.getElementById('redisparar-group-select')
     ].filter(Boolean);
     selects.forEach(sel => {
       const current = sel.value;
-      const first = sel.id === 'campaign-group-select' ? 'Grupo de SIPs...' : 'Sem grupo fixo';
+      const first = (sel.id === 'campaign-group-select' || sel.id === 'redisparar-group-select') ? 'Grupo de SIPs...' : 'Sem grupo fixo';
       sel.innerHTML = `<option value="">${first}</option>` + sipGroups.map(g =>
         `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`
       ).join('');
@@ -2140,10 +2156,11 @@
     if (force) callsPage_ = 1;
     callsLoaded = true;
     document.getElementById('calls-body').innerHTML =
-      '<tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
+      '<tr><td colspan="7"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>';
     try {
       const onlyAnswered = document.getElementById('calls-filter-answered')?.checked || false;
-      const res  = await fetch(`${API}/api/calls?page=${callsPage_}&per_page=50&only_answered=${onlyAnswered}`);
+      const tabulation = document.getElementById('calls-filter-tabulation')?.value || '';
+      const res  = await fetch(`${API}/api/calls?page=${callsPage_}&per_page=50&only_answered=${onlyAnswered}&tabulation=${encodeURIComponent(tabulation)}`);
       const json = await res.json();
       if (!json.ok) {
         console.error('loadCalls error', json);
@@ -2153,7 +2170,7 @@
     } catch(e) {
       console.error('loadCalls failed', e);
       document.getElementById('calls-body').innerHTML =
-        `<tr><td colspan="6"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
+        `<tr><td colspan="7"><div class="loader">Erro: ${escapeHtml(e.message)}</div></td></tr>`;
     }
   }
 
@@ -2165,7 +2182,7 @@
   function renderCalls(rows, page, pages, total) {
     const tbody = document.getElementById('calls-body');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6"><div class="loader">Sem histórico.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7"><div class="loader">Sem histórico.</div></td></tr>';
     } else {
       tbody.innerHTML = rows.map(c => {
         const statusMap = {
@@ -2178,6 +2195,22 @@
         const date = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '—';
         const camp = c.campaign_name || (c.campaign_id ? `Campanha ${String(c.campaign_id).slice(0,8)}` : '—');
         
+        const tabLabels = {
+          acordo_formalizado: '🏆 Acordo Formalizado',
+          agendado: '📅 Agendamento',
+          recusa: '❌ Recusa',
+          caixa_postal: '📟 Caixa Postal',
+          sem_resposta: '🚫 Sem Resposta',
+          ocupado: '📞 Ocupado',
+          desligou: '📵 Desligou',
+          erro: '⚠️ Erro',
+          sem_debito: '🔍 Sem Débito',
+          sem_telefone: '📞 Sem Telefone',
+          sem_linha: '⚠️ Sem Linha',
+          outros: '❓ Outros'
+        };
+        const tabText = tabLabels[c.tabulation] || c.tabulation || '—';
+
         // Botão para ver transcrição / áudio
         const hasDetails = c.recording_url || c.transcript;
         const detailsBtn = hasDetails 
@@ -2188,6 +2221,7 @@
           <td class="td-mono" style="color:var(--muted)">${(c.id||'').slice(0,8)}…</td>
           <td>${escapeHtml(c.cpf || '—')}<br><span class="td-dim">${escapeHtml(camp)}</span></td>
           <td><span class="cs ${cls}">${escapeHtml(c.status||'—')}</span></td>
+          <td><span style="font-weight:500">${escapeHtml(tabText)}</span></td>
           <td class="td-mono">${dur}</td>
           <td class="td-dim">${date}</td>
           <td>${detailsBtn}</td>
@@ -2317,12 +2351,18 @@
             ${canStart ? `<button class="call-btn" onclick="startCampaign(${jsArg(c.id)})">▶ Iniciar</button>` : ''}
             ${canPause ? `<button class="call-btn" onclick="pauseCampaign(${jsArg(c.id)})">⏸ Pausar</button>` : ''}
             ${canResume ? `<button class="call-btn" style="background:#53b1fd;border-color:#53b1fd;" onclick="resumeCampaign(${jsArg(c.id)})">🔄 Religar</button>` : ''}
+            <button class="call-btn" style="background:#12b76a;border-color:#12b76a;" onclick="exportCampaignCsv(${jsArg(c.id)})">📥 CSV</button>
             <button class="call-btn" onclick="openCampaignLinesModal(${jsArg(c.id)})">SIPs</button>
+            <button class="call-btn" style="background:#f79009;border-color:#f79009;" onclick="openRedispararModal(${jsArg(c.id)})">🔁 Redisparar</button>
             <button class="del-btn" onclick="deleteCampaign(${jsArg(c.id)}, ${jsArg(c.name)})">✕</button>
           </div>
         </td>
       </tr>`;
     }).join('');
+  }
+
+  function exportCampaignCsv(id) {
+    window.open(`${API}/api/campaigns/${id}/export`, '_blank');
   }
 
   async function startCampaign(id) {
@@ -2382,6 +2422,89 @@
       loadCampaigns();
     } catch(e) {
       toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  let redispararCampaignId = null;
+
+  async function openRedispararModal(id) {
+    redispararCampaignId = id;
+    await ensureLinesLoaded();
+    await loadSipGroups();
+    await loadVapiAssistants();
+    
+    const camp = campaignRows.find(c => c.id === id) || (dashboardData?.campaigns || []).find(c => c.id === id);
+    if (!camp) { toast('Campanha não encontrada na tela.', 'err'); return; }
+
+    // Preenche os campos
+    document.getElementById('redisparar-camp-name').value = `${camp.name || 'Campanha'} - Redisparo`;
+    document.getElementById('redisparar-provider-select').value = camp.dialer_provider || 'hybrid';
+    document.getElementById('redisparar-assistant-select').value = camp.assistant_id || '';
+    document.getElementById('redisparar-group-select').value = camp.sip_group_id || '';
+    
+    // Renderiza checkbox de SIPs
+    renderTokenChecks('redisparar-line-picker', camp.line_tokens || [], true);
+    
+    // Abre o modal
+    document.getElementById('redisparar-modal').classList.add('open');
+  }
+
+  function closeRedispararModal() {
+    document.getElementById('redisparar-modal').classList.remove('open');
+    redispararCampaignId = null;
+  }
+
+  function applyRedispararGroupSelection() {
+    const group = groupById(document.getElementById('redisparar-group-select').value);
+    if (group) setCheckedTokens('redisparar-line-picker', group.line_tokens || []);
+  }
+
+  async function saveRedispararCampaign() {
+    if (!redispararCampaignId) return;
+    
+    const name = document.getElementById('redisparar-camp-name').value.trim();
+    if (!name) { toast('Digite o nome da nova campanha.', 'err'); return; }
+    
+    // Pega as tabulações marcadas
+    const tabulations = Array.from(document.querySelectorAll('.redisparar-tab-cb:checked')).map(cb => cb.value);
+    if (!tabulations.length) { toast('Selecione ao menos uma tabulação para redisparar.', 'err'); return; }
+    
+    const line_tokens = checkedTokens('redisparar-line-picker');
+    if (!line_tokens.length) { toast('Selecione ao menos uma SIP.', 'err'); return; }
+    
+    const sip_group_id = document.getElementById('redisparar-group-select').value || '';
+    const assistant_id = document.getElementById('redisparar-assistant-select').value || '';
+    const dialer_provider = document.getElementById('redisparar-provider-select').value || 'hybrid';
+    
+    const btn = document.getElementById('btn-save-redisparo');
+    btn.disabled = true; btn.textContent = 'Criando redisparo…';
+    
+    try {
+      const res = await fetch(`${API}/api/campaigns/create-from-tabulation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          source_campaign_id: redispararCampaignId,
+          tabulations,
+          line_tokens,
+          sip_group_id,
+          assistant_id,
+          dialer_provider
+        })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      
+      toast(`✓ Redisparo "${name}" criado com sucesso!`, 'ok');
+      closeRedispararModal();
+      campaignsLoaded = false;
+      await loadCampaigns();
+      loadDashboard();
+    } catch(e) {
+      toast(`Erro ao criar redisparo: ${e.message}`, 'err');
+    } finally {
+      btn.disabled = false; btn.textContent = '🔁 Criar Redisparo';
     }
   }
 
@@ -2678,8 +2801,12 @@
       const res = await fetch(`${API}/api/vapi/assistants`);
       const json = await res.json();
       if (json.ok && json.assistants) {
-        const select = document.getElementById('campaign-assistant-select');
-        if (select) {
+        const selects = [
+          document.getElementById('campaign-assistant-select'),
+          document.getElementById('redisparar-assistant-select')
+        ].filter(Boolean);
+        selects.forEach(select => {
+          const current = select.value;
           select.innerHTML = '<option value="">Assistente Dinâmico (Recomendado)...</option>';
           json.assistants.forEach(a => {
             const opt = document.createElement('option');
@@ -2687,7 +2814,8 @@
             opt.textContent = a.name;
             select.appendChild(opt);
           });
-        }
+          if (current) select.value = current;
+        });
       }
     } catch(e) {
       console.error('Erro ao carregar assistentes Vapi:', e);
@@ -3569,6 +3697,80 @@
   }, 120_000);
 
   </script>
+
+  <!-- MODAL REDISPARAR CAMPANHA -->
+  <div class="overlay" id="redisparar-modal">
+    <div class="modal" style="width:480px">
+      <div class="modal-title">🔁 Criar Campanha de Redisparo</div>
+      
+      <div class="modal-field">
+        <label class="modal-label">Nome da Nova Campanha</label>
+        <input type="text" id="redisparar-camp-name" class="modal-input" placeholder="Ex: Campanha X - Redisparo" style="width:100%" />
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Selecione as Tabulações para Redisparar</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);cursor:pointer;">
+            <input type="checkbox" class="redisparar-tab-cb" value="caixa_postal" checked /> 📟 Caixa Postal
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);cursor:pointer;">
+            <input type="checkbox" class="redisparar-tab-cb" value="sem_resposta" checked /> 🚫 Sem Resposta
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);cursor:pointer;">
+            <input type="checkbox" class="redisparar-tab-cb" value="ocupado" checked /> 📞 Ocupado
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);cursor:pointer;">
+            <input type="checkbox" class="redisparar-tab-cb" value="desligou" /> 📵 Desligou
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);cursor:pointer;">
+            <input type="checkbox" class="redisparar-tab-cb" value="recusa" /> ❌ Recusa
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);cursor:pointer;">
+            <input type="checkbox" class="redisparar-tab-cb" value="erro" /> ⚠️ Erro
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);cursor:pointer;">
+            <input type="checkbox" class="redisparar-tab-cb" value="outros" /> ❓ Outros
+          </label>
+        </div>
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Provedor de Discagem</label>
+        <select class="modal-select" id="redisparar-provider-select" style="width:100%">
+          <option value="hybrid">⚡ Híbrido (Vapi + Fallback WaCalls)</option>
+          <option value="vapi">📞 Vapi (Somente Voz AI)</option>
+          <option value="wacalls">🌐 WaCalls (Somente Disparo Celular)</option>
+        </select>
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Grupo SIP / Linha</label>
+        <select class="modal-select" id="redisparar-group-select" onchange="applyRedispararGroupSelection()" style="width:100%">
+          <option value="">-- Personalizado --</option>
+        </select>
+      </div>
+
+      <div class="modal-field" id="redisparar-lines-container">
+        <label class="modal-label">Selecione as SIPs ativas</label>
+        <div class="campaign-line-grid" id="redisparar-line-picker" style="max-height:120px;overflow-y:auto;border:1px solid var(--border);padding:8px;border-radius:6px;display:flex;flex-direction:column;gap:6px;">
+          <!-- Linhas carregadas dinamicamente -->
+        </div>
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Robô de Voz (Vapi Assistant)</label>
+        <select class="modal-select" id="redisparar-assistant-select" style="width:100%">
+          <!-- Assistentes carregados dinamicamente -->
+        </select>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="btn-save-redisparo" onclick="saveRedispararCampaign()">🔁 Criar Redisparo</button>
+        <button class="btn btn-ghost" onclick="closeRedispararModal()">Cancelar</button>
+      </div>
+    </div>
+  </div>
 
   <!-- MODAL WACALLS QR CODE -->
   <div class="overlay" id="wacalls-modal">

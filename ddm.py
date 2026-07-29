@@ -32,9 +32,16 @@ def get_redis():
     if _redis_client is None:
         with _redis_lock:
             if _redis_client is None:
-                import redis as redis_lib
                 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-                _redis_client = redis_lib.from_url(redis_url)
+                if "upstash.io" in redis_url or redis_url.startswith("https://"):
+                    try:
+                        from redis_rest import UpstashRedisREST
+                        _redis_client = UpstashRedisREST()
+                    except Exception:
+                        pass
+                if _redis_client is None:
+                    import redis as redis_lib
+                    _redis_client = redis_lib.from_url(redis_url)
     return _redis_client
 
 
