@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 DDM_TOKEN    = os.getenv("DDM_TOKEN", "").strip()
-DDM_TOKEN_BUSCA = os.getenv("DDM_TOKEN_BUSCA", "2e30b68c0feda298f9d6d40ab36c1a09").strip()
+DDM_TOKEN_BUSCA = os.getenv("DDM_TOKEN_BUSCA", "").strip()
 DDM_TIMEOUT_SECONDS = float(os.getenv("DDM_TIMEOUT_SECONDS", "7.0"))
 DDM_BASE_URL = "https://www.ddmacordos.com"
 DDM_CALCULA  = f"{DDM_BASE_URL}/ws_ddm/ws/CalculaDebitos.php"

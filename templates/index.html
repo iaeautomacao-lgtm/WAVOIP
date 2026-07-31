@@ -3,8 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CallOps — DDM</title>
+    <title>DDM WHATSAPP — DDM</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script>
+      (function() {
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+      })();
+    </script>
     <style>
       :root {
         /* DDM Design System Tokens */
@@ -14,17 +20,17 @@
         --brand-bg:       #FFF3EC;
         --brand-border:   #FFE0D1;
 
-        /* Core Palette */
-        --bg:             #F4F4F6;
+        /* Core Palette (Clean Slate/Tailwind style light) */
+        --bg:             #f8fafc;
         --surface:        #FFFFFF;
-        --surface2:       #FAF7F4;
-        --surface3:       #E8E8EC;
-        --border:         #E8E8EC;
-        --border2:        #BFBFC1;
-        --text:           #1F1F1F;
-        --text2:          #3D3D3D;
-        --muted:          #939598;
-        --muted2:         #BFBFC1;
+        --surface2:       #f1f5f9;
+        --surface3:       #e2e8f0;
+        --border:         #e2e8f0;
+        --border2:        #94a3b8;
+        --text:           #0f172a;
+        --text2:          #334155;
+        --muted:          #64748b;
+        --muted2:         #cbd5e1;
 
         /* Status Semantics */
         --green:          #2BAE66;
@@ -47,15 +53,53 @@
         --radius-xl:      32px;
         --radius-pill:    999px;
 
-        /* Shadows */
-        --shadow-sm:      0 1px 2px rgba(20,16,12,.06);
-        --shadow-md:      0 8px 24px rgba(20,16,12,.08);
-        --shadow-lg:      0 24px 60px rgba(20,16,12,.12);
-        --shadow-orange:  0 12px 30px rgba(255,87,6,.28);
+        /* Premium Soft Diffuse Shadows */
+        --shadow-sm:      0 1px 2px rgba(0,0,0,.03);
+        --shadow-md:      0 4px 6px -1px rgb(0 0 0 / 0.03), 0 2px 4px -2px rgb(0 0 0 / 0.03);
+        --shadow-lg:      0 10px 15px -3px rgb(0 0 0 / 0.04), 0 4px 6px -4px rgb(0 0 0 / 0.04);
+        --shadow-orange:  0 8px 20px rgba(255,87,6,.2);
 
         /* Typography */
         --poppins:        'Poppins', system-ui, sans-serif;
         --inter:          'Inter', system-ui, -apple-system, sans-serif;
+      }
+
+      [data-theme="dark"] {
+        /* Core Palette (Dark Mode) */
+        --bg:             #090D16;
+        --surface:        #101726;
+        --surface2:       #182235;
+        --surface3:       #1E293B;
+        --border:         #1E293B;
+        --border2:        #334155;
+        --text:           #F8FAFC;
+        --text2:          #E2E8F0;
+        --muted:          #94A3B8;
+        --muted2:         #475569;
+        
+        --brand-bg:       rgba(255, 87, 6, 0.1);
+        --brand-border:   rgba(255, 87, 6, 0.25);
+        
+        --shadow-sm:      0 1px 2px rgba(0,0,0,.3);
+        --shadow-md:      0 4px 6px -1px rgba(0,0,0,.4), 0 2px 4px -2px rgba(0,0,0,.4);
+        --shadow-lg:      0 10px 15px -3px rgba(0,0,0,.5), 0 4px 6px -4px rgba(0,0,0,.5);
+        --shadow-orange:  0 8px 20px rgba(255,87,6,.15);
+      }
+
+      /* Custom Scrollbar styling */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--bg);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: var(--radius-pill);
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--border2);
       }
 
       *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -175,8 +219,7 @@
       }
 
       /* ── KPI STRIP ── */
-      .kpi-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 24px; }
-      @media(max-width:900px){ .kpi-strip{ grid-template-columns: repeat(2,1fr); } }
+      .kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
       .kpi {
         background: var(--surface);
         border: 1px solid var(--border);
@@ -276,9 +319,10 @@
         padding: 8px 18px;
         border-radius: var(--radius-pill);
         cursor: pointer;
-        transition: all .15s ease;
+        transition: all .2s ease-in-out;
         border: none;
         letter-spacing: .02em;
+        outline: none;
       }
       .btn-primary { 
         background: var(--brand); 
@@ -288,6 +332,7 @@
       .btn-primary:hover { 
         background: var(--brand-dark); 
         transform: translateY(-1px);
+        box-shadow: 0 8px 20px rgba(255,87,6,.3);
       }
       .btn-success { 
         background: var(--green); 
@@ -304,7 +349,7 @@
       }
       .btn-ghost {
         background: transparent;
-        border: 1.5px solid var(--border2);
+        border: 1.5px solid var(--border);
         color: var(--text);
       }
       .btn-ghost:hover { 
@@ -313,12 +358,12 @@
         background: var(--brand-bg);
       }
       .btn-danger {
-        background: transparent;
+        background: var(--red-bg);
         border: 1.5px solid var(--red-border);
         color: var(--red);
       }
       .btn-danger:hover { 
-        background: var(--red-bg); 
+        background: rgba(216, 54, 47, 0.15); 
       }
       .btn-warn { 
         background: var(--amber); 
@@ -340,20 +385,23 @@
       table { width: 100%; border-collapse: collapse; }
       thead tr { border-bottom: 1px solid var(--border); background: var(--bg); }
       thead th {
-        padding: 10px 16px;
+        padding: 12px 16px;
         text-align: left;
-        font-size: .7rem;
+        font-size: 11px;
         font-weight: 600;
-        letter-spacing: .04em;
+        letter-spacing: .08em;
         text-transform: uppercase;
-        color: var(--muted2);
+        color: var(--muted);
+        background: var(--surface2);
+        border-bottom: 1.5px solid var(--border);
+        font-family: var(--poppins);
       }
-      tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+      tbody tr { border-bottom: 1px solid var(--border); transition: background .2s ease-in-out; }
       tbody tr:last-child { border-bottom: none; }
-      tbody tr:hover { background: #FFF7F4; }
-      tbody td { padding: 10px 16px; font-size: .82rem; color: var(--text); vertical-align: middle; }
-      .td-mono { font-family: 'Inter', monospace; font-size: .72rem; color: var(--muted2); }
-      .td-dim  { color: var(--muted2); font-size: .78rem; }
+      tbody tr:hover { background: var(--brand-bg); }
+      tbody td { padding: 12px 16px; font-size: .82rem; color: var(--text); vertical-align: middle; }
+      .td-mono { font-family: 'JetBrains Mono', 'Inter', monospace; font-size: .78rem; color: var(--text); letter-spacing: -0.01em; }
+      .td-dim  { color: var(--muted); font-size: .78rem; }
 
       /* ── INLINE ACTIONS ── */
       .call-btn {
@@ -363,7 +411,7 @@
         background: var(--brand-bg);
         border: 1px solid var(--brand-border);
         color: var(--brand);
-        cursor: pointer; transition: all .15s;
+        cursor: pointer; transition: all .2s ease-in-out;
       }
       .call-btn:hover { background: rgba(255,87,6,.15); border-color: var(--brand); }
       .call-btn:disabled { opacity: .25; cursor: not-allowed; }
@@ -374,26 +422,27 @@
         background: var(--red-bg);
         border: 1px solid var(--red-border);
         color: var(--red);
-        cursor: pointer; transition: all .15s;
+        cursor: pointer; transition: all .2s ease-in-out;
       }
       .del-btn:hover { background: rgba(239,68,68,.18); }
 
       /* ── STATUS CHIPS ── */
       .cs {
-        display: inline-flex; align-items: center; gap: 5px;
+        display: inline-flex; align-items: center; gap: 6px;
         font-size: .68rem; font-weight: 600;
         padding: 3px 9px; border-radius: 9999px;
         letter-spacing: .02em;
+        transition: all .2s ease-in-out;
       }
-      .cs::before { content:''; width:5px; height:5px; border-radius:50%; flex-shrink: 0; }
-      .cs-ended    { background: var(--green-bg); color: var(--green); }
-      .cs-ended::before    { background: var(--green); }
-      .cs-failed   { background: var(--red-bg);   color: var(--red); }
+      .cs::before { content:''; width:6px; height:6px; border-radius:50%; flex-shrink: 0; }
+      .cs-ended    { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+      .cs-ended::before    { background: var(--green); box-shadow: 0 0 5px var(--green); animation: blink 2s infinite; }
+      .cs-failed   { background: var(--red-bg);   color: var(--red); border: 1px solid var(--red-border); }
       .cs-failed::before   { background: var(--red); }
-      .cs-in-progress { background: var(--brand-bg); color: var(--brand); }
-      .cs-in-progress::before { background: var(--brand); box-shadow: 0 0 5px var(--brand); animation: blink 1s infinite; }
-      .cs-queued   { background: rgba(100,116,139,.15); color: var(--muted2); }
-      .cs-queued::before   { background: var(--muted2); }
+      .cs-in-progress { background: var(--brand-bg); color: var(--brand); border: 1px solid var(--brand-border); }
+      .cs-in-progress::before { background: var(--brand); box-shadow: 0 0 6px var(--brand); animation: blink 1.2s infinite; }
+      .cs-queued   { background: var(--surface3); color: var(--muted); border: 1px solid var(--border); }
+      .cs-queued::before   { background: var(--muted); }
 
       /* ── PAGINAÇÃO ── */
       .pagination {
@@ -686,7 +735,7 @@
       }
       .chat-bubble.ai {
         align-self: flex-start;
-        background: #FFFFFF;
+        background: var(--surface2);
         color: var(--text);
         border: 1px solid var(--border);
         border-top-left-radius: 2px;
@@ -717,7 +766,7 @@
       <div style="padding: 22px 22px 18px; border-bottom: 1px solid var(--border);">
         <img src="/static/assets/logo.png" alt="Grupo DDM" style="height: 28px; width: auto; display: block;">
         <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px;">
-          <span style="font-family: var(--poppins); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text);">CallOps</span>
+          <span style="font-family: var(--poppins); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text);">DDM WHATSAPP</span>
           <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--brand); background: var(--brand-bg); padding: 2px 7px; border-radius: 999px; font-weight: 500;">v2.0</span>
         </div>
       </div>
@@ -735,10 +784,7 @@
           <span class="tab-icon">🕒</span>
           <span>Histórico</span>
         </div>
-        <div class="tab" data-tab="acordos">
-          <span class="tab-icon">✓</span>
-          <span>Acordos</span>
-        </div>
+
         <div class="tab" data-tab="monitor">
           <span class="tab-icon">🎛</span>
           <span>Monitor</span>
@@ -771,11 +817,14 @@
       <!-- HEADER -->
       <header>
         <div class="header-right">
-          <div id="user-info-bar" style="display:flex; align-items:center; gap:10px; margin-right:12px; font-size:12px; background:rgba(255,255,255,0.04); padding:4px 12px; border-radius:20px; border:1px solid var(--border);">
+          <div id="user-info-bar" style="display:flex; align-items:center; gap:10px; margin-right:12px; font-size:12px; background:var(--surface2); padding:4px 12px; border-radius:20px; border:1px solid var(--border);">
             <span style="color:var(--muted)">👤</span>
             <span id="user-display-name" style="font-weight:600; color:var(--text)">—</span>
             <button class="btn btn-ghost" style="padding:2px 8px; font-size:11px; color:var(--muted)" onclick="doLogout()">Sair 🚪</button>
           </div>
+          <button id="theme-toggle" class="btn btn-ghost" style="padding: 6px; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; border-color: var(--border2); transition: all 0.15s ease;" onclick="toggleTheme()" title="Alternar tema claro/escuro">
+            🌙
+          </button>
           <div class="status-pill">
             <div class="status-dot"></div>
             <span id="healthy-count">—</span>
@@ -887,30 +936,7 @@
       </div>
 
       <!-- ACORDOS -->
-      <div class="section" id="tab-acordos">
-        <div class="sec-head">
-          <span class="sec-title">Acordos Formalizados</span>
-          <div style="display:flex;gap:8px;align-items:center">
-            <button class="btn btn-primary" onclick="exportGlobalPdfReport()">📄 Exportar Relatório PDF</button>
-            <button class="btn btn-ghost" onclick="loadAcordos()">↻ &nbsp;Atualizar</button>
-          </div>
-        </div>
-        <div class="table-card">
-          <table>
-            <thead>
-              <tr><th>Cliente</th><th>CPF</th><th>Instituição</th><th>Valor / Pagto</th><th>Acordo</th><th>E-mail</th><th>Data</th><th>Ações</th></tr>
-            </thead>
-            <tbody id="acordos-body">
-              <tr><td colspan="8"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="pagination">
-          <button class="btn btn-ghost" id="acordos-prev" onclick="acordosPage(-1)">← Anterior</button>
-          <span class="page-info" id="acordos-page-info">—</span>
-          <button class="btn btn-ghost" id="acordos-next" onclick="acordosPage(1)">Próxima →</button>
-        </div>
-      </div>
+
 
       <!-- MONITOR -->
       <div class="section" id="tab-monitor">
@@ -929,10 +955,10 @@
         <div class="table-card">
           <table>
             <thead>
-              <tr><th>CPF</th><th>Telefone</th><th>Status</th><th>SIP</th><th>Campanha</th><th>Iniciada</th></tr>
+              <tr><th>CPF</th><th>Telefone</th><th>Status</th><th>SIP</th><th>Campanha</th><th>Iniciada</th><th>Ações</th></tr>
             </thead>
             <tbody id="monitor-body">
-              <tr><td colspan="6"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
+              <tr><td colspan="7"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -1040,9 +1066,12 @@
 
         <div class="kpi-strip" id="dashboard-kpis">
           <div class="kpi brand"><div class="kpi-label">Campanhas ativas</div><div class="kpi-val" id="dash-active">0</div></div>
+          <div class="kpi blue"><div class="kpi-label">Total de Disparos</div><div class="kpi-val" id="dash-total-calls">0</div></div>
           <div class="kpi green"><div class="kpi-label">Atendidas</div><div class="kpi-val" id="dash-answered">0</div></div>
           <div class="kpi brand"><div class="kpi-label">Taxa de Alô</div><div class="kpi-val" id="dash-alo-rate">0%</div></div>
           <div class="kpi amber"><div class="kpi-label">Formalizadas</div><div class="kpi-val" id="dash-formalized">0</div></div>
+          <div class="kpi blue"><div class="kpi-label">E-mails Enviados</div><div class="kpi-val" id="dash-email-sent">0</div></div>
+          <div class="kpi green"><div class="kpi-label">Conversão (Efetividade)</div><div class="kpi-val" id="dash-conv-rate">0%</div></div>
           <div class="kpi red"><div class="kpi-label">Erros</div><div class="kpi-val" id="dash-errors">0</div></div>
         </div>
 
@@ -1146,24 +1175,27 @@
 
   <!-- Modal Criar Usuário DDM -->
   <div class="overlay" id="new-user-modal">
-    <div class="modal">
-      <div class="modal-title">👤 Criar Novo Usuário DDM</div>
+    <div class="modal" style="max-width:400px">
+      <div class="modal-title">👤 Adicionar à Lista de Acesso</div>
       <div id="new-user-error" style="display:none; padding:10px; border-radius:6px; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#f87171; font-size:12px; margin-bottom:12px;"></div>
       <div class="modal-field">
         <span class="modal-label">Nome Completo</span>
         <input type="text" class="modal-input" id="new-user-name" placeholder="Ex: Maria Silva">
       </div>
       <div class="modal-field">
-        <span class="modal-label">E-mail DDM (@ddm.adv.br ou @grupoddm.ia.br)</span>
-        <input type="email" class="modal-input" id="new-user-email" placeholder="nome@ddm.adv.br">
+        <span class="modal-label">E-mail DDM (@grupoddm.com.br, @ddm.adv.br ou @grupoddm.ia.br)</span>
+        <input type="email" class="modal-input" id="new-user-email" placeholder="nome@grupoddm.com.br">
       </div>
       <div class="modal-field">
-        <span class="modal-label">Senha Inicial (mínimo 6 caracteres)</span>
-        <input type="password" class="modal-input" id="new-user-password" placeholder="••••••••">
+        <span class="modal-label">Perfil de Acesso</span>
+        <select class="modal-select" id="new-user-role" style="width:100%; padding:10px; border-radius:6px; background:#0f172a; border:1px solid #334155; color:white;">
+          <option value="admin">Administrador</option>
+          <option value="user">Usuário Padrão</option>
+        </select>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="closeNewUserModal()">Cancelar</button>
-        <button class="btn btn-primary" onclick="submitCreateUser()">Criar Conta</button>
+        <button class="btn btn-primary" onclick="submitCreateUser()">Adicionar à Lista</button>
       </div>
     </div>
   </div>
@@ -1179,68 +1211,36 @@
         </div>
       </div>
 
-      <!-- SELETOR DE MODO: ENTRAR / CRIAR CONTA -->
-      <div style="display:flex; background:#0f172a; border-radius:8px; padding:4px; margin-bottom:20px; border:1px solid #1e293b;">
-        <button type="button" id="tab-btn-login" onclick="toggleAuthMode('login')" style="flex:1; padding:8px; border:none; background:linear-gradient(135deg, #ff5706, #ea580c); color:white; font-weight:700; border-radius:6px; font-size:13px; cursor:pointer; transition:all 0.2s;">Entrar</button>
-        <button type="button" id="tab-btn-register" onclick="toggleAuthMode('register')" style="flex:1; padding:8px; border:none; background:transparent; color:#94a3b8; font-weight:600; border-radius:6px; font-size:13px; cursor:pointer; transition:all 0.2s;">Criar Conta DDM</button>
-      </div>
-      
       <div id="login-alert" style="display:none; padding:12px; border-radius:8px; font-size:13px; margin-bottom:18px; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#f87171;"></div>
       
       <form id="login-form" onsubmit="handleAuthFormSubmit(event)">
-        <!-- CAMPO NOME (EXIBIDO APENAS NO MODO CRIAR CONTA) -->
-        <div id="group-auth-name" style="display:none; margin-bottom:16px;">
-          <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:6px;">Nome Completo</label>
-          <input type="text" id="auth-name" placeholder="Ex: Carlos Eduardo" style="width:100%; padding:12px 14px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:white; font-size:14px; outline:none;">
-        </div>
-
-        <div style="margin-bottom:16px;">
-          <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:6px;">E-mail DDM (@grupoddm.com.br, @ddm.adv.br ou @grupoddm.ia.br)</label>
+        <div style="margin-bottom:20px;">
+          <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:8px;">E-mail Corporativo</label>
           <input type="email" id="login-email" required placeholder="seu.nome@grupoddm.com.br" style="width:100%; padding:12px 14px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:white; font-size:14px; outline:none;">
-        </div>
-        
-        <div style="margin-bottom:24px;">
-          <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:6px;">Senha de Acesso</label>
-          <input type="password" id="login-password" required placeholder="••••••••" oninput="updatePasswordStrength(this.value)" style="width:100%; padding:12px 14px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:white; font-size:14px; outline:none;">
-          
-          <!-- BARRA DE FORÇA DA SENHA & REQUISITOS AO VIVO -->
-          <div id="password-strength-box" style="display:none; margin-top:10px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; margin-bottom:4px;">
-              <span style="color:#94a3b8;">Força da Senha:</span>
-              <span id="password-strength-label" style="font-weight:700; color:#ef4444;">Muito Fraca</span>
-            </div>
-            <div style="width:100%; height:6px; background:#1e293b; border-radius:3px; overflow:hidden; margin-bottom:8px;">
-              <div id="password-strength-bar" style="width:0%; height:100%; background:#ef4444; transition:all 0.3s;"></div>
-            </div>
-            <div style="font-size:11px; color:#64748b; line-height:1.6; display:flex; flex-direction:column; gap:2px;">
-              <div id="req-length" style="color:#ef4444;">✖ Mínimo 8 caracteres</div>
-              <div id="req-upper" style="color:#ef4444;">✖ Pelo menos 1 letra maiúscula (A-Z)</div>
-              <div id="req-special" style="color:#ef4444;">✖ Pelo menos 1 caractere especial (@, #, $, !, %, etc.)</div>
-              <div id="req-number" style="color:#ef4444;">✖ Pelo menos 1 número (0-9)</div>
-            </div>
+          <div style="font-size:11px; color:#64748b; margin-top:6px; line-height:1.4;">
+            * Acesso restrito a colaboradores autorizados na lista de acesso.
           </div>
         </div>
-
         
-        <button type="submit" id="btn-login-submit" style="width:100%; padding:12px; background:linear-gradient(135deg, #ff5706, #ea580c); border:none; border-radius:8px; color:white; font-weight:700; font-size:14px; cursor:pointer; box-shadow:0 4px 12px rgba(255,87,6,0.3);">Entrar no Sistema</button>
+        <button type="submit" id="btn-login-submit" style="width:100%; padding:12px; background:linear-gradient(135deg, #ff5706, #ea580c); border:none; border-radius:8px; color:white; font-weight:700; font-size:14px; cursor:pointer; box-shadow:0 4px 12px rgba(255,87,6,0.3);">Receber Código por E-mail</button>
       </form>
       
       <!-- FORMULÁRIO DE CÓDIGO DE VERIFICAÇÃO OTP (6 DÍGITOS) -->
       <div id="otp-step-container" style="display:none; text-align:center;">
         <div style="background:rgba(255,87,6,0.1); border:1px solid rgba(255,87,6,0.3); border-radius:10px; padding:12px; margin-bottom:18px; font-size:13px; color:#f8fafc; line-height:1.4;">
-          🔒 Enviamos um código de 6 dígitos para o seu e-mail DDM:<br>
+          🔒 Enviamos um código de acesso de 6 dígitos para o seu e-mail DDM:<br>
           <strong id="otp-email-display" style="color:#ff5706; font-family:monospace;">—</strong>
         </div>
         
         <form onsubmit="handleOtpVerifySubmit(event)">
           <div style="margin-bottom:20px;">
-            <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:8px;">Digite o Código de 6 Dígitos do E-mail</label>
+            <label style="display:block; font-size:12px; font-weight:600; color:#94a3b8; margin-bottom:8px;">Digite o Código do E-mail</label>
             <input type="text" id="otp-code-input" maxlength="6" pattern="[0-9]{6}" required placeholder="000000" style="width:180px; padding:12px; font-size:24px; font-weight:800; letter-spacing:6px; text-align:center; background:#0f172a; border:2px dashed #ff5706; border-radius:10px; color:#ffffff; outline:none;">
           </div>
           
-          <button type="submit" id="btn-otp-submit" style="width:100%; padding:12px; background:linear-gradient(135deg, #ff5706, #ea580c); border:none; border-radius:8px; color:white; font-weight:700; font-size:14px; cursor:pointer; box-shadow:0 4px 12px rgba(255,87,6,0.3); margin-bottom:12px;">Confirmar e Ativar Conta</button>
+          <button type="submit" id="btn-otp-submit" style="width:100%; padding:12px; background:linear-gradient(135deg, #ff5706, #ea580c); border:none; border-radius:8px; color:white; font-weight:700; font-size:14px; cursor:pointer; box-shadow:0 4px 12px rgba(255,87,6,0.3); margin-bottom:12px;">Confirmar e Entrar</button>
           
-          <button type="button" class="btn btn-ghost" style="font-size:12px; color:#94a3b8;" onclick="toggleAuthMode('register')">← Voltar</button>
+          <button type="button" class="btn btn-ghost" style="font-size:12px; color:#94a3b8;" onclick="resetAuthForm()">← Voltar</button>
         </form>
       </div>
 
@@ -1331,6 +1331,27 @@
 
   <script>
   const API = '';
+
+  function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateThemeButton(newTheme);
+  }
+
+  function updateThemeButton(theme) {
+    const btn = document.getElementById('theme-toggle');
+    if (btn) {
+      btn.innerHTML = theme === 'dark' ? '☀️' : '🌙';
+    }
+  }
+
+  window.addEventListener('load', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    updateThemeButton(currentTheme);
+  });
+
   const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[ch]));
@@ -1360,7 +1381,7 @@
       document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
       if (tab.dataset.tab === 'contacts'  && !contactsLoaded)  loadContacts();
       if (tab.dataset.tab === 'calls'     && !callsLoaded)     loadCalls();
-      if (tab.dataset.tab === 'acordos'   && !acordosLoaded)   loadAcordos();
+
       if (tab.dataset.tab === 'campaigns' && !campaignsLoaded) loadCampaigns();
       if (tab.dataset.tab === 'monitor')  { loadMonitor(); startMonitor(); }
       if (tab.dataset.tab === 'dashboard') loadDashboard();
@@ -1498,27 +1519,27 @@
     document.getElementById('login-overlay').style.display = 'flex';
   }
 
+  function resetAuthForm() {
+    document.getElementById('login-form').style.display = 'block';
+    document.getElementById('otp-step-container').style.display = 'none';
+    document.getElementById('login-alert').style.display = 'none';
+  }
+
   async function handleAuthFormSubmit(e) {
     e.preventDefault();
     const email = document.getElementById('login-email').value.trim();
-    const password = document.getElementById('login-password').value.trim();
-    const nameInput = document.getElementById('auth-name');
-    const name = nameInput ? nameInput.value.trim() : '';
     const alertEl = document.getElementById('login-alert');
     const submitBtn = document.getElementById('btn-login-submit');
 
     alertEl.style.display = 'none';
     submitBtn.disabled = true;
-    submitBtn.textContent = currentAuthMode === 'register' ? 'Enviando Código...' : 'Autenticando...';
-
-    const endpoint = currentAuthMode === 'register' ? '/api/auth/send-otp' : '/api/auth/login';
-    const payload = currentAuthMode === 'register' ? { email, password, name } : { email, password };
+    submitBtn.textContent = 'Enviando Código...';
 
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ email })
       });
       let data = {};
       try {
@@ -1527,20 +1548,12 @@
         data = { ok: false, error: 'O servidor retornou uma resposta inesperada. Verifique se clicou em RESTART no Setup Python App do cPanel.' };
       }
       if (res.ok && data.ok) {
-        if (currentAuthMode === 'register' && data.otp_required) {
-          pendingOtpEmail = email;
-          document.getElementById('otp-email-display').textContent = email;
-          document.getElementById('login-form').style.display = 'none';
-          document.getElementById('otp-step-container').style.display = 'block';
-          document.getElementById('otp-code-input').value = '';
-          toast('Código de 6 dígitos enviado para seu e-mail DDM!');
-        } else {
-          currentUser = data.user;
-          document.getElementById('user-display-name').textContent = currentUser.name || currentUser.email;
-          document.getElementById('login-overlay').style.display = 'none';
-          toast('Login efetuado com sucesso!');
-          loadLines();
-        }
+        pendingOtpEmail = email;
+        document.getElementById('otp-email-display').textContent = email;
+        document.getElementById('login-form').style.display = 'none';
+        document.getElementById('otp-step-container').style.display = 'block';
+        document.getElementById('otp-code-input').value = '';
+        toast('Código de acesso enviado para seu e-mail DDM!');
       } else {
         alertEl.textContent = data.error || 'Erro ao processar requisição no servidor.';
         alertEl.style.display = 'block';
@@ -1549,9 +1562,8 @@
       alertEl.textContent = 'Erro de conexão com o servidor. Verifique se clicou em RESTART no cPanel.';
       alertEl.style.display = 'block';
     } finally {
-
       submitBtn.disabled = false;
-      submitBtn.textContent = currentAuthMode === 'register' ? 'Enviar Código para E-mail DDM' : 'Entrar no Sistema';
+      submitBtn.textContent = 'Receber Código por E-mail';
     }
   }
 
@@ -1576,10 +1588,10 @@
         currentUser = data.user;
         document.getElementById('user-display-name').textContent = currentUser.name || currentUser.email;
         document.getElementById('login-overlay').style.display = 'none';
-        toast('Conta DDM verificada e ativada com sucesso! 🚀');
+        toast('Login efetuado com sucesso! 🚀');
         loadLines();
       } else {
-        alertEl.textContent = data.error || 'Código inválido.';
+        alertEl.textContent = data.error || 'Código incorreto ou expirado.';
         alertEl.style.display = 'block';
       }
     } catch (err) {
@@ -1587,7 +1599,7 @@
       alertEl.style.display = 'block';
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Confirmar e Ativar Conta';
+      submitBtn.textContent = 'Confirmar e Entrar';
     }
   }
 
@@ -1645,7 +1657,7 @@
   function openNewUserModal() {
     document.getElementById('new-user-name').value = '';
     document.getElementById('new-user-email').value = '';
-    document.getElementById('new-user-password').value = '';
+    document.getElementById('new-user-role').value = 'admin';
     document.getElementById('new-user-error').style.display = 'none';
     document.getElementById('new-user-modal').style.display = 'flex';
   }
@@ -1657,11 +1669,11 @@
   async function submitCreateUser() {
     const name = document.getElementById('new-user-name').value.trim();
     const email = document.getElementById('new-user-email').value.trim();
-    const password = document.getElementById('new-user-password').value.trim();
+    const role = document.getElementById('new-user-role').value.trim();
     const errEl = document.getElementById('new-user-error');
 
     errEl.style.display = 'none';
-    if (!name || !email || !password) {
+    if (!name || !email) {
       errEl.textContent = 'Preencha todos os campos obrigatórios.';
       errEl.style.display = 'block';
       return;
@@ -1671,7 +1683,7 @@
       const res = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password })
+        body: JSON.stringify({ name, email, role })
       });
       const data = await res.json();
       if (res.ok && data.ok) {
@@ -1749,7 +1761,7 @@
     const grid = document.getElementById('lines-grid');
     if (!lines.length) { grid.innerHTML = '<div class="loader">Nenhuma linha encontrada.</div>'; return; }
     grid.innerHTML = lines.map(l => `
-      <div class="line-card ${l.paused ? 'paused' : l.healthy ? 'healthy' : l.status === 'connecting' ? 'warn' : 'down'}">
+      <div class="line-card ${l.paused ? 'paused' : l.healthy ? 'healthy' : (l.status === 'connecting' || (l.status === 'open' && !l.configured) ? 'warn' : 'down')}">
         <div class="top-bar"></div>
         <div class="line-name">${escapeHtml(l.name || 'Dispositivo')}</div>
         <div class="line-number ${!l.phone ? 'empty' : ''}">${l.phone ? escapeHtml(String(l.phone).replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3')) : 'Sem número'}</div>
@@ -1767,10 +1779,13 @@
         <div class="line-slot-meta">Vapi: <b>${escapeHtml(l.phone_number_short || '—')}</b></div>
         <div class="line-slot-meta" title="${escapeHtml(l.token || '')}">Token: <b>${escapeHtml((l.token || '').slice(0, 8))}...</b></div>
         ${l.pause_reason ? `<div class="line-slot-meta">Motivo: ${escapeHtml(l.pause_reason)}</div>` : ''}
-        <div class="line-controls">
+        <div class="line-controls" style="display:flex;flex-direction:column;gap:6px">
           ${l.paused
             ? `<button class="call-btn" onclick="resumeLine(${jsArg(l.token)})">Retomar</button>`
             : `<button class="del-btn" onclick="pauseLine(${jsArg(l.token)}, ${jsArg(l.name || 'linha')})">Pausar</button>`}
+          ${l.status !== 'open'
+            ? `<button class="call-btn" style="background:#10b981;border-color:#10b981;color:#fff;margin-top:6px" onclick="openWavoipPairModal(${jsArg(l.token)}, ${jsArg(l.name || 'linha')})">🔌 Conectar / Parear</button>`
+            : `<button class="del-btn" style="background:#ef4444;border-color:#ef4444;color:#fff;margin-top:6px" onclick="disconnectWavoipLine(${jsArg(l.token)})">🔌 Desconectar WhatsApp</button>`}
         </div>
       </div>
     `).join('');
@@ -2258,7 +2273,7 @@
     document.getElementById('mon-atendido').textContent  = stats.atendido;
     document.getElementById('mon-erro').textContent      = stats.erro;
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6"><div class="loader">Nenhuma chamada ativa.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7"><div class="loader">Nenhuma chamada ativa.</div></td></tr>';
       return;
     }
     const statusMap = {
@@ -2279,6 +2294,11 @@
         <td class="td-dim">${escapeHtml(r.line_name || '—')}</td>
         <td class="td-dim">${escapeHtml(r.campaign)}</td>
         <td class="td-dim">${date}</td>
+        <td>
+          ${r.transcript || r.recording_url
+            ? `<button class="call-btn" onclick="openDetails('${r.id}', '${escapeHtml(r.cpf || 'Chamada')}', ${jsArg(r.recording_url)}, ${jsArg(r.transcript)})">👁 Conversa</button>`
+            : '—'}
+        </td>
       </tr>`;
     }).join('');
   }
@@ -2565,11 +2585,17 @@
 
   function renderDashboard(data) {
     const totals = data.totals || {};
-    document.getElementById('dash-active').textContent     = totals.campaigns_active || 0;
-    document.getElementById('dash-answered').textContent   = totals.answered || 0;
-    document.getElementById('dash-alo-rate').textContent   = `${totals.alo_rate ?? 0}%`;
-    document.getElementById('dash-formalized').textContent = totals.formalized || 0;
-    document.getElementById('dash-errors').textContent     = totals.errors || 0;
+    document.getElementById('dash-active').textContent      = totals.campaigns_active || 0;
+    document.getElementById('dash-total-calls').textContent = totals.calls || 0;
+    document.getElementById('dash-answered').textContent    = totals.answered || 0;
+    document.getElementById('dash-alo-rate').textContent    = `${totals.alo_rate ?? 0}%`;
+    document.getElementById('dash-formalized').textContent  = totals.formalized || 0;
+    document.getElementById('dash-email-sent').textContent   = totals.email_sent || 0;
+
+    const conv = totals.answered > 0 ? ((totals.formalized / totals.answered) * 100).toFixed(1) : '0.0';
+    document.getElementById('dash-conv-rate').textContent   = `${conv}%`;
+
+    document.getElementById('dash-errors').textContent      = totals.errors || 0;
     renderDashboardAlerts();
     renderCampaignViz(data.campaigns || []);
     renderDashboardGroupsReport(data.groups_report || []);
@@ -2629,14 +2655,14 @@
     }
     const maxTotal = rows.reduce((m, r) => Math.max(m, r.total || 0), 1);
     const bar = (val, max, cls) => {
-      if (!max) return '<div class="hv" style="height:6px;background:rgba(255,255,255,.08);"></div>';
+      if (!max) return '<div class="hv" style="height:8px;background:var(--surface3);border-radius:999px;margin: 4px 0;"></div>';
       const pct = Math.round((val / max) * 100);
-      const color = cls === 'answered' ? 'var(--green)' : cls === 'formalized' ? 'var(--brand)' : cls === 'errors' ? '#e74c3c' : '#d1d5db';
-      return `<div style="display:flex;align-items:center;gap:8px">
-        <div class="hv" style="flex:1;height:8px;background:rgba(255,255,255,.06);border-radius:999px;overflow:hidden">
+      const color = cls === 'answered' ? 'var(--green)' : cls === 'formalized' ? 'var(--brand)' : cls === 'errors' ? 'var(--red)' : 'var(--border2)';
+      return `<div style="display:flex;align-items:center;gap:8px;margin: 4px 0;">
+        <div class="hv" style="flex:1;height:8px;background:var(--surface3);border-radius:999px;overflow:hidden">
           <div style="width:${pct}%;background:${color};height:100%;border-radius:999px;opacity:.9"></div>
         </div>
-        <span class="td-dim" style="width:28px;text-align:right">${val}</span>
+        <span class="td-mono" style="width:28px;text-align:right">${val}</span>
       </div>`;
     };
     wrap.innerHTML = rows.map(c => {
@@ -2646,14 +2672,14 @@
       const errors = c.errors || 0;
       const total = c.total || 0;
       const aloRate = c.alo_rate || 0;
-      return `<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);padding:10px 12px;border-radius:10px">
+      return `<div style="background:var(--surface2);border:1px solid var(--border);padding:12px;border-radius:10px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
           <div style="font-weight:600;font-size:.92rem;color:var(--text)">${name}</div>
           <div class="td-dim" style="display:flex; gap:10px;font-size:.8rem">
-            <span>Total <b style="color:var(--text)">${total}</b></span>
-            <span>Atendidas <b style="color:var(--green)">${answered} (${aloRate}%)</b></span>
-            <span>Formalizadas <b style="color:var(--brand)">${formalized}</b></span>
-            <span>Erros <b style="color:#e74c3c">${errors}</b></span>
+            <span>Total <b style="color:var(--text);font-family:'JetBrains Mono'">${total}</b></span>
+            <span>Atendidas <b style="color:var(--green);font-family:'JetBrains Mono'">${answered} (${aloRate}%)</b></span>
+            <span>Formalizadas <b style="color:var(--brand);font-family:'JetBrains Mono'">${formalized}</b></span>
+            <span>Erros <b style="color:var(--red);font-family:'JetBrains Mono'">${errors}</b></span>
           </div>
         </div>
         ${bar(answered, maxTotal, 'answered')}
@@ -3435,7 +3461,7 @@
           if (ev.sessionId === sessionId || (ev.sessions && ev.sessions.find(s => s.id === sessionId))) {
             const sess = ev.sessions ? ev.sessions.find(s => s.id === sessionId) : null;
             if (ev.paired || (sess && (sess.paired || sess.state === 'open'))) {
-              qrContainer.innerHTML = `<div style="color:#10b981;font-weight:700;font-size:16px;">✅ CHIP CONECTADO COM SUCESSO!</div><div class="td-dim" style="margin-top:4px">O chip já está ativo e disponível para discagem no CallOps.</div>`;
+              qrContainer.innerHTML = `<div style="color:#10b981;font-weight:700;font-size:16px;">✅ CHIP CONECTADO COM SUCESSO!</div><div class="td-dim" style="margin-top:4px">O chip já está ativo e disponível para discagem no DDM WHATSAPP.</div>`;
               if (qrEventSource) qrEventSource.close();
               if (wacallsPollTimer) clearInterval(wacallsPollTimer);
               loadWaCallsSessions();
@@ -3463,7 +3489,7 @@
         const sess = sessions.find(s => s.id === sessionId || s.name === sessionId);
         if (sess) {
           if (sess.status === 'connected' || sess.status === 'online' || sess.paired || sess.state === 'open') {
-            qrContainer.innerHTML = `<div style="color:#10b981;font-weight:700;font-size:16px;">✅ CHIP CONECTADO COM SUCESSO!</div><div class="td-dim" style="margin-top:4px">O chip já está ativo e disponível para discagem no CallOps.</div>`;
+            qrContainer.innerHTML = `<div style="color:#10b981;font-weight:700;font-size:16px;">✅ CHIP CONECTADO COM SUCESSO!</div><div class="td-dim" style="margin-top:4px">O chip já está ativo e disponível para discagem no DDM WHATSAPP.</div>`;
             if (qrEventSource) qrEventSource.close();
             clearInterval(wacallsPollTimer);
             loadWaCallsSessions();
@@ -3497,6 +3523,116 @@
       const json = await res.json().catch(() => ({ ok: true }));
       toast('✓ Linha desconectada', 'ok');
       loadWaCallsSessions();
+    } catch(e) {
+      toast(`Erro: ${e.message}`, 'err');
+    }
+  }
+
+  /* ── WAVOIP PAIRING & QR CODE MANAGER ── */
+  let wavoipPollTimer = null;
+  let wavoipActiveToken = null;
+
+  function openWavoipPairModal(token, name) {
+    wavoipActiveToken = token;
+    document.getElementById('wavoip-device-name-modal').textContent = name || 'Dispositivo Wavoip';
+    const qrContainer = document.getElementById('wavoip-qr-container');
+    qrContainer.innerHTML = '<div class="td-dim">Clique em "⚡ Gerar QR Code" para iniciar o pareamento no Wavoip.</div>';
+    
+    const actionBtn = document.getElementById('wavoip-modal-action-btn');
+    actionBtn.disabled = false;
+    actionBtn.style.display = 'inline-block';
+    
+    document.getElementById('wavoip-modal').classList.add('open');
+  }
+
+  function closeWavoipModal() {
+    document.getElementById('wavoip-modal').classList.remove('open');
+    if (wavoipPollTimer) clearInterval(wavoipPollTimer);
+    loadLines(); // Refresh lines to show updated status
+  }
+
+  async function startWavoipPairing() {
+    if (!wavoipActiveToken) return;
+    
+    const qrContainer = document.getElementById('wavoip-qr-container');
+    const actionBtn = document.getElementById('wavoip-modal-action-btn');
+    
+    actionBtn.disabled = true;
+    qrContainer.innerHTML = '<div class="loader"><div class="spin"></div>Iniciando dispositivo Wavoip...</div>';
+    
+    try {
+      // Step 1: Tell backend to start/restart the device
+      const res = await fetch(`${API}/api/lines/${wavoipActiveToken}/connect`, { method: 'POST' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Erro ao iniciar dispositivo.');
+      
+      // Step 2: Hide the action button and start polling for QR code
+      actionBtn.style.display = 'none';
+      pollWavoipQR(wavoipActiveToken);
+    } catch (e) {
+      actionBtn.disabled = false;
+      qrContainer.innerHTML = `<div style="color:var(--red);font-weight:600">Erro: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  function pollWavoipQR(token) {
+    if (wavoipPollTimer) clearInterval(wavoipPollTimer);
+    const qrContainer = document.getElementById('wavoip-qr-container');
+    
+    let consecutiveErrors = 0;
+    
+    async function checkQR() {
+      try {
+        const res = await fetch(`${API}/api/lines/${token}/qr`);
+        const json = await res.json();
+        
+        if (json.ok && json.status === 'open' && json.paired) {
+          // Device is already paired/connected!
+          qrContainer.innerHTML = `<div style="color:#10b981;font-weight:700;font-size:16px;">✅ LINHA CONECTADA COM SUCESSO!</div><div class="td-dim" style="margin-top:4px">O dispositivo Wavoip já está ativo e operacional.</div>`;
+          clearInterval(wavoipPollTimer);
+          return;
+        }
+        
+        if (json.ok && json.data && json.data.result) {
+          // QR code string received!
+          consecutiveErrors = 0;
+          const qrVal = json.data.result;
+          const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrVal)}`;
+          qrContainer.innerHTML = `
+            <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--brand)">ABRA O WHATSAPP DA SUA OPERAÇÃO E ESCANEIE:</div>
+            <img src="${qrImgUrl}" style="width:240px;height:240px;border-radius:12px;border:3px solid var(--brand);background:#fff;padding:8px;" />
+            <div class="td-dim" style="margin-top:8px">Aguardando leitura no celular...</div>
+          `;
+        } else {
+          // If response is not ok or result not ready yet
+          const msg = json.data?.message || 'Aguardando inicialização do dispositivo...';
+          qrContainer.innerHTML = `<div class="loader"><div class="spin"></div>${escapeHtml(msg)}</div>`;
+        }
+      } catch (e) {
+        consecutiveErrors++;
+        if (consecutiveErrors > 15) {
+          qrContainer.innerHTML = `<div style="color:var(--red);font-weight:600">Erro ao parear: conexão perdida.</div>`;
+          clearInterval(wavoipPollTimer);
+        }
+      }
+    }
+    
+    checkQR();
+    wavoipPollTimer = setInterval(checkQR, 3000);
+  }
+
+  async function disconnectWavoipLine(token) {
+    if (!confirm('Deseja realmente desconectar o WhatsApp desta linha?')) return;
+    toast('Desconectando WhatsApp...', 'warn');
+    try {
+      const res = await fetch(`${API}/api/lines/${token}/disconnect`, { method: 'POST' });
+      const json = await res.json();
+      if (json.ok) {
+        toast('✓ WhatsApp desconectado', 'ok');
+        loadLines();
+      } else {
+        throw new Error(json.error || 'Erro ao desconectar.');
+      }
     } catch(e) {
       toast(`Erro: ${e.message}`, 'err');
     }
@@ -3786,6 +3922,23 @@
       <div class="modal-footer">
         <button class="btn btn-primary" onclick="generateWaCallsQR()">⚡ Gerar QR Code</button>
         <button class="btn btn-ghost" onclick="closeWaCallsModal()">Concluir / Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL WAVOIP QR CODE -->
+  <div class="overlay" id="wavoip-modal">
+    <div class="modal" style="width:440px">
+      <div class="modal-title">📞 Parear Linha Wavoip (SIP)</div>
+      <div style="font-size: 13px; margin-bottom: 12px; color: var(--text-muted);" id="wavoip-session-info">
+        Dispositivo: <strong id="wavoip-device-name-modal">...</strong>
+      </div>
+      <div style="text-align:center;margin:16px 0;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;" id="wavoip-qr-container">
+        <div class="td-dim">Clique em "⚡ Gerar QR Code" para iniciar o pareamento no Wavoip.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="wavoip-modal-action-btn" onclick="startWavoipPairing()">⚡ Gerar QR Code</button>
+        <button class="btn btn-ghost" onclick="closeWavoipModal()">Concluir / Fechar</button>
       </div>
     </div>
   </div>

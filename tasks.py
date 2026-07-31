@@ -75,7 +75,16 @@ def _dispatch_task(task_obj, args=None, kwargs=None, countdown=0):
     def runner():
         try:
             if hasattr(task_obj, "run"):
-                task_obj.run(*args, **kwargs)
+                import inspect
+                try:
+                    sig = inspect.signature(task_obj.run)
+                    params = list(sig.parameters.keys())
+                except Exception:
+                    params = []
+                if params and params[0] == "self" and len(args) < len(params):
+                    task_obj.run(None, *args, **kwargs)
+                else:
+                    task_obj.run(*args, **kwargs)
             elif callable(task_obj):
                 task_obj(*args, **kwargs)
         except Exception as ex:
@@ -1497,9 +1506,10 @@ def _check_campaign_completion(campaign_id: str):
 def _ddm_get_iddev(cpf: str) -> str:
     """Busca o iddev pelo CPF na API DDM."""
     cpf = _norm_cpf(cpf)
+    tk = DDM_TOKEN_BUSCA or DDM_TOKEN
     r = requests.get(
         f"{DDM_BASE}/calc/localiza_dev.php",
-        params={"tk": DDM_TOKEN, "cpf": cpf},
+        params={"tk": tk, "cpf": cpf},
         timeout=15,
     )
     r.raise_for_status()
@@ -1521,13 +1531,14 @@ def _ddm_get_email(cpf: str, iddev: str = "") -> str:
     iddev = str(iddev or "").strip()
     email_keys = {"email", "emaildev", "emaildevedor", "mail"}
 
-    if not DDM_TOKEN:
+    tk = DDM_TOKEN_BUSCA or DDM_TOKEN
+    if not tk:
         return ""
 
     try:
         res = requests.get(
             f"{DDM_BASE}/calc/localiza_dev.php",
-            params={"tk": DDM_TOKEN, "cpf": cpf},
+            params={"tk": tk, "cpf": cpf},
             timeout=15,
         )
         res.raise_for_status()
@@ -1555,24 +1566,28 @@ def _ddm_get_email(cpf: str, iddev: str = "") -> str:
 
 
 def _ddm_find_first(obj, names: set) -> str:
+    names_norm = {str(n).lower().replace("_", "").replace("-", "") for n in names}
+    return _ddm_find_first_recursive(obj, names_norm)
+
+def _ddm_find_first_recursive(obj, names_norm: set) -> str:
     if isinstance(obj, dict):
         for key, value in obj.items():
             key_norm = str(key).lower().replace("_", "").replace("-", "")
-            if key_norm in names:
-                if isinstance(value, str) and value.strip():
+            if key_norm in names_norm:
+                if isinstance(value, str) and value.strip() and value.strip().lower() != "none":
                     return value.strip()
                 if isinstance(value, (int, float)) and value:
                     return str(value)
                 if isinstance(value, dict):
-                    nested = _ddm_find_first(value, {"link", "url", "href"})
+                    nested = _ddm_find_first_recursive(value, {"link", "url", "href"})
                     if nested:
                         return nested
-            nested = _ddm_find_first(value, names)
+            nested = _ddm_find_first_recursive(value, names_norm)
             if nested:
                 return nested
     elif isinstance(obj, list):
         for item in obj:
-            nested = _ddm_find_first(item, names)
+            nested = _ddm_find_first_recursive(item, names_norm)
             if nested:
                 return nested
     return ""
@@ -1586,7 +1601,15 @@ def _valid_linha_digitavel(value: str) -> str:
 
 def _valid_payment_url(value: str) -> str:
     value = str(value or "").strip()
-    return value if re.match(r"^https?://", value, re.IGNORECASE) else ""
+    if not value or value.lower() == "none":
+        return ""
+    if re.match(r"^https?://", value, re.IGNORECASE):
+        return value
+    if value.lower().startswith("www."):
+        return "https://" + value
+    if "." in value and "/" in value and not " " in value:
+        return "https://" + value
+    return ""
 
 
 def _has_payment_info(link_boleto: str = "", link_pix: str = "", linha_dig: str = "") -> bool:
@@ -1757,12 +1780,12 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1, debito: dict = None) -> dict
         except Exception:
             pass
         
-    link_boleto = _ddm_find_first(data2, {"linkboleto", "boletourl", "urlboleto"})
-    link_pix    = _ddm_find_first(data2, {"linkpix", "pixurl", "urlpix", "qrcodepix", "qrcode"})
-    linha_dig   = _valid_linha_digitavel(_ddm_find_first(data2, {"linhaboleto", "linhadigitavel", "linhadig", "digitalline", "digitableline"}))
-    vencimento  = _ddm_find_first(data2, {"vencimento", "datavencto", "vencto", "due_date"})
-    nr_acordo   = _ddm_find_first(data2, {"nracordo", "nr_acordo", "acordo", "agreement_number"})
-    valor_ret   = _ddm_find_first(data2, {"valor", "valortotal", "valor_total", "valoracordo", "valor_acordo", "amount", "valorfinal", "valordocumento", "valor_documento", "val_total", "total"})
+    link_boleto = _ddm_find_first(data2, {"linkboleto", "boletourl", "urlboleto", "boleto", "link_boleto", "url_boleto"})
+    link_pix    = _ddm_find_first(data2, {"linkpix", "pixurl", "urlpix", "qrcodepix", "qrcode", "pix", "link_pix", "url_pix"})
+    linha_dig   = _valid_linha_digitavel(_ddm_find_first(data2, {"linhaboleto", "linhadigitavel", "linhadig", "digitalline", "digitableline", "linha_digitavel", "linha"}))
+    vencimento  = _ddm_find_first(data2, {"vencimento", "datavencto", "vencto", "due_date", "venc", "data_vencimento"})
+    nr_acordo   = _ddm_find_first(data2, {"nracordo", "nr_acordo", "acordo", "agreement_number", "numero_acordo", "idacordo"})
+    valor_ret   = _ddm_find_first(data2, {"valor", "valortotal", "valor_total", "valoracordo", "valor_acordo", "amount", "valorfinal", "valordocumento", "valor_documento", "val_total", "total", "valor_final"})
     
     return {
         "raw": data2,
@@ -1780,6 +1803,17 @@ def _ddm_formalizar_acordo(cpf: str, parc: int = 1, debito: dict = None) -> dict
     }
 
 
+def _normalize_url(url: str) -> str:
+    if not url:
+        return ""
+    url = url.strip()
+    # Remove eventuais aspas ou caracteres estranhos que possam vir da API
+    url = url.replace('"', '').replace("'", "")
+    if not url.lower().startswith(("http://", "https://")):
+        return f"https://{url}"
+    return url
+
+
 def _enviar_email_acordo(
     destinatario: str,
     nome: str,
@@ -1792,6 +1826,8 @@ def _enviar_email_acordo(
     vencimento: str,
 ):
     """Envia email de formalização de acordo para o devedor."""
+    link_pix = _normalize_url(link_pix)
+    link_boleto = _normalize_url(link_boleto)
     import socket
     import smtplib
     from email.mime.multipart import MIMEMultipart
@@ -1891,6 +1927,7 @@ def _enviar_email_acordo(
 </body>
 </html>"""
 
+    from email.utils import make_msgid
     msg = MIMEMultipart("alternative")
     subject = f"Acordo formalizado — {instituicao}"
     if DEBUG_EMAIL_RECIPIENT:
@@ -1898,6 +1935,7 @@ def _enviar_email_acordo(
     msg["Subject"] = subject
     msg["From"]    = SMTP_FROM
     msg["To"]      = destinatario
+    msg["Message-ID"] = make_msgid(domain=SMTP_FROM.split("@")[-1])
     msg.attach(MIMEText(html, "html"))
 
     target_hosts = []
@@ -1952,6 +1990,8 @@ def _enviar_whatsapp_acordo(
     vencimento: str,
 ) -> bool:
     """Envia mensagem de formalização de acordo para o WhatsApp do devedor via Wavoip API."""
+    link_pix = _normalize_url(link_pix)
+    link_boleto = _normalize_url(link_boleto)
     if not destinatario:
         logger.info("[WAVOIP_WPP] Telefone do destinatário não informado.")
         return False
@@ -2135,7 +2175,10 @@ def _disparar_notificacoes_acordo(dados: dict) -> dict:
     email           = dados.get("email", "")
     phone           = dados.get("phone") or dados.get("celular") or dados.get("telefone") or ""
     instituicao     = dados.get("instituicao", "")
-    valor           = dados.get("valor", "")
+    valor = dados.get("valor") or ""
+    import re
+    if not str(valor).strip() or str(valor).lower() == "none" or not re.sub(r"[^\d]", "", str(valor)).strip():
+        valor = _ddm_find_first(dados, {"valor", "valortotal", "valoracordo", "amount", "valorfinal", "total"})
     forma_pagamento = dados.get("forma_pagamento", "À vista")
     link_boleto     = dados.get("link_boleto", "")
     link_pix        = dados.get("link_pix", "")

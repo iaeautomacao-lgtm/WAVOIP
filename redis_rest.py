@@ -14,8 +14,8 @@ class UpstashRedisREST:
     Com fallback em memória local para resiliência total contra erros de rede/autenticação.
     """
     def __init__(self, url: str = None, token: str = None):
-        self.url = (url or os.getenv("UPSTASH_REDIS_REST_URL", "https://growing-aphid-186288.upstash.io")).rstrip("/")
-        self.token = (token or os.getenv("UPSTASH_REDIS_REST_TOKEN", "AcdoAAIjcDFkODBhMjBiZmRkODI0MjdmYTNhMTE0ZTgxMzQwNGZhNHAxMA")).strip()
+        self.url = (url or os.getenv("UPSTASH_REDIS_REST_URL", "")).rstrip("/")
+        self.token = (token or os.getenv("UPSTASH_REDIS_REST_TOKEN", "")).strip()
         if self.url and not (self.url.startswith("http://") or self.url.startswith("https://")):
             self.url = f"https://{self.url}"
 

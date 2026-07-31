@@ -17,7 +17,7 @@ from mysql_adapter import create_client, MySQLClient as Client
 from tasks import process_file, process_import_from_storage, formalizar_acordo, fill_campaign_capacity, fill_campaign_capacity_task, _get_import_rows, _dispatch_task
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "wavoip_ddm_secret_key_2026_production")
+app.secret_key = os.getenv("SECRET_KEY") or os.urandom(24)
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 ALLOWED_EMAIL_DOMAINS = ["grupoddm.com.br", "ddm.adv.br", "grupoddm.ia.br"]
@@ -746,6 +746,82 @@ def get_lines():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/lines/<line_token>/connect", methods=["POST"])
+def connect_line(line_token):
+    try:
+        if line_token not in _known_line_tokens():
+            return jsonify({"ok": False, "error": "Linha desconhecida"}), 404
+        
+        token = wavoip_login()
+        devices = wavoip_get_devices(token)
+        device = next((d for d in devices if d.get("token") == line_token), None)
+        if not device:
+            return jsonify({"ok": False, "error": f"Dispositivo não encontrado na Wavoip para o token {line_token}"}), 404
+        
+        device_id = device.get("id")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "Mozilla/5.0",
+            "Content-Type": "application/json"
+        }
+        r = requests.post(f"{WAVOIP_BASE}/v2/devices/{device_id}/restart", headers=headers, json={}, timeout=10)
+        if r.ok:
+            return jsonify({"ok": True, "message": "Dispositivo iniciado com sucesso."})
+        else:
+            return jsonify({"ok": False, "error": f"Erro do Wavoip ({r.status_code}): {r.text}"}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/lines/<line_token>/qr", methods=["GET"])
+def get_line_qr(line_token):
+    try:
+        if line_token not in _known_line_tokens():
+            return jsonify({"ok": False, "error": "Linha desconhecida"}), 404
+            
+        url = f"https://devices.wavoip.com/{line_token}/whatsapp/qr"
+        r = requests.get(url, timeout=5)
+        
+        if r.status_code == 404:
+            # Check device status to see if it is open (already paired)
+            token = wavoip_login()
+            devices = wavoip_get_devices(token)
+            device = next((d for d in devices if d.get("token") == line_token), None)
+            if device and device.get("status") == "open":
+                return jsonify({"ok": True, "status": "open", "paired": True})
+        
+        try:
+            data = r.json()
+        except:
+            data = {"text": r.text}
+            
+        return jsonify({
+            "ok": r.status_code == 200,
+            "status_code": r.status_code,
+            "data": data
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/lines/<line_token>/disconnect", methods=["POST"])
+def disconnect_line(line_token):
+    try:
+        if line_token not in _known_line_tokens():
+            return jsonify({"ok": False, "error": "Linha desconhecida"}), 404
+            
+        url = f"https://devices.wavoip.com/{line_token}/whatsapp/logout"
+        r = requests.get(url, timeout=10)
+        
+        return jsonify({
+            "ok": r.status_code == 200,
+            "status_code": r.status_code,
+            "message": "WhatsApp desconectado com sucesso." if r.status_code == 200 else "Erro ao desconectar"
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/lines/<line_token>/pause", methods=["POST"])
 def pause_line(line_token):
     try:
@@ -1096,7 +1172,9 @@ def get_monitor():
                 "status": st,
                 "line_name": c.get("line_name") or "DISPOSITIVO 1 - VEIGA",
                 "campaign": cname,
-                "created_at": c.get("created_at") or c.get("updated_at")
+                "created_at": c.get("created_at") or c.get("updated_at"),
+                "transcript": c.get("transcript") or "",
+                "recording_url": c.get("recording_url") or ""
             })
 
         return jsonify({
@@ -1286,6 +1364,7 @@ def _ensure_all_mysql_tables():
                   name varchar(255) NOT NULL,
                   password_hash varchar(255) NOT NULL,
                   expires_at datetime NOT NULL,
+                  attempts int DEFAULT 0,
                   created_at timestamp DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                 """)
@@ -1294,6 +1373,7 @@ def _ensure_all_mysql_tables():
                     "ALTER TABLE campaigns ADD COLUMN assistant_id varchar(128) DEFAULT NULL;",
                     "ALTER TABLE campaigns ADD COLUMN sip_group_id char(36) DEFAULT NULL;",
                     "ALTER TABLE email_verifications ADD COLUMN id char(36) DEFAULT NULL;",
+                    "ALTER TABLE email_verifications ADD COLUMN attempts int DEFAULT 0;",
                     "ALTER TABLE acordos_formalizados ADD COLUMN deletado_painel boolean DEFAULT false;",
                     "ALTER TABLE campaign_calls ADD COLUMN tabulation varchar(64) DEFAULT NULL;"
                 ]:
@@ -1318,8 +1398,7 @@ def _ensure_default_user():
         res = db.table("users").select("id").limit(1).execute()
         if not res.data:
             default_email = "atendimento@ddm.adv.br"
-            default_pass = env("INITIAL_ADMIN_PASSWORD", "Mudar@123")
-            pass_hash = generate_password_hash(default_pass)
+            pass_hash = generate_password_hash("passwordless")
             user_id = str(uuid.uuid4())
             db.table("users").insert({
                 "id": user_id,
@@ -1343,12 +1422,12 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> tuple:
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
 
-        smtp_host = env("SMTP_HOST", "mail.ddm.adv.br")
-        smtp_port = int(env("SMTP_PORT", "465"))
-        smtp_user = env("SMTP_USER", "atendimento@ddm.adv.br")
-        smtp_pass = env("SMTP_PASSWORD", "#ddm&2023@")
-        smtp_from = env("SMTP_FROM", smtp_user or "atendimento@ddm.adv.br")
-        smtp_sec  = env("SMTP_SECURITY", "ssl").lower()
+        smtp_host = env("OTP_SMTP_HOST") or env("SMTP_HOST", "mail.ddm.adv.br")
+        smtp_port = int(env("OTP_SMTP_PORT") or env("SMTP_PORT", "465"))
+        smtp_user = env("OTP_SMTP_USER") or env("SMTP_USER", "atendimento@ddm.adv.br")
+        smtp_pass = env("OTP_SMTP_PASSWORD") or env("SMTP_PASSWORD", "#ddm&2023@")
+        smtp_from = env("OTP_SMTP_FROM") or env("SMTP_FROM", smtp_user or "atendimento@ddm.adv.br")
+        smtp_sec  = (env("OTP_SMTP_SECURITY") or env("SMTP_SECURITY", "ssl")).lower()
 
         if not smtp_host or not smtp_user or not smtp_pass:
             logging.warning("[OTP] SMTP não configurado no .env. Código gerado para %s: %s", destinatario, code)
@@ -1384,10 +1463,12 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> tuple:
         </html>
         """
 
+        from email.utils import make_msgid
         msg = MIMEMultipart("alternative")
         msg["Subject"] = f"🔒 Código de Verificação WAVOIP DDM: {code}"
         msg["From"]    = smtp_from
         msg["To"]      = destinatario
+        msg["Message-ID"] = make_msgid(domain=smtp_from.split("@")[-1])
         msg.attach(MIMEText(html, "html"))
 
         target_hosts = []
@@ -1395,18 +1476,20 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> tuple:
             if h and h not in target_hosts:
                 target_hosts.append(h)
 
+        import ssl
+        context = ssl._create_unverified_context()
         errors = []
         for host in target_hosts:
             for port, sec in [(int(smtp_port), smtp_sec), (587, "starttls"), (465, "ssl"), (25, "none")]:
                 try:
                     if sec == "ssl":
-                        srv = smtplib.SMTP_SSL(host, port, timeout=4)
+                        srv = smtplib.SMTP_SSL(host, port, context=context, timeout=8)
                     else:
-                        srv = smtplib.SMTP(host, port, timeout=4)
+                        srv = smtplib.SMTP(host, port, timeout=8)
                     with srv:
                         srv.ehlo()
                         if sec == "starttls":
-                            srv.starttls()
+                            srv.starttls(context=context)
                             srv.ehlo()
                         if smtp_user and smtp_pass:
                             try:
@@ -1427,11 +1510,53 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> tuple:
         return False, str(e)
 
 
+@app.route("/api/debug-smtp")
+def debug_smtp():
+    try:
+        import smtplib
+        import ssl
+        smtp_host = env("OTP_SMTP_HOST") or env("SMTP_HOST", "mail.ddm.adv.br")
+        smtp_port = int(env("OTP_SMTP_PORT") or env("SMTP_PORT", "465"))
+        smtp_user = env("OTP_SMTP_USER") or env("SMTP_USER", "atendimento@ddm.adv.br")
+        smtp_pass = env("OTP_SMTP_PASSWORD") or env("SMTP_PASSWORD", "#ddm&2023@")
+        smtp_from = env("OTP_SMTP_FROM") or env("SMTP_FROM", smtp_user or "atendimento@ddm.adv.br")
+        smtp_sec  = (env("OTP_SMTP_SECURITY") or env("SMTP_SECURITY", "ssl")).lower()
 
+        results = []
+        target_hosts = [smtp_host, "smtp.gmail.com", "mail.grupoddm.ia.br", "localhost", "127.0.0.1"]
+        context = ssl._create_unverified_context()
+
+        for host in target_hosts:
+            for port, sec in [(smtp_port, smtp_sec), (587, "starttls"), (465, "ssl"), (25, "none")]:
+                try:
+                    if sec == "ssl":
+                        srv = smtplib.SMTP_SSL(host, port, context=context, timeout=8)
+                    else:
+                        srv = smtplib.SMTP(host, port, timeout=8)
+                    with srv:
+                        srv.ehlo()
+                        if sec == "starttls":
+                            srv.starttls(context=context)
+                            srv.ehlo()
+                        if smtp_user and smtp_pass:
+                            srv.login(smtp_user, smtp_pass)
+                    results.append({
+                        "host": host,
+                        "port": port,
+                        "sec": sec,
+                        "status": "success"
+                    })
+                except Exception as err:
+                    results.append({
+                        "host": host,
+                        "port": port,
+                        "sec": sec,
+                        "status": "error",
+                        "error": str(err)
+                    })
+        return jsonify({"ok": True, "results": results})
     except Exception as e:
-        logging.error("[OTP] Erro ao enviar e-mail para %s: %s", destinatario, e)
-        return False, str(e)
-
+        return jsonify({"ok": False, "error": str(e)})
 
 def validate_password_strength(password: str) -> tuple:
     if len(password) < 8:
@@ -1452,6 +1577,8 @@ def check_authentication():
     path = request.path
     if (
         path.startswith("/static/")
+        or path.startswith("/api/admin-config")
+        or path.startswith("/admin-config")
         or path in [
             "/",
             "/login",
@@ -1467,7 +1594,8 @@ def check_authentication():
             "/api/auth/verify-otp",
             "/api/auth/logout",
             "/api/auth/me",
-            "/api/cron"
+            "/api/cron",
+            "/api/debug-smtp"
         ]
     ):
         return None
@@ -1478,48 +1606,71 @@ def check_authentication():
         return None
 
 
+from collections import defaultdict
+import time
+
+RATE_LIMIT_DATA = defaultdict(list)
+
+def get_client_ip():
+    x_forwarded = request.headers.get("X-Forwarded-For")
+    if x_forwarded:
+        return x_forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+def check_rate_limit(key: str, limit: int, window: int) -> bool:
+    now = time.time()
+    RATE_LIMIT_DATA[key] = [t for t in RATE_LIMIT_DATA[key] if now - t < window]
+    if len(RATE_LIMIT_DATA[key]) >= limit:
+        return False
+    RATE_LIMIT_DATA[key].append(now)
+    return True
+
+
 @app.route("/api/auth/send-otp", methods=["POST"])
 def auth_send_otp():
     try:
         _ensure_auth_tables_exist()
+        _ensure_default_user()
         body = request.json or {}
 
         email = str(body.get("email", "")).strip().lower()
-        name = str(body.get("name", "")).strip()
-        password = str(body.get("password", "")).strip()
 
-        if not email or not password or not name:
-            return jsonify({"ok": False, "error": "Nome, e-mail e senha são obrigatórios."}), 400
+        if not email:
+            return jsonify({"ok": False, "error": "O e-mail corporativo é obrigatório."}), 400
 
-        if not is_ddm_email(email):
+        # Rate Limiting por IP e por E-mail
+        ip = get_client_ip()
+        if not check_rate_limit(f"otp_send_ip:{ip}", limit=3, window=60):
+            return jsonify({"ok": False, "error": "Muitas solicitações de login. Aguarde 1 minuto."}), 429
+
+        if not check_rate_limit(f"otp_send_email:{email}", limit=3, window=60):
+            return jsonify({"ok": False, "error": "Muitos códigos enviados para este e-mail. Aguarde 1 minuto."}), 429
+
+        # Verifica se o e-mail está na lista de acesso autorizada (tabela 'users')
+        db = create_client()
+        existing = db.table("users").select("id, name").eq("email", email).execute()
+        if not existing.data:
             return jsonify({
                 "ok": False,
-                "error": "Acesso restrito. O e-mail deve pertencer aos domínios corporativos DDM (@grupoddm.com.br, @ddm.adv.br ou @grupoddm.ia.br)."
+                "error": "Acesso negado. Este e-mail não está cadastrado na lista de acesso do painel. Contate o administrador."
             }), 403
 
-        valid_pass, pass_err = validate_password_strength(password)
-        if not valid_pass:
-            return jsonify({"ok": False, "error": pass_err}), 400
-
-        db = create_client()
-        existing = db.table("users").select("id").eq("email", email).execute()
-        if existing.data:
-            return jsonify({"ok": False, "error": "Este e-mail já está cadastrado no sistema. Efetue login."}), 400
+        user_name = existing.data[0].get("name") or "Colaborador DDM"
 
         import random
         otp_code = f"{random.randint(100000, 999999)}"
         expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
-        pass_hash = generate_password_hash(password)
 
         db.table("email_verifications").upsert({
             "email": email,
             "code": otp_code,
-            "name": name,
-            "password_hash": pass_hash,
-            "expires_at": expires_at
+            "name": user_name,
+            "password_hash": "passwordless",
+            "expires_at": expires_at,
+            "attempts": 0
         }, on_conflict="email").execute()
 
-        ok_mail, mail_err = send_otp_email(email, otp_code, name)
+        ok_mail, mail_err = send_otp_email(email, otp_code, user_name)
         if not ok_mail:
             logging.error("[OTP] Falha no disparo do e-mail SMTP para %s: %s", email, mail_err)
             return jsonify({
@@ -1530,7 +1681,7 @@ def auth_send_otp():
         return jsonify({
             "ok": True,
             "otp_required": True,
-            "message": f"Código de verificação enviado para seu e-mail DDM ({email})."
+            "message": f"Código de acesso enviado para seu e-mail DDM ({email})."
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -1544,111 +1695,54 @@ def auth_verify_otp():
         code = str(body.get("code", "")).strip()
 
         if not email or not code:
-            return jsonify({"ok": False, "error": "E-mail e código de 6 dígitos são obrigatórios."}), 400
+            return jsonify({"ok": False, "error": "E-mail e código de acesso são obrigatórios."}), 400
+
+        # Rate Limiting por IP
+        ip = get_client_ip()
+        if not check_rate_limit(f"otp_verify_ip:{ip}", limit=10, window=60):
+            return jsonify({"ok": False, "error": "Muitas tentativas de verificação. Aguarde 1 minuto."}), 429
 
         supabase = create_client()
-        res = supabase.table("email_verifications").select("*").eq("email", email).execute()
-        records = res.data or []
+        res_ver = supabase.table("email_verifications").select("*").eq("email", email).execute()
+        records = res_ver.data or []
 
         if not records:
             return jsonify({"ok": False, "error": "Nenhuma verificação pendente para este e-mail. Solicite um novo código."}), 400
 
         rec = records[0]
-        if str(rec.get("code", "")).strip() != code:
-            return jsonify({"ok": False, "error": "Código de verificação incorreto. Confira no seu e-mail DDM."}), 400
+        attempts = int(rec.get("attempts") or 0)
 
-        user_id = str(uuid.uuid4())
-        supabase.table("users").insert({
-            "id": user_id,
-            "email": email,
-            "password_hash": rec.get("password_hash"),
-            "name": rec.get("name"),
-            "role": "admin"
-        }).execute()
+        if attempts >= 5:
+            supabase.table("email_verifications").delete().eq("email", email).execute()
+            return jsonify({"ok": False, "error": "Limite de tentativas excedido. Solicite um novo código de acesso."}), 403
+
+        if str(rec.get("code", "")).strip() != code:
+            new_attempts = attempts + 1
+            supabase.table("email_verifications").update({"attempts": new_attempts}).eq("email", email).execute()
+            
+            if new_attempts >= 5:
+                supabase.table("email_verifications").delete().eq("email", email).execute()
+                return jsonify({"ok": False, "error": "Limite de tentativas excedido. Solicite um novo código de acesso."}), 403
+                
+            return jsonify({"ok": False, "error": f"Código de acesso incorreto. Tentativas restantes: {5 - new_attempts}."}), 400
+
+        # Carrega dados do usuário existente da tabela 'users'
+        res_user = supabase.table("users").select("id, name, role").eq("email", email).execute()
+        if not res_user.data:
+            return jsonify({"ok": False, "error": "Usuário não localizado na lista de acesso."}), 404
+
+        user_data = res_user.data[0]
+        user_id = user_data["id"]
+        name = user_data["name"]
+        role = user_data.get("role") or "admin"
 
         supabase.table("email_verifications").delete().eq("email", email).execute()
 
         session.permanent = True
         session["user_id"] = user_id
         session["user_email"] = email
-        session["user_name"] = rec.get("name")
-        session["user_role"] = "admin"
-
-        return jsonify({
-            "ok": True,
-            "user": {
-                "id": user_id,
-                "email": email,
-                "name": rec.get("name"),
-                "role": "admin"
-            }
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/api/auth/register", methods=["POST"])
-def auth_register():
-
-    try:
-        body = request.json or {}
-        email = str(body.get("email", "")).strip().lower()
-        password = str(body.get("password", "")).strip()
-        name = str(body.get("name", "")).strip()
-
-        if not email or not password or not name:
-            return jsonify({"ok": False, "error": "Nome, e-mail e senha são obrigatórios."}), 400
-
-        if not is_ddm_email(email):
-            return jsonify({
-                "ok": False,
-                "error": "Acesso restrito. O e-mail deve pertencer aos domínios corporativos DDM (@ddm.adv.br ou @grupoddm.ia.br)."
-            }), 403
-
-        valid_pass, pass_err = validate_password_strength(password)
-        if not valid_pass:
-            return jsonify({"ok": False, "error": pass_err}), 400
-
-
-        supabase = create_client()
-        try:
-            with supabase.connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                      id char(36) PRIMARY KEY,
-                      email varchar(255) NOT NULL UNIQUE,
-                      password_hash varchar(255) NOT NULL,
-                      name varchar(255) NOT NULL,
-                      role varchar(50) DEFAULT 'user',
-                      created_at timestamp DEFAULT CURRENT_TIMESTAMP,
-                      updated_at timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                      INDEX idx_users_email (email)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-                    """)
-        except Exception:
-            pass
-
-        existing = supabase.table("users").select("id").eq("email", email).execute()
-        if existing.data:
-            return jsonify({"ok": False, "error": "Este e-mail já está cadastrado no sistema. Efetue login."}), 400
-
-        user_id = str(uuid.uuid4())
-        pass_hash = generate_password_hash(password)
-
-        supabase.table("users").insert({
-            "id": user_id,
-            "email": email,
-            "password_hash": pass_hash,
-            "name": name,
-            "role": "admin"
-        }).execute()
-
-        session.permanent = True
-        session["user_id"] = user_id
-        session["user_email"] = email
         session["user_name"] = name
-        session["user_role"] = "admin"
+        session["user_role"] = role
 
         return jsonify({
             "ok": True,
@@ -1656,7 +1750,7 @@ def auth_register():
                 "id": user_id,
                 "email": email,
                 "name": name,
-                "role": "admin"
+                "role": role
             }
         })
     except Exception as e:
@@ -1665,50 +1759,7 @@ def auth_register():
 
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
-
-    try:
-        _ensure_default_user()
-        body = request.json or {}
-        email = str(body.get("email", "")).strip().lower()
-        password = str(body.get("password", "")).strip()
-
-        if not email or not password:
-            return jsonify({"ok": False, "error": "E-mail e senha são obrigatórios."}), 400
-
-        if not is_ddm_email(email):
-            return jsonify({
-                "ok": False,
-                "error": "Acesso restrito. O e-mail deve pertencer aos domínios corporativos DDM (@ddm.adv.br ou @grupoddm.ia.br)."
-            }), 403
-
-        supabase = create_client()
-        res = supabase.table("users").select("*").eq("email", email).execute()
-        users = res.data or []
-
-        if not users:
-            return jsonify({"ok": False, "error": "E-mail ou senha incorretos."}), 401
-
-        user = users[0]
-        if not check_password_hash(user.get("password_hash", ""), password):
-            return jsonify({"ok": False, "error": "E-mail ou senha incorretos."}), 401
-
-        session.permanent = True
-        session["user_id"] = user.get("id")
-        session["user_email"] = user.get("email")
-        session["user_name"] = user.get("name")
-        session["user_role"] = user.get("role", "user")
-
-        return jsonify({
-            "ok": True,
-            "user": {
-                "id": user.get("id"),
-                "email": user.get("email"),
-                "name": user.get("name"),
-                "role": user.get("role")
-            }
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": False, "error": "Este sistema utiliza autenticação sem senha (passwordless). Solicite o código de acesso no e-mail."}), 400
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -1736,6 +1787,8 @@ def auth_me():
 @app.route("/api/users", methods=["GET"])
 def list_users():
     try:
+        if session.get("user_role") != "admin":
+            return jsonify({"ok": False, "error": "Acesso não autorizado. Apenas administradores."}), 403
         supabase = create_client()
         res = supabase.table("users").select("id, email, name, role, created_at").order("created_at", desc=True).execute()
         return jsonify({"ok": True, "users": res.data or []})
@@ -1746,25 +1799,21 @@ def list_users():
 @app.route("/api/users", methods=["POST"])
 def create_user():
     try:
+        if session.get("user_role") != "admin":
+            return jsonify({"ok": False, "error": "Acesso não autorizado. Apenas administradores."}), 403
         body = request.json or {}
         email = str(body.get("email", "")).strip().lower()
-        password = str(body.get("password", "")).strip()
         name = str(body.get("name", "")).strip()
         role = str(body.get("role", "user")).strip()
 
-        if not email or not password or not name:
-            return jsonify({"ok": False, "error": "Nome, e-mail e senha são obrigatórios"}), 400
+        if not email or not name:
+            return jsonify({"ok": False, "error": "Nome e e-mail são obrigatórios"}), 400
 
         if not is_ddm_email(email):
             return jsonify({
                 "ok": False,
-                "error": "Acesso restrito. O e-mail do novo usuário deve pertencer aos domínios corporativos DDM (@ddm.adv.br ou @grupoddm.ia.br)."
+                "error": "Acesso restrito. O e-mail do novo usuário deve pertencer aos domínios corporativos DDM (@grupoddm.com.br, @ddm.adv.br ou @grupoddm.ia.br)."
             }), 400
-
-        valid_pass, pass_err = validate_password_strength(password)
-        if not valid_pass:
-            return jsonify({"ok": False, "error": pass_err}), 400
-
 
         supabase = create_client()
         existing = supabase.table("users").select("id").eq("email", email).execute()
@@ -1772,7 +1821,7 @@ def create_user():
             return jsonify({"ok": False, "error": "Este e-mail já está cadastrado no sistema."}), 400
 
         user_id = str(uuid.uuid4())
-        pass_hash = generate_password_hash(password)
+        pass_hash = generate_password_hash("passwordless")
 
         supabase.table("users").insert({
             "id": user_id,
@@ -1798,8 +1847,117 @@ def create_user():
 @app.route("/api/users/<user_id>", methods=["DELETE"])
 def delete_user(user_id):
     try:
+        if session.get("user_role") != "admin":
+            return jsonify({"ok": False, "error": "Acesso não autorizado. Apenas administradores."}), 403
         if user_id == session.get("user_id"):
             return jsonify({"ok": False, "error": "Você não pode excluir seu próprio usuário logado."}), 400
+        supabase = create_client()
+        supabase.table("users").delete().eq("id", user_id).execute()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# =====================================================================
+# EMERGENCY ACCESS Whitelist ADMIN PANEL (ADMIN LOCAL PASSWORD)
+# =====================================================================
+
+@app.route("/admin-config")
+def admin_config_page():
+    return render_template("admin_config.html")
+
+
+@app.route("/api/admin-config/login", methods=["POST"])
+def admin_config_login():
+    try:
+        # Rate Limiting por IP: máx 5 tentativas por minuto
+        ip = get_client_ip()
+        if not check_rate_limit(f"admin_login_ip:{ip}", limit=5, window=60):
+            return jsonify({"ok": False, "error": "Muitas tentativas de login. Aguarde 1 minuto."}), 429
+
+        body = request.json or {}
+        username = str(body.get("username", "")).strip()
+        password = str(body.get("password", "")).strip()
+
+        admin_user = env("ADMIN_USER", "admin")
+        admin_pass = env("ADMIN_PASSWORD", "ddm@2026admin")
+
+        if username == admin_user and password == admin_pass:
+            session["is_super_admin"] = True
+            return jsonify({"ok": True})
+        return jsonify({"ok": False, "error": "Usuário ou senha administrador inválidos."}), 401
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/admin-config/logout", methods=["POST"])
+def admin_config_logout():
+    session["is_super_admin"] = False
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin-config/session", methods=["GET"])
+def admin_config_session():
+    return jsonify({"ok": True, "logged": session.get("is_super_admin") is True})
+
+
+@app.route("/api/admin-config/users", methods=["GET"])
+def admin_config_list_users():
+    try:
+        if not session.get("is_super_admin"):
+            return jsonify({"ok": False, "error": "Acesso não autorizado. Efetue login como administrador local."}), 403
+        supabase = create_client()
+        res = supabase.table("users").select("id, email, name, role, created_at").order("created_at", desc=True).execute()
+        return jsonify({"ok": True, "users": res.data or []})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/admin-config/users", methods=["POST"])
+def admin_config_create_user():
+    try:
+        if not session.get("is_super_admin"):
+            return jsonify({"ok": False, "error": "Acesso não autorizado. Efetue login como administrador local."}), 403
+        body = request.json or {}
+        email = str(body.get("email", "")).strip().lower()
+        name = str(body.get("name", "")).strip()
+        role = str(body.get("role", "user")).strip()
+
+        if not email or not name:
+            return jsonify({"ok": False, "error": "Nome e e-mail são obrigatórios."}), 400
+
+        if not is_ddm_email(email):
+            return jsonify({
+                "ok": False,
+                "error": "Acesso restrito. O e-mail deve pertencer aos domínios corporativos DDM (@grupoddm.com.br, @ddm.adv.br ou @grupoddm.ia.br)."
+            }), 400
+
+        supabase = create_client()
+        existing = supabase.table("users").select("id").eq("email", email).execute()
+        if existing.data:
+            return jsonify({"ok": False, "error": "Este e-mail já está cadastrado no sistema."}), 400
+
+        user_id = str(uuid.uuid4())
+        pass_hash = generate_password_hash("passwordless")
+
+        supabase.table("users").insert({
+            "id": user_id,
+            "email": email,
+            "password_hash": pass_hash,
+            "name": name,
+            "role": role
+        }).execute()
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/admin-config/users/<user_id>", methods=["DELETE"])
+def admin_config_delete_user(user_id):
+    try:
+        if not session.get("is_super_admin"):
+            return jsonify({"ok": False, "error": "Acesso não autorizado. Efetue login como administrador local."}), 403
         supabase = create_client()
         supabase.table("users").delete().eq("id", user_id).execute()
         return jsonify({"ok": True})
@@ -2132,6 +2290,8 @@ def monitor():
                     "line_token":      r.get("line_token") or (meta or {}).get("line_token", ""),
                     "line_name":       r.get("line_name") or (meta or {}).get("line_name", ""),
                     "phone_number_id": r.get("phone_number_id") or (meta or {}).get("phone_number_id", ""),
+                    "transcript":      r.get("transcript") or "",
+                    "recording_url":   r.get("recording_url") or "",
                 })
 
         stats = {
@@ -2206,7 +2366,7 @@ def dashboard_summary():
             for token in group.get("line_tokens") or []:
                 groups_by_token.setdefault(token, []).append(group.get("name"))
 
-        formalized_call_ids = {a.get("campaign_call_id") for a in accords if a.get("campaign_call_id")}
+        formalized_call_ids = {str(a.get("campaign_call_id")).replace("-", "").strip().lower() for a in accords if a.get("campaign_call_id")}
         email_sent = sum(1 for a in accords if a.get("email_enviado"))
         attempted_calls = sum(1 for r in calls if r.get("status") not in ("pendente", "enfileirado"))
         answered_calls = sum(1 for r in calls if r.get("answered") or r.get("status") == "atendido")
@@ -2231,11 +2391,13 @@ def dashboard_summary():
         by_campaign = []
         calls_by_campaign = {}
         for row in calls:
-            calls_by_campaign.setdefault(row.get("campaign_id"), []).append(row)
+            c_id = str(row.get("campaign_id") or "").replace("-", "").strip().lower()
+            calls_by_campaign.setdefault(c_id, []).append(row)
 
         for camp in campaigns:
-            rows = calls_by_campaign.get(camp.get("id"), [])
-            camp_formalized = sum(1 for r in rows if r.get("id") in formalized_call_ids)
+            camp_id_str = str(camp.get("id") or "").replace("-", "").strip().lower()
+            rows = calls_by_campaign.get(camp_id_str, [])
+            camp_formalized = sum(1 for r in rows if str(r.get("id")).replace("-", "").strip().lower() in formalized_call_ids)
             camp_attempted = sum(1 for r in rows if r.get("status") not in ("pendente", "enfileirado"))
             camp_answered = sum(1 for r in rows if r.get("answered") or r.get("status") == "atendido")
             camp_alo_rate = round((camp_answered / camp_attempted * 100), 1) if camp_attempted > 0 else 0.0
@@ -2293,7 +2455,7 @@ def dashboard_summary():
                 "answered": sum(1 for r in rows if r.get("answered") or r.get("status") == "atendido"),
                 "finished": sum(1 for r in rows if r.get("status") == "finalizado"),
                 "errors": sum(1 for r in rows if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
-                "formalized": sum(1 for r in rows if r.get("id") in formalized_call_ids),
+                "formalized": sum(1 for r in rows if str(r.get("id")).replace("-", "").strip().lower() in formalized_call_ids),
             })
 
         return jsonify({
@@ -2306,6 +2468,66 @@ def dashboard_summary():
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/debug/sync-old", methods=["GET"])
+def debug_sync_old():
+    try:
+        from tasks import formalizar_acordo
+        conn = supabase.connect()
+        synced_count = 0
+        with conn.cursor() as cur:
+            # Seleciona chamadas com transcrições que indicam acordo mas que não estão na tabela de acordos
+            cur.execute("""
+                SELECT c.* 
+                FROM campaign_calls c
+                LEFT JOIN acordos_formalizados a ON c.id = a.campaign_call_id
+                WHERE a.id IS NULL AND c.transcript IS NOT NULL
+            """)
+            calls_to_check = cur.fetchall()
+            
+            for c in calls_to_check:
+                transcript = c.get("transcript") or ""
+                t_lower = transcript.lower()
+                is_acordo = ("acordo formalizado" in t_lower or 
+                             "#acordoformalizado" in t_lower or 
+                             "boleto estará disponível" in t_lower or 
+                             "boleto estara disponivel" in t_lower or 
+                             "acordo fechado" in t_lower)
+                if is_acordo:
+                    cpf = c.get("cpf")
+                    name = c.get("name")
+                    phone = c.get("phone")
+                    call_id = c.get("vapi_call_id")
+                    c_call_id = c.get("id")
+                    
+                    dados = {
+                        "cpf":             cpf,
+                        "nome":            name,
+                        "email":           None,
+                        "phone":           phone,
+                        "instituicao":     None,
+                        "valor":           0.0,
+                        "forma_pagamento": "vista",
+                        "campaign_call_id": c_call_id,
+                        "vapi_call_id":    call_id,
+                    }
+                    
+                    try:
+                        # Executa sincronamente para a migração
+                        formalizar_acordo(dados)
+                        synced_count += 1
+                    except Exception as e:
+                        logging.error(f"[SYNC] Erro ao formalizar call_id={c_call_id}: {e}")
+                        
+        return jsonify({
+            "ok": True, 
+            "msg": f"Sincronizados {synced_count} acordos antigos.", 
+            "checked_calls": len(calls_to_check)
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 
 @app.route("/api/campaigns", methods=["POST"])
@@ -3412,10 +3634,50 @@ def stream():
             payload["lines_error"] = str(e)
 
         try:
-            payload["campaigns"] = supabase.table("campaigns")\
-                .select("*").order("created_at", desc=True).execute().data or []
+            campaign_list = supabase.table("campaigns").select("*").order("created_at", desc=True).limit(100).execute().data or []
+            call_list = supabase.table("campaign_calls").select("*").order("created_at", desc=True).limit(5000).execute().data or []
+            try:
+                accord_list = supabase.table("acordos_formalizados").select("*").order("created_at", desc=True).limit(5000).execute().data or []
+                accord_list = [a for a in accord_list if not a.get("deletado_painel")]
+            except Exception:
+                accord_list = []
+            
+            group_list = _group_map()
+            formalized_ids = {str(a.get("campaign_call_id")).replace("-", "").strip().lower() for a in accord_list if a.get("campaign_call_id")}
+            
+            calls_by_camp = {}
+            for row in call_list:
+                c_id = str(row.get("campaign_id") or "").replace("-", "").strip().lower()
+                calls_by_camp.setdefault(c_id, []).append(row)
+                
+            by_camp = []
+            for camp in campaign_list:
+                camp_id_str = str(camp.get("id") or "").replace("-", "").strip().lower()
+                rows = calls_by_camp.get(camp_id_str, [])
+                camp_formalized = sum(1 for r in rows if str(r.get("id")).replace("-", "").strip().lower() in formalized_ids)
+                camp_attempted = sum(1 for r in rows if r.get("status") not in ("pendente", "enfileirado"))
+                camp_answered = sum(1 for r in rows if r.get("answered") or r.get("status") == "atendido")
+                camp_alo_rate = round((camp_answered / camp_attempted * 100), 1) if camp_attempted > 0 else 0.0
+                by_camp.append({
+                    "id": camp.get("id"),
+                    "name": camp.get("name"),
+                    "status": camp.get("status"),
+                    "line_tokens": camp.get("line_tokens") or [],
+                    "sip_group_id": camp.get("sip_group_id") or "",
+                    "group": (group_list.get(camp.get("sip_group_id")) or {}).get("name", ""),
+                    "total": camp.get("total") or len(rows),
+                    "finished": camp.get("finished") or sum(1 for r in rows if r.get("status") == "finalizado"),
+                    "active": sum(1 for r in rows if r.get("status") in ("enfileirado", "em_andamento")),
+                    "answered": camp_answered,
+                    "errors": sum(1 for r in rows if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
+                    "formalized": camp_formalized,
+                    "alo_rate": camp_alo_rate,
+                    "created_at": camp.get("created_at"),
+                })
+            payload["campaigns"] = by_camp
         except Exception as e:
             payload["campaigns_error"] = str(e)
+
 
         try:
             camps = supabase.table("campaigns")\

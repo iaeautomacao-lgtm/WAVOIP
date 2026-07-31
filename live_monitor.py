@@ -7,7 +7,7 @@ from flask import Flask, jsonify, render_template_string
 
 app = Flask(__name__)
 
-VAPI_KEY = "332987f4-f832-4542-9fd0-76de02bde971"
+VAPI_KEY = os.getenv("VAPI_API_KEY", "")
 VAPI_HEADERS = {"Authorization": f"Bearer {VAPI_KEY}"}
 
 HTML_TEMPLATE = """

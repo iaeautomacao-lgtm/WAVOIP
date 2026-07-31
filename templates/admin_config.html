@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Admin - WAVOIP</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --panel: rgba(17, 24, 39, 0.7);
+      --border: rgba(255, 255, 255, 0.08);
+      --primary: #ff5706;
+      --primary-hover: #e04800;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --success: #10b981;
+      --error: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      background-image: radial-gradient(circle at 10% 20%, rgba(255, 87, 6, 0.05) 0%, transparent 40%),
+                        radial-gradient(circle at 90% 80%, rgba(59, 130, 246, 0.03) 0%, transparent 40%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 800px;
+      background: var(--panel);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      padding: 40px;
+      transition: all 0.3s ease;
+    }
+
+    /* Tela de Login */
+    .login-box {
+      max-width: 400px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .logo {
+      width: 120px;
+      margin-bottom: 24px;
+    }
+
+    h2 {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #fff 0%, var(--text-muted) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+    }
+
+    .input-group {
+      margin-bottom: 20px;
+      text-align: left;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    input, select {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      color: #fff;
+      font-size: 15px;
+      transition: all 0.2s ease;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(255, 87, 6, 0.15);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .btn {
+      width: 100%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    /* Painel Logado */
+    .dashboard {
+      display: none;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 20px;
+    }
+
+    .btn-logout {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .btn-logout:hover {
+      border-color: var(--error);
+      color: var(--error);
+      background: rgba(239, 68, 68, 0.05);
+    }
+
+    .split-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+    }
+
+    @media (max-width: 768px) {
+      .split-layout {
+        grid-template-columns: 1fr;
+        gap: 30px;
+      }
+      .container {
+        padding: 24px;
+      }
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.01);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .card h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #fff;
+    }
+
+    .users-list {
+      max-height: 400px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .user-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 10px;
+      transition: all 0.2s ease;
+    }
+
+    .user-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .user-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .user-name {
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    .user-email {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .user-badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+      width: fit-content;
+    }
+
+    .badge-admin {
+      background: rgba(255, 87, 6, 0.15);
+      color: var(--primary);
+    }
+
+    .badge-user {
+      background: rgba(59, 130, 246, 0.15);
+      color: #3b82f6;
+    }
+
+    .btn-delete {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn-delete:hover {
+      color: var(--error);
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 20px;
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .alert-error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: #f87171;
+    }
+
+    .alert-success {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      color: #34d399;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container" id="panel-container">
+    
+    <!-- TELA DE LOGIN -->
+    <div class="login-box" id="login-section">
+      <img src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=375,h=152,fit=crop/m6L4ppGnqncBWn2J/ativo-16-YZ9a5WVxR2fx79Vd.png" alt="Logo" class="logo">
+      <h2>Acesso Administrativo</h2>
+      <p class="subtitle">Gerenciador de Emergência da Lista de Acesso</p>
+      
+      <div class="alert alert-error" id="login-error"></div>
+      
+      <form id="login-form" onsubmit="handleLogin(event)">
+        <div class="input-group">
+          <label for="username">Usuário Administrador</label>
+          <input type="text" id="username" required placeholder="Digite o usuário">
+        </div>
+        
+        <div class="input-group">
+          <label for="password">Senha</label>
+          <input type="password" id="password" required placeholder="Digite a senha">
+        </div>
+        
+        <button type="submit" class="btn" id="login-btn">
+          <span>Entrar no Gerenciador</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- TELA DO PAINEL (LOGADO) -->
+    <div class="dashboard" id="dashboard-section">
+      <div class="header">
+        <div>
+          <h2>Gerenciador de Lista de Acesso</h2>
+          <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Modo de emergência com login local seguro</p>
+        </div>
+        <button class="btn-logout" onclick="handleLogout()">Sair do Painel</button>
+      </div>
+
+      <div class="split-layout">
+        
+        <!-- CARD: ADICIONAR COLABORADOR -->
+        <div class="card">
+          <h3>Autorizar Colaborador</h3>
+          
+          <div class="alert alert-error" id="form-error"></div>
+          <div class="alert alert-success" id="form-success"></div>
+          
+          <form id="add-user-form" onsubmit="handleAddUser(event)">
+            <div class="input-group">
+              <label for="new-name">Nome Completo</label>
+              <input type="text" id="new-name" required placeholder="Ex: João Silva">
+            </div>
+
+            <div class="input-group">
+              <label for="new-email">E-mail Corporativo</label>
+              <input type="email" id="new-email" required placeholder="nome.sobrenome@grupoddm.com.br">
+            </div>
+
+            <div class="input-group">
+              <label for="new-role">Perfil de Acesso</label>
+              <select id="new-role">
+                <option value="admin">Administrador (Acesso total)</option>
+                <option value="user">Usuário Padrão (Apenas discador)</option>
+              </select>
+            </div>
+
+            <button type="submit" class="btn" style="margin-top: 10px;">
+              <span>Adicionar à Lista</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- CARD: LISTAGEM DE COLABORADORES -->
+        <div class="card">
+          <h3>Colaboradores Autorizados</h3>
+          <div class="users-list" id="users-list-container">
+            <!-- Carregado via JS -->
+            <p style="color: var(--text-muted); font-size: 14px; text-align: center; margin-top: 40px;">Carregando...</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const loginSection = document.getElementById('login-section');
+    const dashboardSection = document.getElementById('dashboard-section');
+    const loginError = document.getElementById('login-error');
+    const formError = document.getElementById('form-error');
+    const formSuccess = document.getElementById('form-success');
+    const usersListContainer = document.getElementById('users-list-container');
+
+    // Verifica estado do login ao carregar
+    window.addEventListener('load', async () => {
+      try {
+        const res = await fetch('/api/admin-config/session');
+        const data = await res.json();
+        if (data.ok && data.logged) {
+          showDashboard();
+        }
+      } catch (e) {
+        console.error("Erro de sessão:", e);
+      }
+    });
+
+    function showDashboard() {
+      loginSection.style.display = 'none';
+      dashboardSection.style.display = 'block';
+      loadUsers();
+    }
+
+    function showLogin() {
+      loginSection.style.display = 'block';
+      dashboardSection.style.display = 'none';
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      loginError.style.display = 'none';
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const btn = document.getElementById('login-btn');
+
+      btn.disabled = true;
+      btn.innerText = 'Autenticando...';
+
+      try {
+        const res = await fetch('/api/admin-config/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        
+        if (data.ok) {
+          showDashboard();
+        } else {
+          loginError.innerText = data.error || 'Credenciais inválidas.';
+          loginError.style.display = 'block';
+        }
+      } catch (err) {
+        loginError.innerText = 'Falha na conexão com o servidor.';
+        loginError.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>Entrar no Gerenciador</span>';
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await fetch('/api/admin-config/logout', { method: 'POST' });
+        showLogin();
+      } catch (e) {
+        console.error("Erro ao deslogar:", e);
+      }
+    }
+
+    async function loadUsers() {
+      usersListContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 14px; text-align: center; margin-top: 40px;">Carregando...</p>';
+      try {
+        const res = await fetch('/api/admin-config/users');
+        const data = await res.json();
+        if (data.ok) {
+          renderUsers(data.users || []);
+        } else {
+          usersListContainer.innerHTML = `<p style="color: var(--error); font-size: 14px; text-align: center; margin-top: 40px;">Erro: ${data.error}</p>`;
+        }
+      } catch (e) {
+        usersListContainer.innerHTML = '<p style="color: var(--error); font-size: 14px; text-align: center; margin-top: 40px;">Erro de conexão.</p>';
+      }
+    }
+
+    function renderUsers(users) {
+      if (!users.length) {
+        usersListContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 14px; text-align: center; margin-top: 40px;">Nenhum usuário cadastrado.</p>';
+        return;
+      }
+
+      usersListContainer.innerHTML = users.map(u => `
+        <div class="user-item">
+          <div class="user-info">
+            <span class="user-name">${escapeHtml(u.name)}</span>
+            <span class="user-email">${escapeHtml(u.email)}</span>
+            <span class="user-badge badge-${u.role === 'admin' ? 'admin' : 'user'}">${u.role === 'admin' ? 'Admin' : 'Padrão'}</span>
+          </div>
+          <button class="btn-delete" onclick="handleDeleteUser('${u.id}', '${escapeHtml(u.name)}')" title="Remover acesso">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+              <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+            </svg>
+          </button>
+        </div>
+      `).join('');
+    }
+
+    async function handleAddUser(e) {
+      e.preventDefault();
+      formError.style.display = 'none';
+      formSuccess.style.display = 'none';
+
+      const name = document.getElementById('new-name').value;
+      const email = document.getElementById('new-email').value;
+      const role = document.getElementById('new-role').value;
+
+      try {
+        const res = await fetch('/api/admin-config/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, role })
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+          formSuccess.innerText = 'Acesso concedido com sucesso!';
+          formSuccess.style.display = 'block';
+          document.getElementById('new-name').value = '';
+          document.getElementById('new-email').value = '';
+          loadUsers();
+        } else {
+          formError.innerText = data.error || 'Erro ao adicionar usuário.';
+          formError.style.display = 'block';
+        }
+      } catch (err) {
+        formError.innerText = 'Erro ao enviar requisição.';
+        formError.style.display = 'block';
+      }
+    }
+
+    async function handleDeleteUser(id, name) {
+      if (!confirm(`Tem certeza que deseja revogar o acesso de "${name}"?`)) {
+        return;
+      }
+      formError.style.display = 'none';
+      formSuccess.style.display = 'none';
+
+      try {
+        const res = await fetch(`/api/admin-config/users/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+
+        if (data.ok) {
+          formSuccess.innerText = 'Acesso revogado com sucesso!';
+          formSuccess.style.display = 'block';
+          loadUsers();
+        } else {
+          formError.innerText = data.error || 'Erro ao remover usuário.';
+          formError.style.display = 'block';
+        }
+      } catch (err) {
+        formError.innerText = 'Erro ao conectar ao servidor.';
+        formError.style.display = 'block';
+      }
+    }
+
+    function escapeHtml(text) {
+      const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+      return str(text || "").replace(/[&<>"']/g, m => map[m]);
+    }
+    
+    function str(val) {
+      return val === null || val === undefined ? "" : String(val);
+    }
+  </script>
+</body>
+</html>
