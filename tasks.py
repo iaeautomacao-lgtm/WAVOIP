@@ -2701,7 +2701,7 @@ def process_file(self, job_id: str, file_id: str, fname: str):
             pass
 
         if len(df) > 60000:
-            _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite atual de 20000 linhas.")
+            _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite atual de 60000 linhas.")
             return
 
         _process_dataframe(job_id, df, fname)
