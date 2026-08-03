@@ -311,16 +311,34 @@ def _get_import_state(job_id: str) -> dict:
 
 def _set_import_rows(job_id: str, rows: list):
     try:
+        upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, f"import_{job_id}_rows.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(rows, f, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"[IMPORT_ROWS] Erro ao salvar arquivo local: {e}")
+
+    try:
         redis_client().setex(
             _import_rows_key(job_id),
             IMPORT_REDIS_TTL_SECONDS,
-            json.dumps(rows, ensure_ascii=False),
+            json.dumps(rows[:200], ensure_ascii=False),
         )
     except Exception:
         pass
 
 
 def _get_import_rows(job_id: str) -> list:
+    try:
+        upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+        file_path = os.path.join(upload_dir, f"import_{job_id}_rows.json")
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"[IMPORT_ROWS] Erro ao ler arquivo local: {e}")
+
     try:
         raw = redis_client().get(_import_rows_key(job_id))
         if not raw:
@@ -334,6 +352,13 @@ def _get_import_rows(job_id: str) -> list:
 def _delete_import_state(job_id: str):
     try:
         redis_client().delete(_import_state_key(job_id), _import_rows_key(job_id), _import_stop_key(job_id))
+    except Exception:
+        pass
+    try:
+        upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+        file_path = os.path.join(upload_dir, f"import_{job_id}_rows.json")
+        if os.path.exists(file_path):
+            os.remove(file_path)
     except Exception:
         pass
 
@@ -2855,9 +2880,10 @@ def _process_dataframe(job_id: str, df, fname: str):
         return
 
     pending_rows = []
-    for idx, r in df.iterrows():
-        if _is_import_stopped(job_id):
-            return
+    for loop_i, (idx, r) in enumerate(df.iterrows()):
+        if loop_i % 500 == 0:
+            if _is_import_stopped(job_id):
+                return
         row = {str(k): ("" if pd.isna(v) else str(v).strip()) for k, v in r.items()}
         cpf_norm = _norm_cpf(row.get(cpf_col, ""))
         if not cpf_norm:
@@ -3018,9 +3044,10 @@ def _validate_import_rows(job_id: str):
     worker_count = min(DDM_IMPORT_CONCURRENCY, len(unique_items))
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         futures = {executor.submit(validate_contact, item): item["cpf"] for item in unique_items}
-        for future in as_completed(futures):
-            if _is_import_stopped(job_id):
-                return
+        for future_i, future in enumerate(as_completed(futures)):
+            if future_i % 100 == 0:
+                if _is_import_stopped(job_id):
+                    return
             row = future.result()
             validation = {
                 "debito": row.get("debito"),
