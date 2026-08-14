@@ -1614,6 +1614,7 @@ def check_authentication():
             "/api/cron",
             "/api/debug-smtp"
         ]
+        or path.endswith("/audio")
     ):
         return None
 
@@ -2216,6 +2217,7 @@ def proxy_call_audio(call_id):
 
         # 1. Tenta obter o redirect assinado do Vapi para mono ou stereo
         if vapi_id:
+            errors = []
             for endpoint in ["mono-recording", "stereo-recording"]:
                 try:
                     url = f"https://api.vapi.ai/call/{vapi_id}/{endpoint}"
@@ -2224,8 +2226,18 @@ def proxy_call_audio(call_id):
                         signed_url = r.headers.get("Location")
                         if signed_url:
                             return redirect(signed_url)
+                    else:
+                        errors.append(f"{endpoint} retornou {r.status_code}: {r.text[:100]}")
                 except Exception as e:
-                    logging.warning(f"[PROXY_AUDIO] Falha ao tentar {endpoint} para {vapi_id}: {e}")
+                    errors.append(f"{endpoint} falhou: {str(e)}")
+            
+            # Se chegou aqui, as tentativas na API da Vapi falharam. 
+            # Em vez de fazer fallback pra URL quebrada (que da erro XML de auth), vamos mostrar o erro real da Vapi
+            return jsonify({
+                "error": "Falha ao assinar URL de áudio com a Vapi",
+                "vapi_id": vapi_id,
+                "vapi_errors": errors
+            }), 400
 
         # 2. Fallback para URL direta salva no banco
         if rec_url:
