@@ -104,7 +104,7 @@ def require_api_auth():
         return None
     if not request.path.startswith("/api/"):
         return None
-    if request.path == "/api/webhook/vapi":
+    if request.path == "/api/webhook/vapi" or request.path.endswith("/audio"):
         return None
     if _valid_secret(_bearer_token(), API_AUTH_TOKEN):
         return None
