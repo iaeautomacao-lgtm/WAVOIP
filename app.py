@@ -2212,6 +2212,12 @@ def proxy_call_audio(call_id):
         rec_url = c_row.get("recording_url")
         vapi_id = c_row.get("vapi_call_id")
 
+        if not vapi_id and rec_url and "hipaa-recordings" in rec_url:
+            import re
+            m = re.search(r"hipaa-recordings/([a-f0-9\-]{36})", rec_url)
+            if m:
+                vapi_id = m.group(1)
+                
         v_key = os.getenv("VAPI_API_KEY", "332987f4-f832-4542-9fd0-76de02bde971")
         headers = {"Authorization": f"Bearer {v_key}"}
 
