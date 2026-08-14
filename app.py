@@ -2346,13 +2346,13 @@ def list_campaigns():
 def dashboard_summary():
     try:
         campaigns = supabase.table("campaigns")\
-            .select("*").order("created_at", desc=True).limit(100).execute().data or []
+            .select("*").order("created_at", desc=True).execute().data or []
         calls = supabase.table("campaign_calls")\
-            .select("id, campaign_id, status, answered, line_token, debito_data").order("created_at", desc=True).limit(5000).execute().data or []
+            .select("id, campaign_id, status, answered, line_token, debito_data").order("created_at", desc=True).execute().data or []
 
         try:
             accords = supabase.table("acordos_formalizados")\
-                .select("campaign_call_id, email_enviado, deletado_painel").order("created_at", desc=True).limit(5000).execute().data or []
+                .select("campaign_call_id, email_enviado, deletado_painel").order("created_at", desc=True).execute().data or []
             accords = [a for a in accords if not a.get("deletado_painel")]
         except Exception:
             accords = []
@@ -3632,10 +3632,10 @@ def stream():
             payload["lines_error"] = str(e)
 
         try:
-            campaign_list = supabase.table("campaigns").select("*").order("created_at", desc=True).limit(100).execute().data or []
-            call_list = supabase.table("campaign_calls").select("id, campaign_id, status, answered").order("created_at", desc=True).limit(5000).execute().data or []
+            campaign_list = supabase.table("campaigns").select("*").order("created_at", desc=True).execute().data or []
+            call_list = supabase.table("campaign_calls").select("id, campaign_id, status, answered").order("created_at", desc=True).execute().data or []
             try:
-                accord_list = supabase.table("acordos_formalizados").select("campaign_call_id, email_enviado, deletado_painel").order("created_at", desc=True).limit(5000).execute().data or []
+                accord_list = supabase.table("acordos_formalizados").select("campaign_call_id, email_enviado, deletado_painel").order("created_at", desc=True).execute().data or []
                 accord_list = [a for a in accord_list if not a.get("deletado_painel")]
             except Exception:
                 accord_list = []
