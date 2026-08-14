@@ -991,11 +991,16 @@
           <span class="sec-title">Nova campanha</span>
         </div>
 
+        <div class="alert-item warn" style="margin-bottom: 16px; display: flex; align-items: center; gap: 8px; line-height: 1.4;">
+          <span style="font-size: 1.1rem; line-height: 1;">⚠️</span>
+          <span>O arquivo (<strong>.txt</strong>, <strong>.csv</strong> ou <strong>Excel</strong>) precisa conter as colunas de <strong>CPF</strong>, <strong>Nome</strong> e <strong>Telefone</strong>. O limite é de até <strong>20.000</strong> leads por importação.</span>
+        </div>
+
         <div class="drop-zone" id="import-zone" onclick="onDropZoneClick()">
           <div class="drop-icon" id="drop-icon">⬆</div>
           <div class="drop-title" id="drop-title">Arraste ou clique para selecionar</div>
-          <div class="drop-sub" id="drop-sub">Aceita .xlsx e .csv &nbsp;·&nbsp; Planilha DDM ou genérica (CPF, Nome)</div>
-          <input type="file" id="file-input" accept=".xlsx,.csv,.xls" style="display:none" />
+          <div class="drop-sub" id="drop-sub">Aceita .xlsx, .csv e .txt &nbsp;·&nbsp; Planilha DDM ou genérica (CPF, Nome)</div>
+          <input type="file" id="file-input" accept=".xlsx,.csv,.xls,.txt" style="display:none" />
         </div>
 
         <div class="upload-progress-wrap" id="upload-progress-wrap">
@@ -1313,6 +1318,27 @@
         <span class="modal-label" style="margin: 0; text-transform: none; font-size: 0.75rem;">Ouvir Gravação:</span>
         <audio id="details-audio-player" controls style="flex: 1; height: 36px; min-width: 220px;"></audio>
         <a id="details-audio-link" href="#" target="_blank" style="font-size: 0.75rem; color: var(--brand); font-weight: 600; text-decoration: underline; white-space: nowrap; margin-left: 6px;">🔗 Abrir / Baixar Áudio</a>
+      </div>
+
+      <!-- Edição de Tabulação -->
+      <div id="details-tabulation-container" style="margin-bottom: 16px; padding: 12px; background: var(--surface2); border-radius: var(--radius); display: flex; align-items: center; gap: 12px; flex-shrink: 0; flex-wrap: wrap;">
+        <span class="modal-label" style="margin: 0; text-transform: none; font-size: 0.75rem;">Tabulação da Ligação:</span>
+        <select id="details-tabulation-select" style="background: var(--surface); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: var(--radius); outline: none; font-size: 0.8rem; cursor: pointer; flex: 1; min-width: 200px;">
+          <option value="">Sem Tabulação</option>
+          <option value="acordo_formalizado">🏆 Acordo Formalizado</option>
+          <option value="agendado">📅 Agendamento</option>
+          <option value="recusa">❌ Recusa</option>
+          <option value="caixa_postal">📟 Caixa Postal</option>
+          <option value="sem_resposta">🚫 Sem Resposta</option>
+          <option value="ocupado">📞 Ocupado</option>
+          <option value="desligou">📵 Desligou</option>
+          <option value="erro">⚠️ Erro</option>
+          <option value="sem_debito">🔍 Sem Débito</option>
+          <option value="sem_telefone">📞 Sem Telefone</option>
+          <option value="sem_linha">⚠️ Sem Linha</option>
+          <option value="outros">❓ Outros</option>
+        </select>
+        <button class="btn btn-primary" id="btn-save-tabulation" onclick="saveCallTabulation()" style="padding: 6px 16px; font-size: 0.8rem;">💾 Salvar Tabulação</button>
       </div>
 
 
@@ -1833,13 +1859,10 @@
         ...(dashboardData || {}),
         campaigns: payload.campaigns || [],
         lines: payload.lines || [],
-        totals: dashboardData?.totals || {},
+        totals: payload.totals || dashboardData?.totals || {},
         groups_report: dashboardData?.groups_report || [],
       };
-      renderDashboardLines(payload.lines || []);
-      renderCampaignViz(payload.campaigns || []);
-      renderDashboardCampaigns(payload.campaigns || []);
-      renderDashboardAlerts();
+      renderDashboard(dashboardData);
     }
   }
 
@@ -2226,11 +2249,7 @@
         };
         const tabText = tabLabels[c.tabulation] || c.tabulation || '—';
 
-        // Botão para ver transcrição / áudio
-        const hasDetails = c.recording_url || c.transcript;
-        const detailsBtn = hasDetails 
-          ? `<button class="call-btn" onclick="openDetails('${c.id}', '${escapeHtml(c.cpf || 'Chamada')}', ${jsArg(c.recording_url)}, ${jsArg(c.transcript)})">👁 Ver conversa</button>`
-          : `<span class="td-dim" style="font-style:italic">sem gravação</span>`;
+        const detailsBtn = `<button class="call-btn" onclick="openDetails('${c.id}', '${escapeHtml(c.cpf || 'Chamada')}', ${jsArg(c.recording_url)}, ${jsArg(c.transcript)}, ${jsArg(c.tabulation)})">👁 Conversa</button>`;
 
         return `<tr>
           <td class="td-mono" style="color:var(--muted)">${(c.id||'').slice(0,8)}…</td>
@@ -2295,9 +2314,7 @@
         <td class="td-dim">${escapeHtml(r.campaign)}</td>
         <td class="td-dim">${date}</td>
         <td>
-          ${r.transcript || r.recording_url
-            ? `<button class="call-btn" onclick="openDetails('${r.id}', '${escapeHtml(r.cpf || 'Chamada')}', ${jsArg(r.recording_url)}, ${jsArg(r.transcript)})">👁 Conversa</button>`
-            : '—'}
+          <button class="call-btn" onclick="openDetails('${r.id}', '${escapeHtml(r.cpf || 'Chamada')}', ${jsArg(r.recording_url)}, ${jsArg(r.transcript)}, ${jsArg(r.tabulation)})">👁 Conversa</button>
         </td>
       </tr>`;
     }).join('');
@@ -3196,16 +3213,20 @@
 
   function resetImport() {
     resetImportUI();
-    setDropState('', 'Arraste ou clique para selecionar', 'Aceita .xlsx e .csv · Planilha DDM ou genérica (CPF, Nome)');
+    setDropState('', 'Arraste ou clique para selecionar', 'Aceita .xlsx, .csv e .txt · Planilha DDM ou genérica (CPF, Nome)');
     fileInput.value = '';
   }
 
-  function openDetails(callId, label, recordingUrl, transcript) {
+  let currentDetailsCallId = null;
+
+  function openDetails(callId, label, recordingUrl, transcript, tabulation) {
+    currentDetailsCallId = callId;
     document.getElementById('details-modal-title').textContent = `Detalhes da Chamada — ${label}`;
     const audioContainer = document.getElementById('details-audio-container');
     const audioPlayer = document.getElementById('details-audio-player');
     const audioLink = document.getElementById('details-audio-link');
-    if (recordingUrl || callId) {
+    const hasRec = recordingUrl && recordingUrl !== 'null' && String(recordingUrl).trim() !== '';
+    if (hasRec && callId) {
       const proxyUrl = `${API}/api/calls/${callId}/audio`;
       audioPlayer.src = proxyUrl;
       if (audioLink) audioLink.href = proxyUrl;
@@ -3216,7 +3237,11 @@
       audioContainer.style.display = 'none';
     }
 
-
+    // Set current tabulation
+    const tabSelect = document.getElementById('details-tabulation-select');
+    if (tabSelect) {
+      tabSelect.value = tabulation || '';
+    }
 
     const transcriptContainer = document.getElementById('details-transcript-container');
     if (transcript) {
@@ -3260,6 +3285,35 @@
     document.getElementById('details-modal').classList.add('open');
   }
 
+  async function saveCallTabulation() {
+    if (!currentDetailsCallId) return;
+    const select = document.getElementById('details-tabulation-select');
+    const tabulation = select.value;
+    const btn = document.getElementById('btn-save-tabulation');
+    btn.disabled = true;
+    btn.textContent = '⌛ Salvando...';
+    try {
+      const res = await fetch(`${API}/api/calls/${currentDetailsCallId}/tabulation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tabulation })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Erro ao salvar tabulação');
+      toast('Tabulação atualizada com sucesso!', 'ok');
+      
+      // Reload relevant lists
+      if (typeof loadCalls === 'function') loadCalls();
+      if (typeof loadMonitor === 'function') loadMonitor();
+      if (typeof loadAcordos === 'function') loadAcordos();
+    } catch (e) {
+      toast(`Erro ao salvar: ${e.message}`, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '💾 Salvar Tabulação';
+    }
+  }
+
   function closeDetailsModal() {
     document.getElementById('details-modal').classList.remove('open');
     document.getElementById('details-audio-player').pause();
@@ -3299,10 +3353,7 @@
       if (a.link_pix) links.push(`<a href="${escapeHtml(a.link_pix)}" target="_blank" style="color:var(--blue);font-weight:600">Pix</a>`);
       const linksHtml = links.length ? links.join(' · ') : '<span class="td-dim">pendente</span>';
 
-      const hasDetails = a.recording_url || a.transcript;
-      const detailsBtn = hasDetails
-        ? `<button class="call-btn" onclick="openDetails('${a.id}', '${escapeHtml(a.nome || 'Cliente')}', ${jsArg(a.recording_url)}, ${jsArg(a.transcript)})">👁 Conversa</button>`
-        : `<span class="td-dim" style="font-style:italic">sem gravação</span>`;
+      const detailsBtn = `<button class="call-btn" onclick="openDetails('${a.id}', '${escapeHtml(a.nome || 'Cliente')}', ${jsArg(a.recording_url)}, ${jsArg(a.transcript)}, ${jsArg(a.tabulation || 'acordo_formalizado')})">👁 Conversa</button>`;
 
       const resendBtn = `<button class="call-btn" onclick="resendAcordoEmail('${a.id}', '${escapeHtml(a.nome || 'Cliente')}', this)">✉ Reenviar</button>`;
 

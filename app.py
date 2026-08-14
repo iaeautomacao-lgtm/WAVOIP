@@ -1006,6 +1006,22 @@ def get_calls():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/api/calls/<call_id>/tabulation", methods=["POST"])
+def update_call_tabulation(call_id):
+    try:
+        body = request.json or {}
+        tabulation = body.get("tabulation", "").strip()
+        
+        # Opcional: validar se a tabulação enviada está no dicionário permitido
+        # (mas vamos aceitar qualquer uma ou nula)
+        res = supabase.table("campaign_calls").update({
+            "tabulation": tabulation or None
+        }).eq("id", call_id).execute()
+        
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 @app.route("/api/acordos", methods=["GET"])
 def get_acordos():
@@ -1174,7 +1190,8 @@ def get_monitor():
                 "campaign": cname,
                 "created_at": c.get("created_at") or c.get("updated_at"),
                 "transcript": c.get("transcript") or "",
-                "recording_url": c.get("recording_url") or ""
+                "recording_url": c.get("recording_url") or "",
+                "tabulation": c.get("tabulation") or ""
             })
 
         return jsonify({
@@ -2194,58 +2211,39 @@ def proxy_call_audio(call_id):
         rec_url = c_row.get("recording_url")
         vapi_id = c_row.get("vapi_call_id")
 
-        audio_resp = None
         v_key = os.getenv("VAPI_API_KEY", "332987f4-f832-4542-9fd0-76de02bde971")
         headers = {"Authorization": f"Bearer {v_key}"}
 
-        # Se temos o ID do Vapi, tentamos baixar diretamente pelas rotas seguras do Vapi que retornam redirect assinado.
+        # 1. Tenta obter o redirect assinado do Vapi para mono ou stereo
         if vapi_id:
-            # 1. Tenta mono-recording primeiro
-            try:
-                r_mono = requests.get(f"https://api.vapi.ai/call/{vapi_id}/mono-recording", headers=headers, stream=True, timeout=10)
-                if r_mono.ok:
-                    audio_resp = r_mono
-            except Exception as e_mono:
-                logging.warning(f"[PROXY_AUDIO] Falha ao tentar mono-recording para {vapi_id}: {e_mono}")
-
-            # 2. Se falhou, tenta stereo-recording
-            if not audio_resp:
+            for endpoint in ["mono-recording", "stereo-recording"]:
                 try:
-                    r_stereo = requests.get(f"https://api.vapi.ai/call/{vapi_id}/stereo-recording", headers=headers, stream=True, timeout=10)
-                    if r_stereo.ok:
-                        audio_resp = r_stereo
-                except Exception as e_stereo:
-                    logging.warning(f"[PROXY_AUDIO] Falha ao tentar stereo-recording para {vapi_id}: {e_stereo}")
+                    url = f"https://api.vapi.ai/call/{vapi_id}/{endpoint}"
+                    r = requests.get(url, headers=headers, allow_redirects=False, timeout=8)
+                    if r.status_code in (301, 302, 307, 308):
+                        signed_url = r.headers.get("Location")
+                        if signed_url:
+                            return redirect(signed_url)
+                except Exception as e:
+                    logging.warning(f"[PROXY_AUDIO] Falha ao tentar {endpoint} para {vapi_id}: {e}")
 
-        # Se não temos vapi_id ou as rotas seguras falharam, tenta usar a URL salva como fallback
-        if not audio_resp and rec_url:
-            req_headers = {}
-            # Só passa Bearer token se for de fato um endpoint da vapi.ai e não S3/R2 diretamente
-            if "vapi.ai" in rec_url and "amazonaws.com" not in rec_url and "cloudflarestorage.com" not in rec_url:
-                req_headers["Authorization"] = f"Bearer {v_key}"
+        # 2. Fallback para URL direta salva no banco
+        if rec_url:
+            # Se for uma URL direta do Vapi que requer autenticação, tentamos pegar o redirect também
+            if "api.vapi.ai" in rec_url:
+                try:
+                    r = requests.get(rec_url, headers=headers, allow_redirects=False, timeout=8)
+                    if r.status_code in (301, 302, 307, 308):
+                        signed_url = r.headers.get("Location")
+                        if signed_url:
+                            return redirect(signed_url)
+                except Exception:
+                    pass
             
-            try:
-                r_direct = requests.get(rec_url, headers=req_headers, stream=True, timeout=15)
-                if r_direct.ok:
-                    audio_resp = r_direct
-            except Exception as e_direct:
-                logging.warning(f"[PROXY_AUDIO] Falha ao tentar URL direta {rec_url}: {e_direct}")
+            # Se for uma URL pública direta (ex: S3/R2 público ou já assinado), redireciona direto
+            return redirect(rec_url)
 
-        if not audio_resp:
-            return jsonify({"error": "Gravação de áudio não disponível para esta chamada."}), 404
-
-        from flask import Response
-        content_type = audio_resp.headers.get("Content-Type", "audio/mpeg")
-
-        def generate():
-            for chunk in audio_resp.iter_content(chunk_size=8192):
-                if chunk:
-                    yield chunk
-
-        return Response(generate(), mimetype=content_type, headers={
-            "Content-Disposition": f"inline; filename=gravacao_{call_id}.mp3",
-            "Accept-Ranges": "bytes"
-        })
+        return jsonify({"error": "Gravação de áudio não disponível para esta chamada."}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2350,11 +2348,11 @@ def dashboard_summary():
         campaigns = supabase.table("campaigns")\
             .select("*").order("created_at", desc=True).limit(100).execute().data or []
         calls = supabase.table("campaign_calls")\
-            .select("*").order("created_at", desc=True).limit(5000).execute().data or []
+            .select("id, campaign_id, status, answered, line_token, debito_data").order("created_at", desc=True).limit(5000).execute().data or []
 
         try:
             accords = supabase.table("acordos_formalizados")\
-                .select("*").order("created_at", desc=True).limit(5000).execute().data or []
+                .select("campaign_call_id, email_enviado, deletado_painel").order("created_at", desc=True).limit(5000).execute().data or []
             accords = [a for a in accords if not a.get("deletado_painel")]
         except Exception:
             accords = []
@@ -3403,8 +3401,8 @@ def import_upload():
         file  = request.files["file"]
         fname = file.filename.lower()
 
-        if not (fname.endswith(".csv") or fname.endswith(".xlsx") or fname.endswith(".xls")):
-            return jsonify({"ok": False, "error": "Formato inválido. Use .csv ou .xlsx"}), 400
+        if not (fname.endswith(".csv") or fname.endswith(".xlsx") or fname.endswith(".xls") or fname.endswith(".txt")):
+            return jsonify({"ok": False, "error": "Formato inválido. Use .csv, .xlsx ou .txt"}), 400
 
         file_bytes = file.read()
         file_id    = str(uuid.uuid4())
@@ -3635,9 +3633,9 @@ def stream():
 
         try:
             campaign_list = supabase.table("campaigns").select("*").order("created_at", desc=True).limit(100).execute().data or []
-            call_list = supabase.table("campaign_calls").select("*").order("created_at", desc=True).limit(5000).execute().data or []
+            call_list = supabase.table("campaign_calls").select("id, campaign_id, status, answered").order("created_at", desc=True).limit(5000).execute().data or []
             try:
-                accord_list = supabase.table("acordos_formalizados").select("*").order("created_at", desc=True).limit(5000).execute().data or []
+                accord_list = supabase.table("acordos_formalizados").select("campaign_call_id, email_enviado, deletado_painel").order("created_at", desc=True).limit(5000).execute().data or []
                 accord_list = [a for a in accord_list if not a.get("deletado_painel")]
             except Exception:
                 accord_list = []
@@ -3675,6 +3673,27 @@ def stream():
                     "created_at": camp.get("created_at"),
                 })
             payload["campaigns"] = by_camp
+            
+            # calculate totals for dashboard
+            attempted_calls = sum(1 for r in call_list if r.get("status") not in ("pendente", "enfileirado"))
+            answered_calls = sum(1 for r in call_list if r.get("answered") or r.get("status") == "atendido")
+            alo_rate = round((answered_calls / attempted_calls * 100), 1) if attempted_calls > 0 else 0.0
+            
+            payload["totals"] = {
+                "campaigns": len(campaign_list),
+                "campaigns_active": sum(1 for c in campaign_list if c.get("status") == "em_andamento"),
+                "campaigns_finished": sum(1 for c in campaign_list if c.get("status") == "finalizada"),
+                "campaigns_paused": sum(1 for c in campaign_list if c.get("status") == "pausada"),
+                "calls": len(call_list),
+                "pending": sum(1 for r in call_list if r.get("status") == "pendente"),
+                "active": sum(1 for r in call_list if r.get("status") in ("enfileirado", "em_andamento")),
+                "answered": answered_calls,
+                "finished": sum(1 for r in call_list if r.get("status") == "finalizado"),
+                "errors": sum(1 for r in call_list if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
+                "formalized": len(accord_list),
+                "email_sent": sum(1 for a in accord_list if a.get("email_enviado")),
+                "alo_rate": alo_rate,
+            }
         except Exception as e:
             payload["campaigns_error"] = str(e)
 
@@ -3686,7 +3705,7 @@ def stream():
                 camp_ids = [c["id"] for c in camps]
                 camp_map = {c["id"]: c["name"] for c in camps}
                 result   = supabase.table("campaign_calls")\
-                    .select("*")\
+                    .select("id, cpf, phone, status, campaign_id, created_at, line_token, line_name, phone_number_id, debito_data")\
                     .in_("campaign_id", camp_ids)\
                     .in_("status", ["em_andamento", "atendido", "enfileirado", "erro"])\
                     .order("created_at", desc=True)\

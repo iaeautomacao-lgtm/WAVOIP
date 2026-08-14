@@ -167,7 +167,7 @@ LINE_MAX_CONCURRENT = int(env("LINE_MAX_CONCURRENT", env("SIP_MAX_CONCURRENT", "
 LINE_COOLDOWN_SECONDS = int(env("LINE_COOLDOWN_SECONDS", "120"))
 CALL_DELAY_MIN = float(env("CALL_DELAY_MIN", "10.0"))
 CALL_DELAY_MAX = float(env("CALL_DELAY_MAX", "30.0"))
-ACTIVE_CALL_STATUSES = ["enfileirado", "em_andamento"]
+ACTIVE_CALL_STATUSES = ["enfileirado", "em_andamento", "atendido"]
 
 
 celery = Celery("tasks", broker=REDIS_URL, backend=REDIS_URL)
@@ -2668,9 +2668,15 @@ def process_file(self, job_id: str, file_id: str, fname: str):
             _set_job_error(job_id, "Arquivo não encontrado ou expirado.")
             return
 
+        try:
+            data.decode("utf-8")
+            encoding = "utf-8"
+        except UnicodeDecodeError:
+            encoding = "latin-1"
+
         buf = io.BytesIO(data)
-        if fname.endswith(".csv"):
-            df = pd.read_csv(buf, dtype=str, sep=None, engine="python")
+        if fname.endswith(".csv") or fname.endswith(".txt"):
+            df = pd.read_csv(buf, dtype=str, sep=None, engine="python", encoding=encoding)
         else:
             df = pd.read_excel(buf, dtype=str)
 
@@ -2725,8 +2731,8 @@ def process_file(self, job_id: str, file_id: str, fname: str):
         except Exception:
             pass
 
-        if len(df) > 60000:
-            _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite atual de 60000 linhas.")
+        if len(df) > 20000:
+            _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite atual de 20000 linhas.")
             return
 
         _process_dataframe(job_id, df, fname)
