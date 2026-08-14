@@ -2348,7 +2348,7 @@ def dashboard_summary():
         campaigns = supabase.table("campaigns")\
             .select("*").order("created_at", desc=True).execute().data or []
         calls = supabase.table("campaign_calls")\
-            .select("id, campaign_id, status, answered, line_token, debito_data").order("created_at", desc=True).execute().data or []
+            .select("id, campaign_id, status, answered, line_token, debito_data, tabulation").order("created_at", desc=True).execute().data or []
 
         try:
             accords = supabase.table("acordos_formalizados")\
@@ -2365,6 +2365,10 @@ def dashboard_summary():
                 groups_by_token.setdefault(token, []).append(group.get("name"))
 
         formalized_call_ids = {str(a.get("campaign_call_id")).replace("-", "").strip().lower() for a in accords if a.get("campaign_call_id")}
+        for r in calls:
+            if r.get("tabulation") == "acordo_formalizado":
+                formalized_call_ids.add(str(r.get("id")).replace("-", "").strip().lower())
+                
         email_sent = sum(1 for a in accords if a.get("email_enviado"))
         attempted_calls = sum(1 for r in calls if r.get("status") not in ("pendente", "enfileirado"))
         answered_calls = sum(1 for r in calls if r.get("answered") or r.get("status") == "atendido")
@@ -2381,7 +2385,7 @@ def dashboard_summary():
             "answered": answered_calls,
             "finished": sum(1 for r in calls if r.get("status") == "finalizado"),
             "errors": sum(1 for r in calls if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
-            "formalized": len(accords),
+            "formalized": len(formalized_call_ids),
             "email_sent": email_sent,
             "alo_rate": alo_rate,
         }
@@ -3633,7 +3637,7 @@ def stream():
 
         try:
             campaign_list = supabase.table("campaigns").select("*").order("created_at", desc=True).execute().data or []
-            call_list = supabase.table("campaign_calls").select("id, campaign_id, status, answered").order("created_at", desc=True).execute().data or []
+            call_list = supabase.table("campaign_calls").select("id, campaign_id, status, answered, tabulation").order("created_at", desc=True).execute().data or []
             try:
                 accord_list = supabase.table("acordos_formalizados").select("campaign_call_id, email_enviado, deletado_painel").order("created_at", desc=True).execute().data or []
                 accord_list = [a for a in accord_list if not a.get("deletado_painel")]
@@ -3642,6 +3646,9 @@ def stream():
             
             group_list = _group_map()
             formalized_ids = {str(a.get("campaign_call_id")).replace("-", "").strip().lower() for a in accord_list if a.get("campaign_call_id")}
+            for r in call_list:
+                if r.get("tabulation") == "acordo_formalizado":
+                    formalized_ids.add(str(r.get("id")).replace("-", "").strip().lower())
             
             calls_by_camp = {}
             for row in call_list:
@@ -3690,7 +3697,7 @@ def stream():
                 "answered": answered_calls,
                 "finished": sum(1 for r in call_list if r.get("status") == "finalizado"),
                 "errors": sum(1 for r in call_list if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
-                "formalized": len(accord_list),
+                "formalized": len(formalized_ids),
                 "email_sent": sum(1 for a in accord_list if a.get("email_enviado")),
                 "alo_rate": alo_rate,
             }
