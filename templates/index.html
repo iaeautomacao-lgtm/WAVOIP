@@ -1039,7 +1039,7 @@
             <option value="wavoip">📞 Provedor: Wavoip (SIP Trunk)</option>
             <option value="wacalls">🌐 Provedor: WaCalls (Gateway Go)</option>
           </select>
-          <button class="btn btn-success" id="btn-save-campaign" onclick="saveCampaign()">🚀 &nbsp;Salvar e Iniciar Disparos</button>
+          <button class="btn btn-success" id="btn-save-campaign" onclick="saveCampaign()">💾 &nbsp;Salvar campanha</button>
           <button class="btn btn-danger" onclick="resetImport()">✕ &nbsp;Limpar</button>
           <div class="campaign-line-panel">
             <div class="campaign-line-title">SIPs desta campanha</div>
@@ -2799,14 +2799,11 @@
       toast(`✓ Campanha "${name}" salva com sucesso`, 'ok');
       campaignsLoaded = false;
       resetImport();
-      if (json.campaign && json.campaign.id) {
-        await startCampaign(json.campaign.id);
-      }
-      switchTab('monitor');
+      switchTab('campaigns');
     } catch(e) {
       toast(`Erro: ${e.message}`, 'err');
     } finally {
-      btn.disabled = false; btn.textContent = '🚀  Salvar e Iniciar Disparos';
+      btn.disabled = false; btn.textContent = '💾  Salvar campanha';
     }
   }
 
