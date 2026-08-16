@@ -811,10 +811,7 @@
           <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
           <span>Linhas</span>
         </div>
-        <div class="tab" data-tab="contacts">
-          <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-          <span>Contatos</span>
-        </div>
+
         <div class="tab" data-tab="calls">
           <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           <span>Histórico</span>
@@ -899,31 +896,7 @@
         </div>
       </div>
 
-      <!-- CONTATOS -->
-      <div class="section" id="tab-contacts">
-        <div class="sec-head">
-          <span class="sec-title">Contatos com débito</span>
-          <div class="search-wrap">
-            <span class="search-icon">⌕</span>
-            <input class="search-input" type="text" id="contacts-search" placeholder="Buscar por nome..." />
-          </div>
-        </div>
-        <div class="table-card">
-          <table>
-            <thead>
-              <tr><th>Nome</th><th>CPF</th><th>Instituição</th><th>Telefones</th><th>Ações</th></tr>
-            </thead>
-            <tbody id="contacts-body">
-              <tr><td colspan="5"><div class="loader"><div class="spin"></div>Carregando...</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="pagination">
-          <button class="btn btn-ghost" id="contacts-prev" onclick="contactsPage(-1)">← Anterior</button>
-          <span class="page-info" id="contacts-page-info">—</span>
-          <button class="btn btn-ghost" id="contacts-next" onclick="contactsPage(1)">Próxima →</button>
-        </div>
-      </div>
+
 
       <!-- HISTÓRICO -->
       <div class="section" id="tab-calls">
@@ -1027,7 +1000,7 @@
 
         <div class="alert-item warn" style="margin-bottom: 16px; display: flex; align-items: center; gap: 8px; line-height: 1.4;">
           <span style="font-size: 1.1rem; line-height: 1;">⚠️</span>
-          <span>O arquivo (<strong>.txt</strong>, <strong>.csv</strong> ou <strong>Excel</strong>) precisa conter as colunas de <strong>CPF</strong>, <strong>Nome</strong> e <strong>Telefone</strong>. O limite é de até <strong>20.000</strong> leads por importação.</span>
+          <span>O arquivo (<strong>.txt</strong>, <strong>.csv</strong> ou <strong>Excel</strong>) precisa conter as colunas de <strong>CPF</strong>, <strong>Nome</strong> e <strong>Telefone</strong>. O limite é de até <strong>5.000</strong> leads por importação.</span>
         </div>
 
         <div class="drop-zone" id="import-zone" onclick="onDropZoneClick()">
@@ -1066,7 +1039,7 @@
             <option value="wavoip">📞 Provedor: Wavoip (SIP Trunk)</option>
             <option value="wacalls">🌐 Provedor: WaCalls (Gateway Go)</option>
           </select>
-          <button class="btn btn-success" id="btn-save-campaign" onclick="saveCampaign()">💾 &nbsp;Salvar campanha</button>
+          <button class="btn btn-success" id="btn-save-campaign" onclick="saveCampaign()">🚀 &nbsp;Salvar e Iniciar Disparos</button>
           <button class="btn btn-danger" onclick="resetImport()">✕ &nbsp;Limpar</button>
           <div class="campaign-line-panel">
             <div class="campaign-line-title">SIPs desta campanha</div>
@@ -1450,6 +1423,13 @@
       if (tab.dataset.tab === 'users')     loadUsers();
     });
   });
+
+  function switchTab(tabId) {
+    const tabEl = document.querySelector(`.tab[data-tab="${tabId}"]`);
+    if (tabEl) {
+      tabEl.click();
+    }
+  }
 
   let currentUser = null;
   let currentAuthMode = 'login';
@@ -2819,10 +2799,14 @@
       toast(`✓ Campanha "${name}" salva com sucesso`, 'ok');
       campaignsLoaded = false;
       resetImport();
+      if (json.campaign && json.campaign.id) {
+        await startCampaign(json.campaign.id);
+      }
+      switchTab('monitor');
     } catch(e) {
       toast(`Erro: ${e.message}`, 'err');
     } finally {
-      btn.disabled = false; btn.textContent = '💾  Salvar campanha';
+      btn.disabled = false; btn.textContent = '🚀  Salvar e Iniciar Disparos';
     }
   }
 

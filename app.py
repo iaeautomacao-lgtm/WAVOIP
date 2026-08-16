@@ -1163,69 +1163,7 @@ def manual_formalizar_acordo():
 
 
 
-@app.route("/api/monitor", methods=["GET"])
-def get_monitor():
-    try:
-        calls = supabase.table("campaign_calls").select("*").order("created_at DESC, id DESC").limit(100).execute().data or []
-        
-        camp_ids = {str(c.get("campaign_id")) for c in calls if c.get("campaign_id")}
-        name_map = {}
-        if camp_ids:
-            try:
-                camps = supabase.table("campaigns").select("id, name").in_("id", list(camp_ids)).execute().data or []
-                for camp in camps:
-                    name_map[str(camp.get("id"))] = camp.get("name")
-            except Exception:
-                pass
 
-        stats = {
-            "em_andamento": 0,
-            "atendido": 0,
-            "erro": 0
-        }
-
-        data = []
-        for c in calls:
-            raw_status = str(c.get("status", "")).lower()
-            err = c.get("error") or ""
-            dur = c.get("duration") or 0
-            ans = c.get("answered") == 1 or dur > 0 or (raw_status == "finalizado" and not err)
-
-            if raw_status in ("disparado", "em_andamento", "in_progress", "ringing"):
-                st = "em_andamento"
-                stats["em_andamento"] += 1
-            elif raw_status == "pendente":
-                st = "enfileirado"
-            elif ans:
-                st = "atendido"
-                stats["atendido"] += 1
-            else:
-                st = "erro"
-                stats["erro"] += 1
-
-            cid = str(c.get("campaign_id") or "")
-            cname = name_map.get(cid) or "Campanha"
-
-            data.append({
-                "id": c.get("id"),
-                "cpf": c.get("cpf") or "",
-                "phone": c.get("phone") or "",
-                "status": st,
-                "line_name": c.get("line_name") or "DISPOSITIVO 1 - VEIGA",
-                "campaign": cname,
-                "created_at": c.get("created_at") or c.get("updated_at"),
-                "transcript": c.get("transcript") or "",
-                "recording_url": c.get("recording_url") or "",
-                "tabulation": c.get("tabulation") or ""
-            })
-
-        return jsonify({
-            "ok": True,
-            "stats": stats,
-            "data": data
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/cron", methods=["GET", "POST"])
@@ -2307,19 +2245,19 @@ def monitor():
         result = supabase.table("campaign_calls")\
             .select("*")\
             .in_("campaign_id", camp_ids)\
-            .in_("status", ["em_andamento", "atendido", "enfileirado", "erro"])\
+            .eq("status", "em_andamento")\
             .order("created_at DESC, id DESC")\
             .limit(100).execute()
 
         rows = []
-        for r in result.data:
+        for r in (result.data or []):
             vapi_id = r.get("vapi_call_id")
             cur_status = r.get("status")
-            if cur_status in ("em_andamento", "enfileirado") and vapi_id:
+            if cur_status == "em_andamento" and vapi_id:
                 synced = _sync_vapi_call_status(vapi_id)
                 if synced:
                     cur_status = synced
-            if cur_status in ("em_andamento", "enfileirado", "atendido", "erro"):
+            if cur_status == "em_andamento":
                 meta = _line_meta_from_debito(r)
                 rows.append({
                     "id":              r["id"],
@@ -2336,10 +2274,23 @@ def monitor():
                 })
 
         stats = {
-            "em_andamento": sum(1 for r in rows if r["status"] in ("em_andamento", "enfileirado")),
-            "atendido":     sum(1 for r in rows if r["status"] == "atendido"),
-            "erro":         sum(1 for r in rows if r["status"] == "erro"),
+            "em_andamento": len(rows),
+            "atendido":     0,
+            "erro":         0
         }
+        
+        for camp_id in camp_ids:
+            try:
+                ans_res = supabase.table("campaign_calls").select("id", count="exact")\
+                    .eq("campaign_id", camp_id).eq("status", "atendido").limit(0).execute()
+                stats["atendido"] += (ans_res.count or 0)
+                
+                err_res = supabase.table("campaign_calls").select("id", count="exact")\
+                    .eq("campaign_id", camp_id).eq("status", "erro").limit(0).execute()
+                stats["erro"] += (err_res.count or 0)
+            except Exception:
+                pass
+
         return jsonify({"ok": True, "data": rows, "stats": stats})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -3760,7 +3711,7 @@ def stream():
                 result   = supabase.table("campaign_calls")\
                     .select("id, cpf, phone, status, campaign_id, created_at, line_token, line_name, phone_number_id, debito_data")\
                     .in_("campaign_id", camp_ids)\
-                    .in_("status", ["em_andamento", "atendido", "enfileirado", "erro"])\
+                    .eq("status", "em_andamento")\
                     .order("created_at", desc=True)\
                     .limit(100).execute()
                 monitor_rows = []
@@ -3777,13 +3728,27 @@ def stream():
                         "line_name":       r.get("line_name") or (meta or {}).get("line_name", ""),
                         "phone_number_id": r.get("phone_number_id") or (meta or {}).get("phone_number_id", ""),
                     })
+                
+                stats = {
+                    "em_andamento": len(monitor_rows),
+                    "atendido":     0,
+                    "erro":         0
+                }
+                for camp_id in camp_ids:
+                    try:
+                        ans_res = supabase.table("campaign_calls").select("id", count="exact")\
+                            .eq("campaign_id", camp_id).eq("status", "atendido").limit(0).execute()
+                        stats["atendido"] += (ans_res.count or 0)
+                        
+                        err_res = supabase.table("campaign_calls").select("id", count="exact")\
+                            .eq("campaign_id", camp_id).eq("status", "erro").limit(0).execute()
+                        stats["erro"] += (err_res.count or 0)
+                    except Exception:
+                        pass
+
                 payload["monitor"] = {
                     "data": monitor_rows,
-                    "stats": {
-                        "em_andamento": sum(1 for r in monitor_rows if r["status"] in ("em_andamento", "enfileirado")),
-                        "atendido":     sum(1 for r in monitor_rows if r["status"] == "atendido"),
-                        "erro":         sum(1 for r in monitor_rows if r["status"] == "erro"),
-                    }
+                    "stats": stats
                 }
             else:
                 payload["monitor"] = {"data": [], "stats": {"em_andamento": 0, "atendido": 0, "erro": 0}}
