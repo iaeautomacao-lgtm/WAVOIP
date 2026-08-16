@@ -990,7 +990,7 @@ def get_calls():
         if tabulation:
             query = query.eq("tabulation", tabulation)
             
-        result = query.order("answered DESC, created_at DESC, id DESC").range(offset, offset + per_page - 1).execute()
+        result = query.order("created_at DESC, id DESC").range(offset, offset + per_page - 1).execute()
         rows = []
         camp_ids = set()
         for row in (result.data or []):
@@ -2306,29 +2306,43 @@ def list_campaigns():
             cid = c.get("id")
             if cid:
                 try:
-                    calls = supabase.table("campaign_calls").select("id, status, answered, error, vapi_call_id").eq("campaign_id", cid).execute().data or []
-                    # Sincroniza chamadas presas em andamento
-                    for r in calls:
-                        if r.get("status") in ("em_andamento", "enfileirado") and r.get("vapi_call_id"):
-                            synced = _sync_vapi_call_status(r.get("vapi_call_id"))
-                            if synced:
-                                r["status"] = synced
-
-                    c["answered"] = sum(1 for r in calls if r.get("answered") or r.get("status") == "atendido")
-                    c["errors"] = sum(1 for r in calls if not r.get("answered") and r.get("status") not in ("pendente", "enfileirado", "finalizado", "atendido"))
-                    c["last_error"] = next((r.get("error") for r in calls if r.get("error")), "Falha de linha ou chamada não atendida")
+                    # 1. Count answered calls
+                    ans_res = supabase.table("campaign_calls").select("id", count="exact")\
+                        .eq("campaign_id", cid).or_("answered.eq.true,status.eq.atendido").limit(0).execute()
+                    c["answered"] = ans_res.count or 0
                     
-                    # Auto-heal: se a campanha está 'em_andamento', mas não restam chamadas ativas ou pendentes, marca como 'finalizada'!
-                    active_calls = [r for r in calls if r.get("status") in ("pendente", "enfileirado", "em_andamento")]
-                    if c.get("status") == "em_andamento" and not active_calls and calls:
-                        c["status"] = "finalizada"
-                        c["finished"] = len(calls)
-                        try:
-                            supabase.table("campaigns").update({"status": "finalizada", "finished": len(calls)}).eq("id", cid).execute()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+                    # 2. Count errors
+                    err_res = supabase.table("campaign_calls").select("id", count="exact")\
+                        .eq("campaign_id", cid)\
+                        .eq("answered", False)\
+                        .not_.in_("status", ["pendente", "enfileirado", "finalizado", "atendido"])\
+                        .limit(0).execute()
+                    c["errors"] = err_res.count or 0
+                    
+                    # 3. Get last error message
+                    last_err_res = supabase.table("campaign_calls").select("error")\
+                        .eq("campaign_id", cid).not_.eq("error", "").order("created_at DESC, id DESC").limit(1).execute()
+                    last_error_data = last_err_res.data
+                    c["last_error"] = last_error_data[0].get("error") if last_error_data else "Falha de linha ou chamada não atendida"
+                    
+                    # 4. Auto-heal if needed
+                    if c.get("status") == "em_andamento":
+                        active_res = supabase.table("campaign_calls").select("id", count="exact")\
+                            .eq("campaign_id", cid).in_("status", ["pendente", "enfileirado", "em_andamento"]).limit(0).execute()
+                        active_count = active_res.count or 0
+                        if active_count == 0:
+                            total_res = supabase.table("campaign_calls").select("id", count="exact")\
+                                .eq("campaign_id", cid).limit(0).execute()
+                            total_calls = total_res.count or 0
+                            if total_calls > 0:
+                                c["status"] = "finalizada"
+                                c["finished"] = total_calls
+                                try:
+                                    supabase.table("campaigns").update({"status": "finalizada", "finished": total_calls}).eq("id", cid).execute()
+                                except Exception:
+                                    pass
+                except Exception as e:
+                    print(f"Error loading stats for campaign {cid}: {e}")
         return jsonify({"ok": True, "data": camps})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
