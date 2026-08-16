@@ -973,45 +973,37 @@ def make_call_task(self, campaign_id: str, contact: dict):
             pass
 
 
-def _check_campaign_completion(campaign_id: str) -> bool:
-    """
-    Verifica se ainda existem chamadas em status 'pendente', 'enfileirado' ou 'em_andamento'
-    para esta campanha. Se não houver mais chamadas ativas/pendentes, marca a campanha como 'finalizada'.
-    """
+def _check_campaign_completion(campaign_id: str):
+    """Verifica o progresso das chamadas, atualiza o contador 'finished' e finaliza a campanha se concluida."""
     if not campaign_id:
-        return False
+        return
     try:
-        active_res = supabase.table("campaign_calls") \
+        remaining_res = supabase.table("campaign_calls") \
             .select("id", count="exact") \
             .eq("campaign_id", campaign_id) \
-            .in_("status", ["pendente", "enfileirado", "em_andamento"]) \
+            .in_("status", ["pendente", "enfileirado", "em_andamento", "atendido"]) \
+            .limit(0) \
             .execute()
-        active_count = active_res.count or 0
+        remaining = remaining_res.count or 0
 
         finished_res = supabase.table("campaign_calls") \
             .select("id", count="exact") \
             .eq("campaign_id", campaign_id) \
-            .in_("status", ["finalizado", "erro", "atendido", "sem_debito", "sem_telefone", "falha_sem_linha"]) \
+            .in_("status", ["finalizado", "erro", "sem_debito", "sem_telefone", "falha_sem_linha", "atendida"]) \
+            .limit(0) \
             .execute()
-        finished_count = finished_res.count or 0
+        finished = finished_res.count or 0
 
-        if active_count == 0:
-            supabase.table("campaigns").update({
-                "status": "finalizada",
-                "finished": finished_count,
-                "updated_at": "now()"
-            }).eq("id", campaign_id).execute()
-            logger.info(f"[CAMPAIGN] Campanha {campaign_id} finalizada automaticamente! (finished={finished_count})")
-            return True
-        else:
-            supabase.table("campaigns").update({
-                "finished": finished_count,
-                "updated_at": "now()"
-            }).eq("id", campaign_id).execute()
-            return False
+        camp_res = supabase.table("campaigns").select("total").eq("id", campaign_id).execute()
+        total = (camp_res.data[0].get("total") or 0) if camp_res.data else 0
+
+        update_payload = {"finished": finished, "updated_at": "now()"}
+        if remaining == 0 or (total > 0 and finished >= total):
+            update_payload["status"] = "finalizada"
+
+        supabase.table("campaigns").update(update_payload).eq("id", campaign_id).execute()
     except Exception as e:
-        logger.error(f"[CAMPAIGN] Erro ao verificar finalização da campanha {campaign_id}: {e}")
-        return False
+        logger.error(f"[CAMPAIGN] Erro em _check_campaign_completion para {campaign_id}: {e}")
 
 
 def _merge_debito_with_import_meta(row: dict, debito: dict) -> dict:
@@ -1493,38 +1485,6 @@ def _advance_campaign(campaign_id: str, current_order_idx: int):
             _check_campaign_completion(campaign_id)
     except Exception:
         pass
-
-
-def _check_campaign_completion(campaign_id: str):
-    """Verifica o progresso das chamadas, atualiza o contador 'finished' e finaliza a campanha se concluida."""
-    try:
-        remaining_res = supabase.table("campaign_calls") \
-            .select("id", count="exact") \
-            .eq("campaign_id", campaign_id) \
-            .in_("status", ["pendente", "enfileirado", "em_andamento", "atendido"]) \
-            .execute()
-        remaining = remaining_res.count or 0
-
-        finished_res = supabase.table("campaign_calls") \
-            .select("id", count="exact") \
-            .eq("campaign_id", campaign_id) \
-            .in_("status", ["finalizado", "erro", "sem_debito", "sem_telefone", "falha_sem_linha", "atendida"]) \
-            .execute()
-        finished = finished_res.count or 0
-
-        camp_res = supabase.table("campaigns").select("total").eq("id", campaign_id).execute()
-        total = (camp_res.data[0].get("total") or 0) if camp_res.data else 0
-
-        update_payload = {"finished": finished, "updated_at": "now()"}
-        if remaining == 0 or (total > 0 and finished >= total):
-            update_payload["status"] = "finalizada"
-
-        supabase.table("campaigns").update(update_payload).eq("id", campaign_id).execute()
-    except Exception as e:
-        logger.error(f"[CAMPAIGN] Erro em _check_campaign_completion para {campaign_id}: {e}")
-
-
-
 
 # ── ACORDO FORMALIZADO ────────────────────────────────────────
 
@@ -2731,8 +2691,13 @@ def process_file(self, job_id: str, file_id: str, fname: str):
         except Exception:
             pass
 
-        if len(df) > 20000:
-            _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite atual de 20000 linhas.")
+        try:
+            import_max_rows = int(env("IMPORT_MAX_ROWS", "5000"))
+        except (ValueError, TypeError):
+            import_max_rows = 5000
+
+        if len(df) > import_max_rows:
+            _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite configurado de {import_max_rows} linhas.")
             return
 
         _process_dataframe(job_id, df, fname)

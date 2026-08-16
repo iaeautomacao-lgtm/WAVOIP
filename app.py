@@ -137,6 +137,11 @@ def run_migrations():
             if not cur.fetchone():
                 cur.execute("ALTER TABLE `campaigns` ADD COLUMN `assistant_id` VARCHAR(128) DEFAULT NULL")
                 print("Migration: Added assistant_id to campaigns")
+            
+            cur.execute("SHOW INDEX FROM `campaign_calls` WHERE Key_name = 'idx_campaign_calls_status'")
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE `campaign_calls` ADD INDEX `idx_campaign_calls_status` (`status`)")
+                print("Migration: Added index idx_campaign_calls_status to campaign_calls")
     except Exception as e:
         print(f"Migration warning: {e}")
 
@@ -322,6 +327,10 @@ def _line_meta_from_debito(row: dict) -> dict:
     return debito.get("_dialer") if isinstance(debito, dict) else {}
 
 
+_vapi_sync_cache = {}
+_vapi_sync_cache_lock = threading.Lock()
+
+
 def _active_line_counts(line_tokens: list) -> dict:
     counts = {token: 0 for token in line_tokens}
     if not line_tokens:
@@ -341,12 +350,27 @@ def _active_line_counts(line_tokens: list) -> dict:
         vapi_id = row.get("vapi_call_id")
         cur_status = row.get("status")
         if cur_status == "em_andamento" and vapi_id:
+            now = time.time()
+            need_sync = False
             try:
-                synced = _sync_vapi_call_status(vapi_id)
-                if synced:
-                    cur_status = synced
+                r = redis_client()
+                lock_key = f"sync_vapi_lock:{vapi_id}"
+                if r.set(lock_key, "1", ex=20, nx=True):
+                    need_sync = True
             except Exception:
-                pass
+                with _vapi_sync_cache_lock:
+                    last_sync = _vapi_sync_cache.get(vapi_id, 0.0)
+                    if now - last_sync > 20:
+                        _vapi_sync_cache[vapi_id] = now
+                        need_sync = True
+
+            if need_sync:
+                try:
+                    synced = _sync_vapi_call_status(vapi_id)
+                    if synced:
+                        cur_status = synced
+                except Exception:
+                    pass
         if cur_status in ("enfileirado", "em_andamento", "atendido"):
             meta = _line_meta_from_debito(row)
             token = row.get("line_token") or (meta or {}).get("line_token")
@@ -2857,6 +2881,7 @@ def start_campaign(campaign_id):
             .select("id", count="exact")\
             .eq("campaign_id", campaign_id)\
             .eq("status", "pendente")\
+            .limit(0)\
             .execute()
 
         if not (pending_count.count or 0):
@@ -2949,6 +2974,7 @@ def resume_campaign(campaign_id):
             .select("id", count="exact")\
             .eq("campaign_id", campaign_id)\
             .in_("status", ["finalizado", "erro", "sem_debito", "sem_telefone", "falha_sem_linha"])\
+            .limit(0)\
             .execute()
         finished = finished_res.count or 0
 
@@ -3388,6 +3414,7 @@ def vapi_webhook():
                     .select("id", count="exact")\
                     .eq("campaign_id", campaign_id)\
                     .in_("status", ["finalizado", "erro", "sem_debito", "sem_telefone", "falha_sem_linha"])\
+                    .limit(0)\
                     .execute()
                 finished = finished_res.count or 0
                 try:

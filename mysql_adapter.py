@@ -281,14 +281,36 @@ class QueryBuilder:
 
     def _execute_insert(self, cur):
         rows = self.payload if isinstance(self.payload, list) else [self.payload]
-        inserted = []
+        if not rows:
+            return QueryResponse(data=[], count=0)
+
+        prepared_rows = []
         for row in rows:
-            clean = self._prepare_payload(dict(row or {}), ensure_id=True)
-            columns = list(clean.keys())
-            placeholders = ", ".join(["%s"] * len(columns))
-            sql = f"INSERT INTO `{self.table_name}` ({', '.join(f'`{c}`' for c in columns)}) VALUES ({placeholders})"
-            cur.execute(sql, [clean[c] for c in columns])
-            inserted.append(self._normalize_row(dict(row, id=clean.get("id", row.get("id")))))
+            prepared_rows.append(self._prepare_payload(dict(row or {}), ensure_id=True))
+
+        # Get all unique columns across all rows to support varying columns safely
+        all_cols = set()
+        for p_row in prepared_rows:
+            all_cols.update(p_row.keys())
+        columns = list(all_cols)
+
+        if not columns:
+            return QueryResponse(data=[], count=0)
+
+        # Build bulk insert query
+        placeholders_one = "(" + ", ".join(["%s"] * len(columns)) + ")"
+        placeholders_all = ", ".join([placeholders_one] * len(prepared_rows))
+
+        sql = f"INSERT INTO `{self.table_name}` ({', '.join(f'`{c}`' for c in columns)}) VALUES {placeholders_all}"
+
+        flat_params = []
+        for p_row in prepared_rows:
+            for col in columns:
+                flat_params.append(p_row.get(col, None))
+
+        cur.execute(sql, flat_params)
+
+        inserted = [self._normalize_row(p_row) for p_row in prepared_rows]
         return QueryResponse(data=inserted, count=len(inserted))
 
     def _execute_update(self, cur):
