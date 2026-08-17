@@ -1558,6 +1558,7 @@
         currentUser = data.user;
         document.getElementById('user-display-name').textContent = currentUser.name || currentUser.email;
         document.getElementById('login-overlay').style.display = 'none';
+        loadLines();
       } else {
         showLoginOverlay();
       }
@@ -1791,19 +1792,20 @@
 
   async function loadLines() {
     const grid = document.getElementById('lines-grid');
-    if (grid) grid.innerHTML = '<div class="loader"><div class="spin"></div>Carregando linhas...</div>';
+    if (grid) grid.innerHTML = '<div class="loader"><div class="spin"></div>Carregando linhas Wavoip...</div>';
     try {
       const res  = await fetch(`${API}/api/lines`);
       const json = await res.json();
       if (res.status === 401 || json.auth_required) {
+        if (grid) grid.innerHTML = '<div class="loader">Autenticação necessária. Faça login novamente.</div>';
         showLoginOverlay();
         return;
       }
-      if (!json.ok) throw new Error(json.error);
+      if (!json.ok) throw new Error(json.error || 'Erro ao carregar linhas');
       linesData = json.data || [];
       renderLines(linesData);
     } catch(e) {
-      if (grid) grid.innerHTML = `<div class="loader">Erro: ${escapeHtml(e.message)}</div>`;
+      if (grid) grid.innerHTML = `<div class="loader" style="color:var(--red)">Erro ao carregar linhas: ${escapeHtml(e.message)}</div>`;
     }
   }
 
