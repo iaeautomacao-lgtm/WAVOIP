@@ -1399,7 +1399,15 @@
   const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[ch]));
-  const jsArg = (v) => escapeHtml(JSON.stringify(String(v ?? '')).replace(/</g, '\\u003c'));
+  const jsArg = (v) => {
+    const s = String(v ?? '')
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '&quot;')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '');
+    return `'${s}'`;
+  };
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input, init = {}) => {
     const token = sessionStorage.getItem('api_auth_token') || localStorage.getItem('api_auth_token') || '';
