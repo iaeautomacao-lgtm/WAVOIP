@@ -1376,9 +1376,9 @@
   var contactsSearch = '';
   var searchTimer = null;
   var callsLoaded = false;
-  var callsPage_ = 1;
+  callsPage_ = 1;
   var campaignsLoaded = false;
-  var campaignRows = [];
+  campaignRows = [];
   var currentCampaignPage = 1;
   var redispararCampaignId = null;
   var editingCampaign = null;
@@ -2176,7 +2176,7 @@
   }
 
   contactsLoaded = false;
-  var contactsPage_ = 1, contactsSearch = '', searchTimer;
+  contactsPage_ = 1; contactsSearch = ''; searchTimer = null;
 
   async function loadContacts() {
     contactsLoaded = true;
@@ -2244,7 +2244,7 @@
   }
 
   callsLoaded = false;
-  var callsPage_ = 1;
+  callsPage_ = 1;
 
   async function loadCalls(force = false) {
     if (force) callsPage_ = 1;
@@ -2384,7 +2384,7 @@
   }
 
   campaignsLoaded = false;
-  var campaignRows = [];
+  campaignRows = [];
 
   async function loadCampaigns() {
     campaignsLoaded = true;
@@ -2518,7 +2518,7 @@
     }
   }
 
-  let redispararCampaignId = null;
+  redispararCampaignId = null;
 
   async function openRedispararModal(id) {
     redispararCampaignId = id;
@@ -2847,7 +2847,7 @@
     }
   }
 
-  let modalContact = null;
+  modalContact = null;
 
   function openModal(contact) {
     modalContact = contact;
@@ -2889,9 +2889,9 @@
     if (e.target === e.currentTarget) closeCampaignLinesModal();
   });
 
-  let importRows      = [];
-  let importSessionId = null;
-  let _pollTimer      = null;
+  importRows = [];
+  importSessionId = null;
+  _pollTimer = null;
 
   const fileInput  = document.getElementById('file-input');
   const importZone = document.getElementById('import-zone');
@@ -3277,7 +3277,7 @@
     fileInput.value = '';
   }
 
-  let currentDetailsCallId = null;
+  currentDetailsCallId = null;
 
   function openDetails(callId, label, recordingUrl, transcript, tabulation) {
     currentDetailsCallId = callId;
@@ -3484,7 +3484,7 @@
   }
 
   /* ── WACALLS SESSIONS & QR CODE MANAGER ── */
-  let wacallsPollTimer = null;
+  wacallsPollTimer = null;
 
   async function loadWaCallsSessions() {
     const grid = document.getElementById('wacalls-grid');
@@ -3640,8 +3640,8 @@
   }
 
   /* ── WAVOIP PAIRING & QR CODE MANAGER ── */
-  let wavoipPollTimer = null;
-  let wavoipActiveToken = null;
+  wavoipPollTimer = null;
+  wavoipActiveToken = null;
 
   function openWavoipPairModal(token, name) {
     wavoipActiveToken = token;
