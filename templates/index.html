@@ -1003,12 +1003,12 @@
           <span>O arquivo (<strong>.txt</strong>, <strong>.csv</strong> ou <strong>Excel</strong>) precisa conter as colunas de <strong>CPF</strong>, <strong>Nome</strong> e <strong>Telefone</strong>. O limite é de até <strong>5.000</strong> leads por importação.</span>
         </div>
 
-        <div class="drop-zone" id="import-zone" onclick="onDropZoneClick()">
+        <div class="drop-zone" id="import-zone" onclick="onDropZoneClick(event)">
           <div class="drop-icon" id="drop-icon">⬆</div>
           <div class="drop-title" id="drop-title">Arraste ou clique para selecionar</div>
           <div class="drop-sub" id="drop-sub">Aceita .xlsx, .csv e .txt &nbsp;·&nbsp; Planilha DDM ou genérica (CPF, Nome)</div>
-          <input type="file" id="file-input" accept=".xlsx,.csv,.xls,.txt" style="display:none" />
         </div>
+        <input type="file" id="file-input" accept=".xlsx,.csv,.xls,.txt" style="display:none" onclick="event.stopPropagation()" />
 
         <div class="upload-progress-wrap" id="upload-progress-wrap">
           <div class="upload-progress-bar-bg">
@@ -2934,9 +2934,12 @@
 
   document.addEventListener('DOMContentLoaded', restoreImportState);
 
-  function onDropZoneClick() {
-    if (importZone.classList.contains('uploading')) return;
-    fileInput.click();
+  function onDropZoneClick(e) {
+    if (e) e.stopPropagation();
+    const zone = document.getElementById('import-zone');
+    const input = document.getElementById('file-input');
+    if (zone && zone.classList.contains('uploading')) return;
+    if (input) input.click();
   }
 
   fileInput.addEventListener('change', e => {
