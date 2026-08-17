@@ -2833,11 +2833,11 @@ def _process_dataframe(job_id: str, df, fname: str):
                     return c
         return None
 
-    cpf_col = first_col(["cpf", "cpfcgc"])
-    nome_col = first_col(["nome", "name"])
-    id_col = first_col(["matricula", "id", "externo", "cliente id", "cliente_id"])
+    cpf_col = first_col(["cpf", "cpfcgc", "cpf_cnpj", "cpf/cnpj", "cpf_aluno", "cpf_cliente", "documento", "doc", "num_cpf", "nr_cpf", "num_documento", "nr_documento", "tax_id"])
+    nome_col = first_col(["nome", "name", "nome_cliente", "nome_aluno", "nome completo", "nome_completo", "sacado", "devedor", "cliente", "razao_social", "razao social"])
+    id_col = first_col(["matricula", "id", "externo", "cliente id", "cliente_id", "contrato", "cod"])
     phone_col = first_col(
-        ["fone", "fone1", "fone2", "fone3", "tel", "telefone", "celular", "phone", "contato", "whatsapp"]
+        ["fone", "fone1", "fone2", "fone3", "tel", "telefone", "telefone1", "telefone2", "celular", "celular1", "phone", "contato", "whatsapp", "ddd_fone", "ddd+celular", "ddd", "numero", "num"]
     )
     val_col = first_col(["val_atualizado", "val_nominal", "val_atua", "val_nom"])
     is_ddm = val_col is not None
@@ -2845,6 +2845,15 @@ def _process_dataframe(job_id: str, df, fname: str):
     # Detecta colunas de valor e instituição para fallback
     valor_col = first_col(["val_atualizado", "val_nominal", "nominal", "valor", "nominal_princ", "val_atua", "val_nom"])
     inst_col = first_col(["instituicao", "cliente", "carteira", "ies"])
+
+    # Fallbacks inteligentes por posição se não encontrou pelos nomes de coluna
+    cols = list(df.columns)
+    if not cpf_col and len(cols) > 0:
+        cpf_col = cols[0]
+    if not nome_col and len(cols) > 1:
+        nome_col = cols[1]
+    if not phone_col and len(cols) > 2:
+        phone_col = cols[2]
 
     if not cpf_col or not nome_col:
         _set_job_error(job_id, f"Colunas obrigatórias não encontradas. Colunas detectadas: {list(df.columns)}")
