@@ -939,11 +939,20 @@ def delete_sip_group(group_id):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+def _safe_int(val, default=1):
+    try:
+        if str(val).lower() in ("undefined", "null", "none", ""):
+            return default
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
+
 @app.route("/api/contacts", methods=["GET"])
 def get_contacts():
     try:
-        page     = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 50))
+        page     = _safe_int(request.args.get("page"), 1)
+        per_page = _safe_int(request.args.get("per_page"), 50)
         search   = request.args.get("search", "").strip()
         offset   = (page - 1) * per_page
         query    = supabase.table("contacts").select(
@@ -975,8 +984,8 @@ def delete_contact(contact_id):
 @app.route("/api/calls", methods=["GET"])
 def get_calls():
     try:
-        page     = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 50))
+        page     = _safe_int(request.args.get("page"), 1)
+        per_page = _safe_int(request.args.get("per_page"), 50)
         offset   = (page - 1) * per_page
         only_answered = request.args.get("only_answered", "false").lower() == "true"
         tabulation = request.args.get("tabulation", "").strip()
@@ -1051,8 +1060,8 @@ def update_call_tabulation(call_id):
 @app.route("/api/acordos", methods=["GET"])
 def get_acordos():
     try:
-        page     = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 50))
+        page     = _safe_int(request.args.get("page"), 1)
+        per_page = _safe_int(request.args.get("per_page"), 50)
         offset   = (page - 1) * per_page
         conn = supabase.connect()
         with conn.cursor() as cur:

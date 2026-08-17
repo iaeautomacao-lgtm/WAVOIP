@@ -1363,9 +1363,15 @@
   <div id="toast"></div>
 
   <script>
-  let contactsLoaded = false;
-  let callsLoaded = false;
-  let campaignsLoaded = false;
+  var contactsLoaded = false;
+  var contactsPage_ = 1;
+  var contactsSearch = '';
+  var searchTimer = null;
+  var callsLoaded = false;
+  var callsPage_ = 1;
+  var campaignsLoaded = false;
+  var campaignRows = [];
+  var currentCampaignPage = 1;
   const API = '';
 
   function toggleTheme() {
@@ -2141,7 +2147,7 @@
   }
 
   contactsLoaded = false;
-  let contactsPage_ = 1, contactsSearch = '', searchTimer;
+  var contactsPage_ = 1, contactsSearch = '', searchTimer;
 
   async function loadContacts() {
     contactsLoaded = true;
@@ -2209,7 +2215,7 @@
   }
 
   callsLoaded = false;
-  let callsPage_ = 1;
+  var callsPage_ = 1;
 
   async function loadCalls(force = false) {
     if (force) callsPage_ = 1;
@@ -2349,7 +2355,7 @@
   }
 
   campaignsLoaded = false;
-  let campaignRows = [];
+  var campaignRows = [];
 
   async function loadCampaigns() {
     campaignsLoaded = true;
