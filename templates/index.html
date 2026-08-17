@@ -1363,6 +1363,14 @@
   <div id="toast"></div>
 
   <script>
+  var linesData = [];
+  var sipGroups = [];
+  var dashboardData = null;
+  var realtimeSource = null;
+  var realtimeConnected = false;
+  var acordosLoaded = false;
+  var acordosPage_ = 1;
+  var acordosData = [];
   var contactsLoaded = false;
   var contactsPage_ = 1;
   var contactsSearch = '';
@@ -1798,16 +1806,16 @@
     el._t = setTimeout(() => el.className = '', 4000);
   }
 
-  let linesData = [];
-  let sipGroups = [];
-  let dashboardData = null;
-  let editingGroupId = null;
-  let editingCampaign = null;
-  let realtimeSource = null;
-  let realtimeConnected = false;
-  let acordosLoaded = false;
-  let acordosPage_ = 1;
-  let acordosData = [];
+  linesData = [];
+  sipGroups = [];
+  dashboardData = null;
+  editingGroupId = null;
+  editingCampaign = null;
+  realtimeSource = null;
+  realtimeConnected = false;
+  acordosLoaded = false;
+  acordosPage_ = 1;
+  acordosData = [];
 
   async function loadLines() {
     const grid = document.getElementById('lines-grid');
