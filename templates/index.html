@@ -1372,6 +1372,17 @@
   var campaignsLoaded = false;
   var campaignRows = [];
   var currentCampaignPage = 1;
+  var redispararCampaignId = null;
+  var editingCampaign = null;
+  var editingGroupId = null;
+  var modalContact = null;
+  var currentDetailsCallId = null;
+  var wacallsPollTimer = null;
+  var wavoipPollTimer = null;
+  var wavoipActiveToken = null;
+  var importRows = [];
+  var importSessionId = null;
+  var _pollTimer = null;
   const API = '';
 
   function toggleTheme() {
@@ -2206,7 +2217,7 @@
 
   function contactsPage(dir) { contactsPage_ += dir; loadContacts(); }
 
-  document.getElementById('contacts-search').addEventListener('input', e => {
+  document.getElementById('contacts-search')?.addEventListener('input', e => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { contactsSearch = e.target.value; contactsPage_ = 1; loadContacts(); }, 400);
   });
@@ -2862,11 +2873,11 @@
     }
   }
 
-  document.getElementById('call-modal').addEventListener('click', e => {
+  document.getElementById('call-modal')?.addEventListener('click', e => {
     if (e.target === e.currentTarget) closeModal();
   });
 
-  document.getElementById('campaign-lines-modal').addEventListener('click', e => {
+  document.getElementById('campaign-lines-modal')?.addEventListener('click', e => {
     if (e.target === e.currentTarget) closeCampaignLinesModal();
   });
 
