@@ -1363,6 +1363,9 @@
   <div id="toast"></div>
 
   <script>
+  let contactsLoaded = false;
+  let callsLoaded = false;
+  let campaignsLoaded = false;
   const API = '';
 
   function toggleTheme() {
@@ -2137,7 +2140,8 @@
       : '<option value="">Nenhuma linha disponível</option>';
   }
 
-  let contactsLoaded = false, contactsPage_ = 1, contactsSearch = '', searchTimer;
+  contactsLoaded = false;
+  let contactsPage_ = 1, contactsSearch = '', searchTimer;
 
   async function loadContacts() {
     contactsLoaded = true;
@@ -2204,7 +2208,8 @@
     }
   }
 
-  let callsLoaded = false, callsPage_ = 1;
+  callsLoaded = false;
+  let callsPage_ = 1;
 
   async function loadCalls(force = false) {
     if (force) callsPage_ = 1;
@@ -2343,7 +2348,7 @@
     }, 5000);
   }
 
-  let campaignsLoaded = false;
+  campaignsLoaded = false;
   let campaignRows = [];
 
   async function loadCampaigns() {
