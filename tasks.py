@@ -755,29 +755,46 @@ def _phone_e164(phone) -> str:
 
 
 
-def _first_phone(row, cols: list) -> str:
-    """Busca o primeiro telefone válido com variações comuns de planilhas legadas."""
+def _first_phone(row, cols: list, phone_col: str = None) -> str:
+    """Busca o primeiro telefone válido com variações comuns de planilhas legadas ou fallback por varredura."""
+    if phone_col and phone_col in row:
+        val = _normalize_phone(row.get(phone_col, ""))
+        if val and len(val) >= 8 and val.lower() != "nan":
+            return val
+
     candidates = [
         "fone", "fone1", "fone2", "fone3",
         "tel", "telefone", "telefone1", "telefone2",
         "celular", "celular1", "celular2",
         "phone", "phone1", "phone2",
-        "contato", "whatsapp", "whats", "cel",
+        "contato", "whatsapp", "whats", "cel", "numero", "num", "ddd_fone", "ddd_celular"
     ]
-    cols_lower = {c.lower(): c for c in cols}
+    cols_lower = {str(c).lower(): c for c in cols}
     for cand in candidates:
         key = cols_lower.get(cand.lower())
         if key is None:
+            for cl_k, orig in cols_lower.items():
+                if cand in cl_k:
+                    key = orig
+                    break
+        if key is None:
             continue
         val = _normalize_phone(row.get(key, ""))
-        if val and val.lower() != "nan":
+        if val and len(val) >= 8 and val.lower() != "nan":
             return val
+
+    # Varre todos os valores da linha em busca de um padrão de telefone (8 a 13 dígitos)
+    for k, v in row.items():
+        val = _normalize_phone(v)
+        if val and 8 <= len(val) <= 13:
+            return val
+
     return ""
 
 
-def _first_phone_hires(row, cols: list) -> str:
+def _first_phone_hires(row, cols: list, phone_col: str = None) -> str:
     """Mesmo acesso do parser principal, mantendo nome compatível para o backend."""
-    return _first_phone(row, cols)
+    return _first_phone(row, cols, phone_col=phone_col)
 
 
 def _all_phones_ddm(row, cols: list) -> list:
@@ -2692,9 +2709,9 @@ def process_file(self, job_id: str, file_id: str, fname: str):
             pass
 
         try:
-            import_max_rows = int(env("IMPORT_MAX_ROWS", "5000"))
+            import_max_rows = int(env("IMPORT_MAX_ROWS", "25000"))
         except (ValueError, TypeError):
-            import_max_rows = 5000
+            import_max_rows = 25000
 
         if len(df) > import_max_rows:
             _set_job_error(job_id, f"Arquivo com {len(df)} linhas excede o limite configurado de {import_max_rows} linhas.")
@@ -2893,7 +2910,7 @@ def _process_dataframe(job_id: str, df, fname: str):
             if phone_col and phone_col in row:
                 meta["raw_phone_fallback"] = row.get(phone_col, "").strip()
         else:
-            phone = _first_phone_hires(row, list(df.columns)) if phone_col else ""
+            phone = _first_phone_hires(row, list(df.columns), phone_col=phone_col)
             meta = {
                 "nominal": nominal_val or "0,00",
                 "nominal_princ": nominal_val or "0,00",
