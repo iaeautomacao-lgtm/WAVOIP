@@ -564,16 +564,17 @@ def _inferir_tabulacao(transcript: str, ended_reason: str, status: str, acordo_p
     reason_lower = str(ended_reason or "").lower()
     t_lower = str(transcript or "").lower()
     
-    if acordo_pela_tool or _detectar_acordo_formalizado(transcript) or "#acordoformalizado" in t_lower:
-        return "acordo_formalizado"
-        
+    # 1. Se for caixa postal / voicemail, NUNCA deve ser classificado como acordo
+    if _is_voicemail_or_self_talk(transcript, ended_reason) or "voicemail" in reason_lower:
+        return "caixa_postal"
+
     if reason_lower in ("customer-did-not-answer", "did-not-answer", "no-answer"):
         return "sem_resposta"
     if reason_lower in ("customer-busy", "busy"):
         return "ocupado"
-        
-    if _is_voicemail_or_self_talk(transcript, ended_reason) or "voicemail" in reason_lower:
-        return "caixa_postal"
+    
+    if acordo_pela_tool or _detectar_acordo_formalizado(transcript) or "#acordoformalizado" in t_lower:
+        return "acordo_formalizado"
         
     if "#agendamento" in t_lower or "agendar" in t_lower or "agendado" in t_lower:
         return "agendado"
@@ -610,9 +611,15 @@ def _is_voicemail_or_self_talk(transcript: str, ended_reason: str = "") -> bool:
         "permaneça na linha",
         "permaneca na linha",
         "entregar o seu recado",
+        "mensagem gravada",
+        "sinal sonoro",
+        "caixa de mensagens",
+        "ligação será cobrada",
+        "ligacao sera cobrada",
     ]
     if any(p in t for p in voicemail_phrases):
         return True
+    return False
 
 def _converter_palavras_para_digitos(texto: str) -> str:
     if not texto:
@@ -3339,6 +3346,8 @@ def vapi_webhook():
                     break
 
         is_voicemail = _is_voicemail_or_self_talk(transcript, ended_reason)
+        if is_voicemail:
+            acordo_pela_tool = False
         acordo_detectado_texto = not acordo_pela_tool and not is_voicemail and _detectar_acordo_formalizado(transcript)
 
         tab = _inferir_tabulacao(transcript, ended_reason, "finalizado", acordo_pela_tool or acordo_detectado_texto)
