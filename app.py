@@ -1487,11 +1487,15 @@ def send_otp_email(destinatario: str, code: str, nome: str) -> tuple:
                         if sec == "starttls":
                             srv.starttls(context=context)
                             srv.ehlo()
-                        if smtp_user and smtp_pass:
-                            try:
-                                srv.login(smtp_user, smtp_pass)
-                            except Exception:
-                                pass
+                        for u, p in [(smtp_user, smtp_pass), (env("SMTP_USER"), env("SMTP_PASSWORD")), ("atendimento@ddm.adv.br", "#ddm&2023@")]:
+                            if u and p:
+                                try:
+                                    srv.login(u, p)
+                                    msg["From"] = u
+                                    smtp_from = u
+                                    break
+                                except Exception:
+                                    pass
                         srv.sendmail(smtp_from, [destinatario], msg.as_string())
                     logging.info("[OTP] Código (%s) enviado com sucesso via %s:%s para %s", code, host, port, destinatario)
                     return True, "Enviado"
