@@ -8,6 +8,12 @@ from decimal import Decimal
 from typing import Any, List, Tuple
 from urllib.parse import urlparse, unquote
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+except Exception:
+    pass
+
 import pymysql
 from pymysql.cursors import DictCursor
 
