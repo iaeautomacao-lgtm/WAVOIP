@@ -1820,8 +1820,11 @@
   async function loadLines() {
     const grid = document.getElementById('lines-grid');
     if (grid) grid.innerHTML = '<div class="loader"><div class="spin"></div>Carregando linhas Wavoip...</div>';
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 7000);
     try {
-      const res  = await fetch(`${API}/api/lines`);
+      const res  = await fetch(`${API}/api/lines`, { signal: controller.signal });
+      clearTimeout(timer);
       const json = await res.json();
       if (res.status === 401 || json.auth_required) {
         if (grid) grid.innerHTML = '<div class="loader">Autenticação necessária. Faça login novamente.</div>';
@@ -1832,7 +1835,10 @@
       linesData = json.data || [];
       renderLines(linesData);
     } catch(e) {
-      if (grid) grid.innerHTML = `<div class="loader" style="color:var(--red)">Erro ao carregar linhas: ${escapeHtml(e.message)}</div>`;
+      clearTimeout(timer);
+      const isTimeout = e.name === 'AbortError';
+      const msg = isTimeout ? 'Tempo limite atingido ao comunicar com a API da Wavoip' : e.message;
+      if (grid) grid.innerHTML = `<div class="loader" style="color:var(--amber)">${escapeHtml(msg)} &nbsp;·&nbsp; <button class="call-btn" style="display:inline-block;margin-left:8px" onclick="loadLines()">↻ Tentar novamente</button></div>`;
     }
   }
 

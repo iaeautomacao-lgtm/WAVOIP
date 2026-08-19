@@ -252,7 +252,7 @@ def wavoip_login() -> str:
         "email": WAVOIP_EMAIL, "password": WAVOIP_PASSWORD
     }, headers={
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }, timeout=10)
+    }, timeout=4)
     res.raise_for_status()
     _wavoip_token    = res.json()["data"]["token"]
     _wavoip_token_ts = time.time()
