@@ -339,12 +339,12 @@ def _active_line_counts(line_tokens: list) -> dict:
     try:
         rows = supabase.table("campaign_calls")\
             .select("id, status, line_token, debito_data, vapi_call_id")\
-            .in_("status", ["enfileirado", "em_andamento", "atendido"])\
+            .in_("status", ["em_andamento", "atendido"])\
             .execute().data or []
     except Exception:
         rows = supabase.table("campaign_calls")\
             .select("id, status, debito_data, vapi_call_id")\
-            .in_("status", ["enfileirado", "em_andamento", "atendido"])\
+            .in_("status", ["em_andamento", "atendido"])\
             .execute().data or []
 
     for row in rows:
@@ -1989,7 +1989,8 @@ def debug_import():
         acordos = supabase.table("acordos_formalizados").select("*").order("created_at", desc=True).limit(5).execute().data
         calls = supabase.table("campaign_calls").select("*").order("updated_at", desc=True).limit(20).execute().data
         jobs = supabase.table("import_jobs").select("*").order("created_at", desc=True).limit(5).execute().data
-        count_calls = len(supabase.table("campaign_calls").select("id").execute().data or [])
+        res_cnt = supabase.table("campaign_calls").select("id", count="exact").limit(1).execute()
+        count_calls = res_cnt.count or 0
         import sys
         import os
         return jsonify({
@@ -3666,31 +3667,39 @@ def stream():
 
         try:
             campaign_list = supabase.table("campaigns").select("*").order("created_at", desc=True).execute().data or []
-            call_list = supabase.table("campaign_calls").select("id, campaign_id, status, answered, tabulation").order("created_at", desc=True).execute().data or []
-            try:
-                accord_list = supabase.table("acordos_formalizados").select("campaign_call_id, email_enviado, deletado_painel").order("created_at", desc=True).execute().data or []
-                accord_list = [a for a in accord_list if not a.get("deletado_painel")]
-            except Exception:
-                accord_list = []
-            
             group_list = _group_map()
-            formalized_ids = {str(a.get("campaign_call_id")).replace("-", "").strip().lower() for a in accord_list if a.get("campaign_call_id")}
-            for r in call_list:
-                if r.get("tabulation") == "acordo_formalizado":
-                    formalized_ids.add(str(r.get("id")).replace("-", "").strip().lower())
-            
-            calls_by_camp = {}
-            for row in call_list:
-                c_id = str(row.get("campaign_id") or "").replace("-", "").strip().lower()
-                calls_by_camp.setdefault(c_id, []).append(row)
-                
+
+            camp_stats = {}
+            try:
+                db_client = create_client()
+                with db_client.connect() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            SELECT 
+                                LOWER(REPLACE(campaign_id, '-', '')) as cid,
+                                COUNT(*) as total,
+                                SUM(CASE WHEN status IN ('enfileirado', 'em_andamento') THEN 1 ELSE 0 END) as active,
+                                SUM(CASE WHEN status NOT IN ('pendente', 'enfileirado') THEN 1 ELSE 0 END) as attempted,
+                                SUM(CASE WHEN answered = 1 OR status = 'atendido' THEN 1 ELSE 0 END) as answered,
+                                SUM(CASE WHEN status = 'finalizado' THEN 1 ELSE 0 END) as finished,
+                                SUM(CASE WHEN status IN ('erro', 'falha_sem_linha', 'sem_telefone') THEN 1 ELSE 0 END) as errors,
+                                SUM(CASE WHEN tabulation = 'acordo_formalizado' THEN 1 ELSE 0 END) as formalized
+                            FROM campaign_calls
+                            GROUP BY cid
+                        """)
+                        for r in cur.fetchall() or []:
+                            if r.get("cid"):
+                                camp_stats[str(r["cid"]).strip().lower()] = r
+            except Exception as sql_err:
+                logging.error(f"Erro na agregação SQL de campanhas: {sql_err}")
+
             by_camp = []
             for camp in campaign_list:
                 camp_id_str = str(camp.get("id") or "").replace("-", "").strip().lower()
-                rows = calls_by_camp.get(camp_id_str, [])
-                camp_formalized = sum(1 for r in rows if str(r.get("id")).replace("-", "").strip().lower() in formalized_ids)
-                camp_attempted = sum(1 for r in rows if r.get("status") not in ("pendente", "enfileirado"))
-                camp_answered = sum(1 for r in rows if r.get("answered") or r.get("status") == "atendido")
+                st = camp_stats.get(camp_id_str) or {}
+                camp_formalized = int(st.get("formalized") or 0)
+                camp_attempted = int(st.get("attempted") or 0)
+                camp_answered = int(st.get("answered") or 0)
                 camp_alo_rate = round((camp_answered / camp_attempted * 100), 1) if camp_attempted > 0 else 0.0
                 by_camp.append({
                     "id": camp.get("id"),
@@ -3699,11 +3708,11 @@ def stream():
                     "line_tokens": camp.get("line_tokens") or [],
                     "sip_group_id": camp.get("sip_group_id") or "",
                     "group": (group_list.get(camp.get("sip_group_id")) or {}).get("name", ""),
-                    "total": camp.get("total") or len(rows),
-                    "finished": camp.get("finished") or sum(1 for r in rows if r.get("status") == "finalizado"),
-                    "active": sum(1 for r in rows if r.get("status") in ("enfileirado", "em_andamento")),
+                    "total": camp.get("total") or int(st.get("total") or 0),
+                    "finished": camp.get("finished") or int(st.get("finished") or 0),
+                    "active": int(st.get("active") or 0),
                     "answered": camp_answered,
-                    "errors": sum(1 for r in rows if r.get("status") in ("erro", "falha_sem_linha", "sem_telefone")),
+                    "errors": int(st.get("errors") or 0),
                     "formalized": camp_formalized,
                     "alo_rate": camp_alo_rate,
                     "created_at": camp.get("created_at"),
